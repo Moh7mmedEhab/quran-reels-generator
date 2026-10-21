@@ -1,0 +1,829 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<meta content="web_standard" name="shell-type"/>
+<title>Quran Reels Generator - Studio</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Amiri:ital,wght@0,400;0,700;1,400&amp;family=Noto+Naskh+Arabic:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<style>
+    @layer base {
+      html, body { margin: 0; padding: 0; font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+      body { overscroll-behavior: none; }
+    }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    .font-quran { font-family: 'Amiri', 'Noto Naskh Arabic', serif; }
+  </style>
+<script>
+tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2ff',200:'#99c5ff',300:'#66a8ff',400:'#338bff',500:'#1a7aff',600:'#006aff',700:'#0056cc',800:'#0046a8',900:'#003b8f',950:'#00265c'}}}}};
+</script>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+</head>
+<body class="bg-slate-50 text-gray-900 min-h-screen antialiased flex flex-col selection:bg-brand-100 selection:text-brand-900">
+<!-- Header -->
+<header class="fixed top-0 inset-x-0 z-50 bg-white/95 backdrop-blur-md border-b border-gray-200 shadow-sm transition-all">
+<div class="h-16 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-4">
+<!-- Left: Logo & Badge -->
+<div class="flex items-center gap-3">
+<div class="site-brand-mark w-9 h-9 rounded-xl bg-brand-600 text-white flex items-center justify-center shadow-md shadow-brand-200">
+<svg viewBox="0 0 24 24" class="brand-book-icon" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 7.2C9.7 5.4 6.3 5 3 5.7v13c3.3-.7 6.7-.3 9 1.5m0-13c2.3-1.8 5.7-2.2 9-1.5v13c-3.3-.7-6.7-.3-9 1.5m0-13v13"/><path d="M6.3 9c1.5-.1 2.8.1 4 .6M17.7 9c-1.5-.1-2.8.1-4 .6"/></svg>
+</div>
+<div class="flex items-center gap-2.5">
+<span class="text-base font-bold text-gray-900 tracking-tight">Quran Reels <span class="text-brand-600 font-medium">Generator</span></span>
+<span class="hidden sm:inline-flex items-center px-2 py-0.5 rounded-md bg-brand-50 text-brand-700 border border-brand-200 text-xs font-semibold tracking-wide">Studio v1.0</span>
+</div>
+</div>
+<!-- Right: Quick actions -->
+<div class="flex items-center gap-2.5">
+<button aria-label="Settings" class="p-2 rounded-xl text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors" type="button">
+<span class="material-symbols-outlined text-[20px]">tune</span>
+</button>
+<div class="w-9 h-9 rounded-full bg-brand-50 border border-brand-200 text-brand-700 flex items-center justify-center font-semibold text-sm shadow-sm cursor-pointer hover:bg-brand-100 transition-colors">
+<span class="material-symbols-outlined text-[20px]">account_circle</span>
+</div>
+</div>
+</div>
+</header>
+<!-- Main Content Workbench -->
+<main class="w-full pt-16 flex-1 flex flex-col">
+<div class="w-full max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
+<!-- Top Studio Context Bar -->
+<div class="flex flex-wrap items-center justify-between gap-3 mb-6 bg-white border border-gray-200/80 px-4 py-3 rounded-2xl shadow-sm">
+<div class="flex flex-wrap items-center gap-3">
+<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold">
+<span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            Engine Ready
+          </span>
+<span class="text-gray-300 hidden sm:inline">•</span>
+<span class="text-xs text-gray-600 font-medium hidden sm:inline">MoviePy render engine</span>
+<span class="text-gray-300 hidden md:inline">•</span>
+<span class="text-xs text-brand-600 font-semibold hidden md:inline">Arabic captions • local rendering</span>
+</div>
+<div class="flex items-center gap-4">
+<div class="hidden lg:flex items-center gap-1.5 text-xs text-gray-500">
+<span class="material-symbols-outlined text-[16px] text-gray-400">memory</span>
+<span>Output: <strong class="text-gray-800 font-semibold">MP4 • H.264</strong></span>
+</div>
+<button class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-gray-200 bg-gray-50 hover:bg-gray-100 hover:border-gray-300 transition-colors text-xs font-medium text-gray-700" id="api-toggle-btn" type="button">
+<span class="material-symbols-outlined text-[16px] text-brand-600">code</span>
+<span>API Pipeline</span>
+</button>
+</div>
+</div>
+<!-- Main Studio Split Workbench Grid -->
+<div class="studio-workbench gap-8 items-start">
+<!-- LEFT COLUMN: Generation Settings & Script Controls (5 cols) -->
+<div class="flex flex-col gap-6 bg-white rounded-2xl border border-gray-200/80 shadow-md p-6">
+<!-- Panel Header -->
+<div class="flex items-center justify-between border-b border-gray-100 pb-4">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-xl bg-brand-50 border border-brand-100 flex items-center justify-center shrink-0">
+<svg viewBox="0 0 24 24" class="panel-movie-icon" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3zM7 5v2m5-2v2m5-2v2M7 17v2m5-2v2m5-2v2"/></svg>
+</div>
+<div>
+<h1 class="text-lg font-bold text-gray-900 tracking-tight leading-tight">Quran Reels Generator</h1>
+<p class="text-xs text-gray-500">Synchronized micro-content &amp; Ayah typography</p>
+</div>
+</div>
+<span class="px-2.5 py-1 rounded-full bg-brand-50 text-brand-700 border border-brand-200 text-xs font-bold tracking-wide">v3.2 PRO</span>
+</div>
+<!-- 1. Qari (Reciter) Selector -->
+<div class="flex flex-col gap-2">
+<div class="flex items-center justify-between">
+<label class="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5" for="reciter-trigger">
+<span class="material-symbols-outlined text-[16px] text-brand-600">record_voice_over</span>
+                Select Reciter (Qari)
+              </label>
+<button class="inline-flex items-center gap-1 text-brand-600 hover:text-brand-700 transition-colors text-xs font-medium" id="preview-sample-btn" type="button">
+<span class="material-symbols-outlined text-[14px]">volume_up</span>
+<span>Audition Voice</span>
+</button>
+<audio class="hidden mt-2 w-full" id="voice-preview-audio" controls preload="none"></audio>
+</div>
+<!-- Reciter Card / Dropdown Trigger -->
+<div class="relative">
+<div class="w-full flex items-center justify-between px-4 py-3 bg-white border border-gray-200 rounded-xl cursor-pointer hover:border-brand-400 hover:bg-slate-50/50 transition-all shadow-sm" id="reciter-trigger">
+<div class="flex items-center gap-3 truncate">
+<div class="w-9 h-9 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center font-bold text-xs shrink-0 border border-brand-200">
+                    MR
+                  </div>
+<div class="truncate text-left">
+<div class="text-sm font-semibold text-gray-900 truncate" id="selected-reciter-name">Mishary Rashid Alafasy</div>
+<div class="text-xs text-gray-500 truncate flex items-center gap-1.5 mt-0.5">
+<span class="px-1.5 py-0.2 rounded bg-gray-100 text-gray-600 text-[11px] font-medium">Murattal</span>
+<span>Hafs 'an 'Asim (Studio Master)</span>
+</div>
+</div>
+</div>
+<span class="material-symbols-outlined text-gray-400 text-[20px] shrink-0 transition-transform" id="reciter-arrow">expand_more</span>
+</div>
+<!-- Stylized Dropdown Panel -->
+<div class="hidden absolute top-full left-0 right-0 mt-1.5 z-40 bg-white rounded-xl shadow-xl border border-gray-200 p-2 max-h-72 overflow-y-auto" id="reciter-dropdown">
+<div class="p-1 pb-2">
+<div class="flex items-center gap-2 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-900 text-xs">
+<span class="material-symbols-outlined text-[16px] text-gray-400">search</span>
+<input class="w-full bg-transparent text-gray-900 placeholder-gray-400 focus:outline-none text-xs" id="reciter-filter-input" placeholder="Search 20 authentic reciters..." type="text"/>
+</div>
+</div>
+<ul class="flex flex-col gap-1 mt-1" id="reciters-list">
+<li class="px-3 py-2 text-xs text-gray-500" id="reciters-loading">Loading reciters…</li></ul>
+</div>
+</div>
+</div>
+<!-- 2. Audio & Scripture Settings -->
+<div class="flex flex-col gap-4">
+<!-- Surah Selection -->
+<div class="flex flex-col gap-1.5">
+<div class="flex items-center justify-between">
+<label class="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5" for="surah-select">
+<span class="material-symbols-outlined text-[16px] text-brand-600">menu_book</span>
+                  Surah (Chapter)
+                </label>
+<span class="text-xs text-brand-600 font-medium" id="surah-total">Total 78 Ayahs</span>
+</div>
+<div class="relative">
+<select class="w-full appearance-none rounded-xl border border-gray-200 bg-white text-gray-900 px-4 py-3 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none transition-all shadow-sm font-medium cursor-pointer" id="surah-select">
+{% for surah in surahs %}
+<option value="{{ surah.number }}" data-ayah-count="{{ surah.ayah_count }}" {% if surah.number == 55 %}selected{% endif %}>{{ "%03d"|format(surah.number) }} - {{ surah.english_name }} ({{ surah.english_translation }} • {{ surah.name_arabic }})</option>
+{% endfor %}
+</select>
+<span class="material-symbols-outlined pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-[20px]">unfold_more</span>
+</div>
+</div>
+<!-- Ayah Range Steppers -->
+<div class="grid grid-cols-2 gap-3">
+<div class="flex flex-col gap-1.5">
+<label class="text-xs font-semibold text-gray-600" for="start-ayah">Start Ayah</label>
+<div class="flex items-center border border-gray-200 rounded-xl bg-white px-2 py-1 shadow-sm focus-within:border-brand-500 focus-within:ring-1 focus-within:ring-brand-500">
+<button class="p-1.5 text-gray-500 hover:text-brand-600 hover:bg-gray-100 rounded-lg transition-colors" id="start-dec" type="button">
+<span class="material-symbols-outlined text-[18px]">remove</span>
+</button>
+<input class="w-full text-center bg-transparent text-gray-900 font-bold text-base focus:outline-none" id="start-ayah" max="78" min="1" type="number" value="13"/>
+<button class="p-1.5 text-gray-500 hover:text-brand-600 hover:bg-gray-100 rounded-lg transition-colors" id="start-inc" type="button">
+<span class="material-symbols-outlined text-[18px]">add</span>
+</button>
+</div>
+</div>
+<div class="flex flex-col gap-1.5">
+<label class="text-xs font-semibold text-gray-600" for="end-ayah">End Ayah</label>
+<div class="flex items-center border border-gray-200 rounded-xl bg-white px-2 py-1 shadow-sm focus-within:border-brand-500 focus-within:ring-1 focus-within:ring-brand-500">
+<button class="p-1.5 text-gray-500 hover:text-brand-600 hover:bg-gray-100 rounded-lg transition-colors" id="end-dec" type="button">
+<span class="material-symbols-outlined text-[18px]">remove</span>
+</button>
+<input class="w-full text-center bg-transparent text-gray-900 font-bold text-base focus:outline-none" id="end-ayah" max="78" min="1" type="number" value="13"/>
+<button class="p-1.5 text-gray-500 hover:text-brand-600 hover:bg-gray-100 rounded-lg transition-colors" id="end-inc" type="button">
+<span class="material-symbols-outlined text-[18px]">add</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Ayah Range Stats Pill -->
+<div class="flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-brand-50/80 border border-brand-100 text-brand-900">
+<div class="flex items-center gap-1.5 text-xs font-medium">
+<span class="material-symbols-outlined text-[16px] text-brand-600">timelapse</span>
+<span>Selected Scope: <strong class="font-bold text-brand-950 scope-count">1 Ayah</strong></span>
+</div>
+<span class="text-xs bg-white text-brand-700 px-2.5 py-0.5 rounded-md font-bold border border-brand-200/80 shadow-xs scope-duration">~3s duration</span>
+</div>
+<div class="flex flex-col gap-2 rounded-xl border border-gray-200 bg-slate-50 p-3">
+<label class="text-xs font-semibold text-gray-700" for="ayah-text">Arabic Ayah Text <span class="text-gray-400 font-normal">(one ayah per line)</span></label>
+<textarea id="ayah-text" rows="3" dir="rtl" class="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-right font-quran text-lg text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20">{{ initial_ayah }}</textarea>
+<p class="text-[11px] text-gray-500">Uthmani text loads automatically for the selected surah and ayah range. You may edit the captions.</p>
+<div class="grid grid-cols-1 gap-2">
+<div class="wallpaper-upload-wrap">
+<span class="wallpaper-upload-label">Custom wallpaper <span>(optional)</span></span>
+<label class="wallpaper-dropzone" for="background-file" id="background-dropzone">
+<input id="background-file" type="file" accept="image/png,image/jpeg,image/webp" aria-describedby="background-file-name">
+<span class="wallpaper-upload-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5"/><path d="M5 14v5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5"/></svg></span>
+<span class="wallpaper-upload-copy"><strong>Choose an image</strong><small id="background-file-name">PNG, JPG or WEBP · click to browse</small></span>
+<span class="wallpaper-browse">Browse</span>
+</label>
+</div>
+</div>
+</div>
+<!-- Recitation Speed & Silence Trimmer Toggles -->
+<div class="grid grid-cols-2 gap-3 pt-0.5">
+<div class="flex items-center justify-between px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl">
+<div class="flex flex-col">
+<span class="text-xs font-semibold text-gray-800">Pacing</span>
+<span class="text-[11px] text-gray-500" id="speed-indicator">1.0x (Natural)</span>
+</div>
+<button class="px-2 py-1 rounded-lg bg-white border border-gray-200 text-brand-600 font-bold text-xs hover:border-brand-300 transition-colors shadow-xs" id="speed-cycle-btn" type="button">
+                  1.0x
+                </button>
+</div>
+<div class="flex items-center justify-between px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl">
+<div class="flex flex-col">
+<span class="text-xs font-semibold text-gray-800">Timed Recitation</span>
+<span class="text-[11px] text-emerald-600 font-medium">Selected ayahs only</span>
+</div>
+<label class="relative inline-flex items-center cursor-pointer">
+<input checked="" class="sr-only peer" type="checkbox"/>
+<div class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-brand-600"></div>
+</label>
+</div>
+</div>
+</div>
+<!-- 3. Aspect Ratio Selector -->
+<div class="flex flex-col gap-2">
+<label class="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[16px] text-brand-600">aspect_ratio</span>
+              Output Format
+            </label>
+<div class="grid grid-cols-3 gap-2.5">
+<!-- 9:16 Active -->
+<button class="aspect-ratio-btn flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 border-brand-600 bg-brand-50/60 text-brand-900 shadow-sm transition-all" data-ratio="9:16" type="button">
+<div class="w-5 h-7 rounded-sm border border-brand-500 bg-brand-200/50 flex items-center justify-center">
+<span class="text-[8px] font-bold text-brand-700">9:16</span>
+</div>
+<span class="text-xs font-bold text-brand-900">Reels / Shorts</span>
+<span class="text-[10px] text-brand-600 font-medium">TikTok / IG</span>
+</button>
+<!-- 16:9 Inactive -->
+<button class="aspect-ratio-btn flex flex-col items-center gap-1.5 p-3 rounded-xl border border-gray-200 hover:border-gray-300 bg-white text-gray-700 transition-all shadow-xs" data-ratio="16:9" type="button">
+<div class="w-7 h-4 rounded-sm border border-gray-300 bg-gray-100 flex items-center justify-center">
+<span class="text-[8px] font-medium text-gray-500">16:9</span>
+</div>
+<span class="text-xs font-semibold text-gray-800">Landscape</span>
+<span class="text-[10px] text-gray-500">YouTube Full</span>
+</button>
+<!-- 1:1 Inactive -->
+<button class="aspect-ratio-btn flex flex-col items-center gap-1.5 p-3 rounded-xl border border-gray-200 hover:border-gray-300 bg-white text-gray-700 transition-all shadow-xs" data-ratio="1:1" type="button">
+<div class="w-5 h-5 rounded-sm border border-gray-300 bg-gray-100 flex items-center justify-center">
+<span class="text-[8px] font-medium text-gray-500">1:1</span>
+</div>
+<span class="text-xs font-semibold text-gray-800">Square</span>
+<span class="text-[10px] text-gray-500">Post / Feed</span>
+</button>
+</div>
+</div>
+<!-- 4. Video & Visual Styling Controls -->
+<div class="flex flex-col gap-3">
+<div class="flex items-center justify-between">
+<span class="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[16px] text-brand-600">palette</span>
+                Cinematic Styling
+              </span>
+<span class="text-xs text-gray-500 font-medium">HD B-Roll Preset</span>
+</div>
+<!-- Renderable background presets -->
+<div class="grid grid-cols-2 gap-2.5" id="background-options">
+{% for theme_id, wallpaper in themes.items() %}
+<button class="background-choice{% if loop.first %} selected-background{% endif %}" data-theme="{{ theme_id }}" data-top="{{ wallpaper.top|join(',') }}" data-bottom="{{ wallpaper.bottom|join(',') }}" type="button"><img class="background-swatch" loading="lazy" alt="" src="/api/backgrounds/{{ theme_id }}/preview?ratio=9:16"><span><strong>{{ wallpaper.name }}</strong><small>Quran wallpaper</small></span></button>
+{% endfor %}
+</div>
+<!-- Fine visual dropdown selectors -->
+<div class="grid grid-cols-2 gap-3">
+<div class="flex flex-col gap-1">
+<label class="text-[11px] font-semibold text-gray-600" for="transition-style">Camera Motion</label>
+<select class="w-full rounded-xl border border-gray-200 bg-white text-gray-900 px-3 py-2 text-xs focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none transition-all shadow-xs" id="transition-style">
+<option value="crossfade">Smooth Cross Dissolve</option>
+<option value="cut">Cut</option>
+</select>
+</div>
+<div class="flex flex-col gap-1">
+<label class="text-[11px] font-semibold text-gray-600" for="caption-style">Captions Style</label>
+<select class="w-full rounded-xl border border-gray-200 bg-white text-gray-900 px-3 py-2 text-xs focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none transition-all shadow-xs" id="caption-style">
+<option value="Dynamic Karaoke (Glow)">Dynamic Karaoke (Glow)</option>
+<option value="Minimalist Subtitle Fade">Minimalist Subtitle Fade</option>
+<option value="Classic Calligraphic">Classic Calligraphic</option>
+<option value="Arabic Only (No Translation)">Arabic Only (No Translation)</option>
+</select>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-3">
+<div class="flex flex-col gap-1">
+<label class="text-[11px] font-semibold text-gray-600" for="wrap-width">Long ayah wrapping</label>
+<select class="w-full rounded-xl border border-gray-200 bg-white text-gray-900 px-3 py-2 text-xs focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none" id="wrap-width">
+<option value="65">Compact · 65%</option><option value="75">Narrow · 75%</option><option value="85" selected>Balanced · 85%</option><option value="95">Wide · 95%</option>
+</select>
+</div>
+<div class="flex flex-col gap-1">
+<span class="text-[11px] font-semibold text-gray-600">Caption color</span>
+<div class="caption-colors" id="caption-colors" role="group" aria-label="Caption color">
+{% for color_id, color_value in caption_colors.items() %}
+<button class="caption-color-choice{% if loop.first %} selected-caption-color{% endif %}" data-color="{{ color_id }}" style="--caption-swatch:{{ color_value }}" title="{{ color_id|title }}" aria-label="{{ color_id|title }}" type="button"></button>
+{% endfor %}
+</div>
+</div>
+</div>
+</div>
+<!-- Diacritics row -->
+<div class="flex items-center justify-between px-3.5 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-brand-600 text-[18px]">spellcheck</span>
+<span class="font-medium text-gray-700">Full Tashkeel (Harakat)</span>
+</div>
+<span class="text-xs font-semibold text-gray-500">Saheeh Int.</span>
+</div>
+<!-- 5. Primary Action CTA Section -->
+<div class="flex flex-col gap-2 pt-2 border-t border-gray-100">
+<button class="w-full py-4 rounded-xl bg-brand-600 hover:bg-brand-700 active:bg-brand-800 text-white font-semibold text-base shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2" id="generate-video-btn" type="button">
+<span class="material-symbols-outlined text-[22px]">auto_awesome</span>
+<span>Render High-Res Reel (1080x1920)</span>
+</button>
+<div id="render-status" class="hidden rounded-lg px-3 py-2 text-sm" role="status" aria-live="polite"></div>
+<div class="flex items-center justify-between px-1 text-xs text-gray-500">
+<span class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[15px] text-emerald-600">bolt</span>
+                Est. Render: ~12s on RTX Node
+              </span>
+<button class="text-brand-600 hover:text-brand-700 font-medium transition-colors flex items-center gap-1" type="button">
+<span class="material-symbols-outlined text-[15px]">bookmark</span>
+<span>Save Preset</span>
+</button>
+</div>
+</div>
+</div>
+<!-- RIGHT COLUMN: Immersive Canvas Stage Preview (7 cols) -->
+<div class="flex flex-col gap-4">
+<!-- Preview Control Header -->
+<div class="flex flex-wrap items-center justify-between gap-3 bg-white border border-gray-200 text-gray-700 shadow-sm px-4 py-2.5 rounded-xl text-xs font-medium">
+<div class="flex items-center gap-2.5">
+<span class="px-2 py-0.5 rounded-md bg-brand-50 text-brand-700 border border-brand-200 font-bold flex items-center gap-1 text-xs">
+<span class="material-symbols-outlined text-[14px]">smart_display</span>
+                Live Canvas
+              </span>
+<span class="text-xs text-gray-700 font-semibold"><span id="canvas-resolution">1080 × 1920 (9:16) • 24 FPS</span></span>
+</div>
+<div class="flex items-center gap-2">
+<button class="px-2.5 py-1.5 text-gray-600 hover:text-brand-600 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-1" id="wallpaper-jump" title="Change Background" type="button">
+<span class="material-symbols-outlined text-[16px]">wallpaper</span>
+<span class="hidden sm:inline">Wallpaper</span>
+</button>
+<button class="px-2.5 py-1.5 text-gray-600 hover:text-brand-600 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-1" id="toggle-safezone-btn" title="Toggle TikTok Safe Zones" type="button">
+<span class="material-symbols-outlined text-[16px]">crop_free</span>
+<span class="hidden sm:inline">Safe Zone</span>
+</button>
+<button class="px-3 py-1.5 bg-brand-50 border border-brand-200 text-brand-700 hover:bg-brand-100 rounded-lg transition-colors flex items-center gap-1.5 font-semibold" id="export-preview-btn" title="Export Video" type="button">
+<span class="material-symbols-outlined text-[16px] text-brand-600">download</span>
+<span>Export MP4</span>
+</button>
+</div>
+</div>
+<!-- Preview Stage Container -->
+<div class="preview-stage bg-slate-100/70 rounded-2xl border border-gray-200/60 p-6 md:p-8 flex flex-col items-center justify-center relative overflow-hidden min-h-[660px]" id="preview-stage">
+<!-- Soft backdrop glow -->
+<div class="absolute -top-16 -left-16 w-80 h-80 rounded-full bg-brand-200/40 blur-3xl pointer-events-none"></div>
+<div class="absolute -bottom-16 -right-16 w-80 h-80 rounded-full bg-emerald-200/30 blur-3xl pointer-events-none"></div>
+<!-- Phone Bezel / Reel Container -->
+<div class="preview-phone relative w-full max-w-[340px] bg-white p-3 rounded-[38px] shadow-2xl border-4 border-gray-100" id="reel-mockup">
+<!-- Live output frame: same wallpaper and single verse caption used by the renderer -->
+<div class="preview-frame relative w-full aspect-[9/16] aspect-screen rounded-[28px] overflow-hidden flex items-center justify-center shadow-inner bg-black">
+<div class="absolute inset-0 bg-cover bg-center preview-background" id="preview-background"></div>
+<video class="hidden absolute inset-0 z-30 h-full w-full object-cover bg-black" id="rendered-video" controls playsinline></video>
+<div class="hidden absolute inset-0 pointer-events-none p-4 flex flex-col justify-between z-20" id="safezone-overlay">
+<div class="w-full pt-10 pb-2 px-2 text-[10px] text-amber-300 font-bold tracking-wider uppercase flex justify-between bg-black/20 rounded border border-amber-300/40"><span>Safe Header Bound</span><span>12% Margin</span></div>
+<div class="w-full pb-12 px-2 text-[10px] text-amber-300 font-bold tracking-wider uppercase flex justify-between bg-black/20 rounded border border-amber-300/40"><span>Controls UI Safe Zone</span><span>Bottom 20%</span></div>
+</div>
+<img id="preview-ayah-text" class="caption-preview-overlay" alt="Arabic Ayah caption preview" draggable="false">
+</div>
+</div>
+<!-- Media Timeline & Controls underneath phone -->
+<div class="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm text-gray-800 flex flex-col gap-3 w-full max-w-xl mt-6">
+<!-- Scrubber seeks the selected recitation or rendered MP4. -->
+<input aria-label="Seek preview" class="preview-range w-full" id="preview-scrubber" type="range" min="0" max="100" value="0" step="0.1">
+<!-- Media Control Buttons Bar -->
+<div class="flex items-center justify-between pt-1">
+<div class="flex items-center gap-3">
+<button class="bg-brand-600 text-white hover:bg-brand-700 active:bg-brand-800 rounded-full w-10 h-10 flex items-center justify-center shadow-sm transition-transform active:scale-95" id="playback-toggle" type="button">
+<svg id="playback-play-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5a1 1 0 0 1 1.5-.86l9.2 5.5a2.16 2.16 0 0 1 0 3.72l-9.2 5.5A1 1 0 0 1 8 18.5z"/></svg><svg id="playback-pause-icon" class="hidden" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h3.5v14H7zm6.5 0H17v14h-3.5z"/></svg>
+</button>
+<button class="p-1.5 text-gray-500 hover:text-gray-900 rounded-lg hover:bg-gray-100 transition-colors" id="rewind-preview" title="Rewind 10 seconds" type="button">
+<span class="material-symbols-outlined text-[20px]">replay_10</span>
+</button>
+<span class="text-xs font-bold text-gray-800 tracking-wider">
+                    <span id="preview-time">00:00 / --:--</span>
+</span>
+</div>
+<div class="flex items-center gap-4">
+<!-- Volume control -->
+<div class="hidden sm:flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px] text-gray-500">volume_up</span>
+<input aria-label="Preview volume" class="preview-range w-20" id="preview-volume" type="range" min="0" max="1" value="0.8" step="0.01">
+</div>
+<!-- Resolution Pill -->
+<span class="px-2 py-0.5 rounded-md bg-gray-100 border border-gray-200 text-[11px] font-bold text-gray-700">1080p</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Developer API Hook Drawer -->
+<div class="hidden bg-white border border-gray-200 p-4 rounded-2xl shadow-sm transition-all" id="api-panel">
+<div class="flex items-center justify-between pb-2 border-b border-gray-100 mb-2">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-brand-600 text-[18px]">terminal</span>
+<span class="text-xs font-bold text-gray-900">Developer API Hook (Flask/Python)</span>
+</div>
+<button class="flex items-center gap-1 text-brand-600 hover:text-brand-800 text-xs font-semibold transition-colors" id="copy-curl-btn" type="button">
+<span class="material-symbols-outlined text-[14px]">content_copy</span>
+<span id="copy-status">Copy cURL</span>
+</button>
+</div>
+<pre class="bg-gray-50 border border-gray-200 p-3 rounded-xl overflow-x-auto text-[11px] font-mono text-gray-800 leading-relaxed"><code>curl -X POST http://127.0.0.1:5000/api/generate \
+  -F "surah=55" -F "ayah_start=13" -F "ayah_end=16" \
+  -F "reciter_id=mishary_alafasy" -F "aspect_ratio=9:16" \
+  -F "theme=misty_forest" -F "transition=crossfade" \
+  -F "caption_style=classic" -F "speed=1.0"</code></pre>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Clean Minimalist Light Footer -->
+<footer class="w-full bg-white border-t border-gray-200 py-6 mt-12">
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-gray-500">
+<div class="flex items-center gap-2">
+<span class="font-bold text-gray-900">Quran Reels Generator</span>
+<span>© 2024 Sacred Arts Studio. All rights reserved.</span>
+</div>
+
+</div>
+</footer>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  let selectedReciter = 'mishary_alafasy';
+  let ratio = '9:16';
+  let theme = 'misty_forest';
+  let captionColor = 'white';
+  let wrapWidth = 85;
+  let speed = 1.0;
+  let verseLoadTimer;
+  let previewAyahs = [];
+  let previewTimings = [];
+  let previewIndex = 0;
+  let previewObjectUrl = null;
+  let loadedVerseSelection = '';
+  const surahSelect = $('surah-select');
+  const startInput = $('start-ayah');
+  const endInput = $('end-ayah');
+  const ayahText = $('ayah-text');
+  const reciterList = $('reciters-list');
+  function setPlaybackIcon(isPlaying) {
+    $('playback-play-icon').classList.toggle('hidden', isPlaying);
+    $('playback-pause-icon').classList.toggle('hidden', !isPlaying);
+    $('playback-toggle').setAttribute('aria-label', isPlaying ? 'Pause preview' : 'Play preview');
+  }
+  const reciterById = new Map();
+
+  function hideRenderedVideo() {
+    const video = $('rendered-video');
+    video.pause(); video.removeAttribute('src'); video.load(); video.classList.add('hidden');
+  }
+
+  function verseSelectionKey() {
+    return `${surahSelect.value}:${startInput.value || '1'}:${endInput.value || startInput.value || '1'}`;
+  }
+
+  function activePlayer() {
+    const video = $('rendered-video');
+    return !video.classList.contains('hidden') && video.src ? video : $('voice-preview-audio');
+  }
+
+  function syncTimeline(player) {
+    if (!player || !Number.isFinite(player.duration)) return;
+    const scrubber = $('preview-scrubber');
+    const isRecitation = player === $('voice-preview-audio') && previewTimings.length;
+    const start = isRecitation ? previewTimings[0].start : 0;
+    const end = isRecitation ? previewTimings[previewTimings.length - 1].end : player.duration;
+    scrubber.min = start; scrubber.max = end;
+    scrubber.value = Math.min(end, Math.max(start, player.currentTime));
+    $('preview-time').textContent = `${formatTime(Math.max(0, player.currentTime - start))} / ${formatTime(end - start)}`;
+  }
+
+  function setWallpaperPreview() {
+    const preview = $('preview-background');
+    if ($('background-file').files[0]) return;
+    const option = document.querySelector(`.background-choice[data-theme="${theme}"]`);
+    const top = option?.dataset.top || '19,31,40';
+    const bottom = option?.dataset.bottom || '55,85,75';
+    preview.style.setProperty('--wallpaper-top', `rgb(${top})`);
+    preview.style.setProperty('--wallpaper-bottom', `rgb(${bottom})`);
+    preview.style.backgroundImage = `url("/api/backgrounds/${encodeURIComponent(theme)}/preview?ratio=${encodeURIComponent(ratio)}"),linear-gradient(145deg,var(--wallpaper-top),var(--wallpaper-bottom))`;
+  }
+
+  let captionPreviewRequest = 0, captionPreviewObjectUrl = null;
+  async function updateCaptionPreview() {
+    const caption = $('preview-ayah-text');
+    const lines = ayahText.value.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+    const text = lines[previewIndex] || previewAyahs[previewIndex] || lines[0] || previewAyahs[0] || '';
+    if (!text) return;
+    const requestId = ++captionPreviewRequest;
+    const response = await fetch('/api/caption-preview', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({text, aspect_ratio:ratio, caption_style:$('caption-style').value,
+                            caption_color:captionColor, wrap_width:wrapWidth})
+    });
+    if (!response.ok) return;
+    const imageUrl = URL.createObjectURL(await response.blob());
+    if (requestId !== captionPreviewRequest) { URL.revokeObjectURL(imageUrl); return; }
+    const previousUrl = captionPreviewObjectUrl;
+    captionPreviewObjectUrl = imageUrl;
+    caption.onload = () => {
+      if (requestId !== captionPreviewRequest) return;
+      const frame = $('preview-background').parentElement;
+      const frameBox = frame.getBoundingClientRect();
+      const sourceSize = {'9:16':[1080,1920], '16:9':[1920,1080], '1:1':[1080,1080]}[ratio];
+      const scale = frameBox.width / sourceSize[0];
+      const outputHeight = sourceSize[1], captionHeight = caption.naturalHeight;
+      const y = Math.max(Math.trunc(outputHeight*.2),
+        Math.min(Math.trunc(outputHeight*.57-captionHeight/2), outputHeight-captionHeight-Math.trunc(outputHeight*.12)));
+      caption.style.width = `${caption.naturalWidth*scale}px`;
+      caption.style.top = `${y*scale}px`;
+      caption.style.display = 'block';
+      if (previousUrl) URL.revokeObjectURL(previousUrl);
+    };
+    caption.src = imageUrl;
+  }
+
+  function formatTime(seconds) {
+    if (!Number.isFinite(seconds)) return '--:--';
+    return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
+  }
+
+  function paintPreviewAyah(index = 0) {
+    previewIndex = index;
+    updateCaptionPreview().catch(() => {});
+  }
+
+  function updateSurahInfo() {
+    const selected = surahSelect.selectedOptions[0];
+    const count = Number(selected.dataset.ayahCount);
+    const surah = Number(surahSelect.value);
+    $('surah-total').textContent = `Total ${count} Ayahs`;
+    startInput.max = count; endInput.max = count;
+    if (Number(startInput.value) > count) startInput.value = count;
+    if (Number(endInput.value) > count) endInput.value = count;
+    updateRangeSummary();
+  }
+
+  function updateRangeSummary() {
+    const first = Number(startInput.value || 1), last = Number(endInput.value || first);
+    const count = Math.max(0, last - first + 1);
+    document.querySelector('.scope-count').textContent = `${count} ${count === 1 ? 'Ayah' : 'Ayahs'}`;
+    document.querySelector('.scope-duration').textContent = `Audio timed to ${count} ${count === 1 ? 'ayah' : 'ayahs'}`;
+  }
+
+  async function loadVerses(updateEditor = true) {
+    const params = new URLSearchParams({surah: surahSelect.value, start: startInput.value || '1', end: endInput.value || startInput.value || '1'});
+    const response = await fetch(`/api/verses?${params}`);
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || 'Could not load Quran text.');
+    previewAyahs = payload.ayahs;
+    if (updateEditor) ayahText.value = payload.ayahs.join('\n');
+    loadedVerseSelection = verseSelectionKey();
+    const status = $('render-status');
+    if (!status.classList.contains('bg-brand-50')) {
+      status.className = 'hidden rounded-lg px-3 py-2 text-sm';
+      status.replaceChildren();
+    }
+    document.querySelector('.scope-duration').textContent = 'Audio timed to selected ayahs';
+    hideRenderedVideo();
+    paintPreviewAyah();
+    return payload.ayahs;
+  }
+
+  function scheduleVerseLoad() {
+    updateSurahInfo();
+    clearTimeout(verseLoadTimer);
+    verseLoadTimer = setTimeout(() => loadVerses().catch(showError), 250);
+  }
+
+  function showError(message) {
+    const status = $('render-status');
+    status.className = 'rounded-lg px-3 py-2 text-sm bg-red-50 text-red-700';
+    status.textContent = typeof message === 'string' ? message : message.message;
+  }
+
+  async function startRecitationPreview() {
+    const params = new URLSearchParams({surah: surahSelect.value, start: startInput.value || '1', end: endInput.value || startInput.value || '1'});
+    const response = await fetch(`/api/reciters/${selectedReciter}/timings?${params}`);
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Could not load verse timing.');
+    const player = $('voice-preview-audio');
+    previewTimings = result.timings;
+    previewAyahs = await loadVerses(false);
+    if (player.src !== result.audio_url) {
+      player.src = result.audio_url;
+      await new Promise((resolve, reject) => {
+        player.addEventListener('loadedmetadata', resolve, {once:true});
+        player.addEventListener('error', () => reject(new Error('Recitation audio could not be loaded.')), {once:true});
+        player.load();
+      });
+    } else if (player.readyState < 1) {
+      await new Promise(resolve => player.addEventListener('loadedmetadata', resolve, {once:true}));
+    }
+    player.playbackRate = speed;
+    player.currentTime = previewTimings[0].start;
+    paintPreviewAyah(0);
+    player.ontimeupdate = () => {
+      const elapsed = player.currentTime;
+      let current = previewTimings.findIndex((timing, index) => elapsed >= timing.start && (index === previewTimings.length - 1 || elapsed < previewTimings[index + 1].start));
+      if (current < 0) current = 0;
+      if (current !== previewIndex) paintPreviewAyah(current);
+      const first = previewTimings[0].start, last = previewTimings[previewTimings.length - 1].end;
+      syncTimeline(player);
+      if (elapsed >= previewTimings[previewTimings.length - 1].end) {
+        player.pause();
+        player.currentTime = previewTimings[0].start;
+        paintPreviewAyah(0);
+        syncTimeline(player);
+        setPlaybackIcon(false);
+      }
+    };
+    await player.play();
+    setPlaybackIcon(true);
+  }
+
+  fetch('/api/reciters').then(response => response.json()).then(({reciters}) => {
+    reciterList.replaceChildren();
+    reciters.forEach((reciter, index) => {
+      reciterById.set(reciter.id, reciter);
+      const item = document.createElement('li');
+      item.className = 'reciter-option flex items-center justify-between px-3 py-2 rounded-lg hover:bg-gray-50 text-gray-700 cursor-pointer transition-colors';
+      item.dataset.name = reciter.name; item.dataset.id = reciter.id;
+      const name = document.createElement('span'); name.className = 'text-sm font-medium'; name.textContent = reciter.name;
+      const type = document.createElement('span'); type.className = 'text-[11px] text-gray-500 bg-gray-100 px-2 py-0.5 rounded-md'; type.textContent = reciter.style;
+      item.append(name, type);
+      if (index === 0) item.classList.add('bg-brand-50/70');
+      item.addEventListener('click', () => {
+        selectedReciter = reciter.id;
+        $('selected-reciter-name').textContent = reciter.name;
+        $('preview-reciter-name').textContent = `Sheikh ${reciter.name}`;
+        $('reciter-dropdown').classList.add('hidden');
+        hideRenderedVideo();
+      });
+      reciterList.append(item);
+    });
+  }).catch(() => { reciterList.textContent = 'Could not load reciters.'; });
+
+  $('reciter-trigger').addEventListener('click', event => {
+    event.stopPropagation();
+    $('reciter-dropdown').classList.toggle('hidden');
+    if (!$('reciter-dropdown').classList.contains('hidden')) $('reciter-filter-input').focus();
+  });
+  document.addEventListener('click', () => $('reciter-dropdown').classList.add('hidden'));
+  $('reciter-dropdown').addEventListener('click', event => event.stopPropagation());
+  $('reciter-filter-input').addEventListener('input', event => {
+    const query = event.target.value.toLowerCase();
+    document.querySelectorAll('.reciter-option').forEach(item => { item.hidden = !item.textContent.toLowerCase().includes(query); });
+  });
+  $('preview-sample-btn').addEventListener('click', async () => {
+    const button = $('preview-sample-btn');
+    button.disabled = true;
+    try {
+      await startRecitationPreview();
+    } catch (error) { showError(error.message); }
+    finally { button.disabled = false; }
+  });
+
+  [['start-inc', startInput, 1], ['start-dec', startInput, -1], ['end-inc', endInput, 1], ['end-dec', endInput, -1]].forEach(([button, input, delta]) => {
+    $(button).addEventListener('click', () => {
+      input.value = Math.max(Number(input.min), Math.min(Number(input.max), Number(input.value || 1) + delta));
+      scheduleVerseLoad();
+    });
+  });
+  [startInput, endInput].forEach(input => {
+    input.addEventListener('input', scheduleVerseLoad);
+    input.addEventListener('change', scheduleVerseLoad);
+  });
+  ayahText.addEventListener('input', () => { hideRenderedVideo(); paintPreviewAyah(); });
+  surahSelect.addEventListener('change', () => {
+    startInput.value = 1; endInput.value = 1; scheduleVerseLoad();
+  });
+
+  document.querySelectorAll('.aspect-ratio-btn').forEach(button => button.addEventListener('click', () => {
+    ratio = button.dataset.ratio;
+    document.querySelectorAll('.aspect-ratio-btn').forEach(item => item.classList.remove('selected-ratio'));
+    button.classList.add('selected-ratio');
+    const dimensions = {'9:16': '1080 × 1920', '16:9': '1920 × 1080', '1:1': '1080 × 1080'};
+    $('canvas-resolution').textContent = `${dimensions[ratio]} (${ratio}) • 24 FPS`;
+    $('reel-mockup').style.maxWidth = ratio === '16:9' ? '580px' : ratio === '1:1' ? '400px' : '340px';
+    $('reel-mockup').querySelector('.aspect-screen').style.aspectRatio = ratio.replace(':', ' / ');
+    setWallpaperPreview();
+    updateCaptionPreview().catch(() => {});
+    hideRenderedVideo();
+  }));
+
+  document.querySelectorAll('.background-choice').forEach(button => button.addEventListener('click', () => {
+    theme = button.dataset.theme;
+    document.querySelectorAll('.background-choice').forEach(item => item.classList.remove('selected-background'));
+    button.classList.add('selected-background');
+    const preview = $('preview-background');
+    preview.className = 'absolute inset-0 bg-cover bg-center preview-background';
+    setWallpaperPreview();
+    $('background-file').value = '';
+    $('background-file-name').textContent = 'PNG, JPG or WEBP · click to browse';
+    hideRenderedVideo();
+  }));
+  $('background-file').addEventListener('change', () => {
+    const file = $('background-file').files[0];
+    if (!file) return;
+    $('background-file-name').textContent = file.name;
+    const preview = $('preview-background');
+    if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
+    previewObjectUrl = URL.createObjectURL(file);
+    preview.style.backgroundImage = `linear-gradient(rgba(0,0,0,.16),rgba(0,0,0,.16)),url("${previewObjectUrl}"),linear-gradient(145deg,var(--wallpaper-top),var(--wallpaper-bottom))`;
+    hideRenderedVideo();
+  });
+  $('wallpaper-jump').addEventListener('click', () => $('background-options').scrollIntoView({behavior:'smooth',block:'center'}));
+  $('toggle-safezone-btn').addEventListener('click', () => $('safezone-overlay').classList.toggle('hidden'));
+  $('caption-style').addEventListener('change', () => updateCaptionPreview().catch(() => {}));
+  $('wrap-width').addEventListener('change', event => { wrapWidth = Number(event.target.value); updateCaptionPreview().catch(() => {}); });
+  document.querySelectorAll('.caption-color-choice').forEach(button => button.addEventListener('click', () => {
+    captionColor = button.dataset.color;
+    document.querySelectorAll('.caption-color-choice').forEach(item => item.classList.toggle('selected-caption-color', item === button));
+    updateCaptionPreview().catch(() => {});
+  }));
+  $('preview-scrubber').addEventListener('input', event => {
+    const player = activePlayer();
+    if (player.src && Number.isFinite(player.duration)) { player.currentTime = Number(event.target.value); syncTimeline(player); }
+  });
+  $('preview-volume').addEventListener('input', event => {
+    const volume = Number(event.target.value);
+    $('voice-preview-audio').volume = volume;
+    $('rendered-video').volume = volume;
+  });
+  ['voice-preview-audio', 'rendered-video'].forEach(id => {
+    const player = $(id);
+    ['loadedmetadata', 'timeupdate', 'durationchange'].forEach(name => player.addEventListener(name, () => syncTimeline(player)));
+    player.addEventListener('play', () => { setPlaybackIcon(true); });
+    player.addEventListener('pause', () => { setPlaybackIcon(false); });
+  });
+  $('rewind-preview').addEventListener('click', () => {
+    const player = activePlayer();
+    if (player.src && Number.isFinite(player.currentTime)) player.currentTime = Math.max(player === $('voice-preview-audio') && previewTimings.length ? previewTimings[0].start : 0, player.currentTime - 10);
+  });
+  $('playback-toggle').addEventListener('click', () => {
+    const rendered = $('rendered-video');
+    if (!rendered.classList.contains('hidden') && rendered.src) {
+      if (rendered.paused) rendered.play().catch(error => showError(error.message)); else rendered.pause();
+      return;
+    }
+    if (!$('voice-preview-audio').src || $('voice-preview-audio').paused) startRecitationPreview().catch(error => showError(error.message));
+    else { $('voice-preview-audio').pause(); setPlaybackIcon(false); }
+  });
+  const speeds = [1.0, 1.15, 0.9]; let speedIndex = 0;
+  $('speed-cycle-btn').addEventListener('click', () => {
+    speedIndex = (speedIndex + 1) % speeds.length; speed = speeds[speedIndex];
+    $('speed-cycle-btn').textContent = `${speed.toFixed(2).replace(/0+$/,'').replace(/\.$/,'')}x`;
+    $('speed-indicator').textContent = `${speed}x (${speed === 1 ? 'Natural' : 'Adjusted'})`;
+    $('voice-preview-audio').playbackRate = speed;
+  });
+  $('api-toggle-btn').addEventListener('click', () => $('api-panel').classList.toggle('hidden'));
+  $('copy-curl-btn').addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText('curl -X POST http://127.0.0.1:5000/api/generate -F "surah=55" -F "ayah_start=13" -F "ayah_end=16" -F "reciter_id=mishary_alafasy" -F "aspect_ratio=9:16" -F "theme=misty_forest" -F "transition=crossfade" -F "caption_style=classic" -F "speed=1.0"'); $('copy-status').textContent='Copied!'; }
+    catch { $('copy-status').textContent='Clipboard unavailable'; }
+  });
+
+  $('generate-video-btn').addEventListener('click', async () => {
+    const button = $('generate-video-btn'), status = $('render-status'), original = button.innerHTML;
+    button.disabled = true;
+    button.innerHTML = '<span class="material-symbols-outlined animate-spin">progress_activity</span><span>Rendering timed recitation…</span>';
+    status.className = 'rounded-lg px-3 py-2 text-sm bg-brand-50 text-brand-800';
+    status.textContent = 'Loading the selected reciter audio and rendering the ayah captions…';
+    try {
+      // A range can change immediately before Export, before the debounce fires.
+      // Synchronize the editor in that case, while preserving edits for the same range.
+      const verses = loadedVerseSelection === verseSelectionKey()
+        ? await loadVerses(false)
+        : await loadVerses(true);
+      const form = new FormData();
+      form.set('ayah_text', ayahText.value); form.set('aspect_ratio', ratio); form.set('reciter_id', selectedReciter);
+      form.set('transition', $('transition-style').value); form.set('caption_style', $('caption-style').value);
+      form.set('theme', theme); form.set('speed', speed);
+      form.set('caption_color', captionColor); form.set('wrap_width', String(wrapWidth));
+      form.set('surah', surahSelect.value); form.set('ayah_start', startInput.value); form.set('ayah_end', endInput.value);
+      if ($('background-file').files[0]) form.set('background', $('background-file').files[0]);
+      const response = await fetch('/api/generate', {method: 'POST', body: form});
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Render failed.');
+      status.className = 'rounded-lg px-3 py-2 text-sm bg-emerald-50 text-emerald-800';
+      status.replaceChildren(document.createTextNode(`Video ready · ${result.width}×${result.height} · ${result.duration.toFixed(1)} seconds · ${result.reciter} · ${verses.length} ayahs. `));
+      const link = document.createElement('a'); link.className = 'font-semibold underline'; link.href = result.download_url; link.textContent = 'Download MP4'; status.append(link);
+      const video = $('rendered-video'); video.src = result.download_url; video.classList.remove('hidden'); video.volume = Number($('preview-volume').value); video.load();
+      button.innerHTML = '<span class="material-symbols-outlined">check_circle</span><span>Video Ready</span>';
+    } catch (error) { status.className = 'rounded-lg px-3 py-2 text-sm bg-red-50 text-red-700'; status.textContent = error.message; button.innerHTML = original; }
+    finally { button.disabled = false; }
+  });
+
+  $('export-preview-btn').addEventListener('click', () => $('generate-video-btn').click());
+
+  $('preview-sample-btn').setAttribute('aria-label','Audition selected reciter voice');
+  $('selected-reciter-name').textContent = reciterById.get(selectedReciter)?.name || 'Mishary Rashid Alafasy';
+  $('preview-reciter-name').textContent = `Sheikh ${$('selected-reciter-name').textContent}`;
+  $('voice-preview-audio').volume = Number($('preview-volume').value);
+  setWallpaperPreview();
+  updateCaptionPreview().catch(error => showError(error));
+  updateSurahInfo();
+  loadVerses().then(() => updateCaptionPreview()).catch(showError);
+})();
+</script>
+</body></html>

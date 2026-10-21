@@ -1,0 +1,1 @@
+Selected recitations are streamed from MP3Quran.net at render time and cropped using their ayah timing data. No recitation recordings are bundled. You may upload a licensed audio file instead; it will be distributed evenly across the selected ayahs. A network connection is needed to render with the built-in qari catalog.

@@ -1,0 +1,7 @@
+__pycache__/
+.pytest_cache/
+.venv/
+*.py[cod]
+static/outputs/*
+!static/outputs/.gitkeep
+static/assets/audio/*.mp3
