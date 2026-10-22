@@ -10,7 +10,7 @@ def test_full_quran_catalog_and_local_text():
     assert len(SURAHS) == 114
     assert sum(item["ayah_count"] for item in SURAHS) == 6236
     assert len(get_ayahs(55, 13, 13)) == 1
-    assert len(RECITERS) == 20
+    assert len(RECITERS) == 25
 
 
 def test_all_aspect_ratio_dimensions():

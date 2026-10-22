@@ -17,13 +17,13 @@ def shape_arabic(text: str) -> str:
     """
     if not text or not text.strip():
         raise ValueError("Arabic caption text cannot be empty")
+    if PIL_HAS_RAQM:
+        return text
     try:
         from arabic_reshaper import ArabicReshaper
         from bidi.algorithm import get_display
     except ImportError as exc:
-        raise RuntimeError("Install arabic-reshaper and python-bidi to render Arabic captions") from exc
-    if PIL_HAS_RAQM:
-        return text
+        raise RuntimeError("Install arabic-reshaper and python-bidi when Pillow lacks RAQM support") from exc
     # Keep diacritics and shift them with their base glyph during visual-order
     # conversion. The package defaults to deleting them, which is unsuitable
     # for Uthmani Quran text.
@@ -74,7 +74,10 @@ def render_arabic_text(text: str, *, font_path=None, font_size=72, color=(255,25
                        glow_fill=None, glow_radius=0, show_surah_title=False, surah_title=None,
                        ayah_number=None, surah_color=(235, 205, 110, 255),
                        show_ayah_number=None, surah_template=None, ayah_number_template=None,
-                       surah_font_path=None, ayah_number_font_path=None) -> Image.Image:
+                       surah_font_path=None, ayah_number_font_path=None,
+                       surah_position_x=0, surah_position_y=0,
+                       ayah_number_position_x=0, ayah_number_position_y=0,
+                       output_size=None) -> Image.Image:
     """Return a readable RGBA Arabic caption with custom styling, contrast plate, and optional Surah header."""
     shape_arabic(text)  # Fail early with a clear message if shaping dependencies are unavailable.
     chosen_font = Path(font_path) if font_path else DEFAULT_FONT
@@ -101,7 +104,7 @@ def render_arabic_text(text: str, *, font_path=None, font_size=72, color=(255,25
     surah_style = style_for(surah_template, SURAH_NAME_TEMPLATES, SURAH_NAME_TEMPLATES["ornamental_gold"])
     number_style = style_for(ayah_number_template, AYAH_NUMBER_TEMPLATES, AYAH_NUMBER_TEMPLATES["gold_medallion"])
     if show_ayah_number is None:
-        show_ayah_number = bool(show_surah_title)
+        show_ayah_number = False
 
     def rgba(value, opacity=1.0, fallback=(235, 205, 110)):
         try:
@@ -130,7 +133,8 @@ def render_arabic_text(text: str, *, font_path=None, font_size=72, color=(255,25
             item_w = s_box[2] - s_box[0] + int(surah_style["padding_x"]) * 2
             item_h = s_box[3] - s_box[1] + int(surah_style["padding_y"]) * 2
             header_items.append({"kind": "title", "text": s_shaped, "font": h_font, "box": s_box,
-                                 "height": item_h, "width": item_w, "style": surah_style})
+                                 "height": item_h, "width": item_w, "style": surah_style,
+                                 "position_x": surah_position_x, "position_y": surah_position_y})
             header_max_w = max(header_max_w, item_w)
 
         if show_ayah_number and ayah_number is not None:
@@ -144,7 +148,8 @@ def render_arabic_text(text: str, *, font_path=None, font_size=72, color=(255,25
             if number_style.get("shape") == "medallion":
                 item_w = item_h = max(item_w, item_h)
             header_items.append({"kind": "badge", "text": badge_txt, "font": b_font, "box": b_box,
-                                 "height": item_h, "width": item_w, "style": number_style})
+                                 "height": item_h, "width": item_w, "style": number_style,
+                                 "position_x": ayah_number_position_x, "position_y": ayah_number_position_y})
             header_max_w = max(header_max_w, item_w)
 
         before_items = [item for item in header_items if item["style"].get("placement", "above") != "below"]
@@ -168,10 +173,46 @@ def render_arabic_text(text: str, *, font_path=None, font_size=72, color=(255,25
     (font, shaped_lines, boxes, line_height, content_width,
      total_w, verse_h, before_items, after_items, before_h, after_h, height) = layout_result
     width = total_w + pad_x * 2
+    frame_width, frame_height = output_size or (width, height)
+    for item in (*before_items, *after_items):
+        try:
+            x_percent = max(-8.0, min(8.0, float(item.get("position_x") or 0)))
+            y_percent = max(-8.0, min(8.0, float(item.get("position_y") or 0)))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Surah and ayah position offsets must be numbers from -8 to 8 percent.") from exc
+        item["_position_x"] = int(round(frame_width * x_percent / 100))
+        item["_position_y"] = int(round(frame_height * y_percent / 100))
+        # Keep labels in their own header lane: they may move freely away from
+        # the verse, but a move toward the verse cannot cross the reserved gap.
+        if item["style"].get("placement", "above") != "below":
+            item["_position_y"] = min(item["_position_y"], 8)
+        else:
+            item["_position_y"] = max(item["_position_y"], -8)
+    x_offsets = [item["_position_x"] for item in (*before_items, *after_items)]
+    y_offsets = [item["_position_y"] for item in (*before_items, *after_items)]
+    pad_left, pad_right = max(0, -min(x_offsets, default=0)), max(0, max(x_offsets, default=0))
+    pad_top, pad_bottom = max(0, -min(y_offsets, default=0)), max(0, max(y_offsets, default=0))
+    width += pad_left + pad_right
+    height += pad_top + pad_bottom
 
     image = Image.new("RGBA", (width, height), (0,0,0,0)); draw = ImageDraw.Draw(image)
     if backdrop_fill is not None and backdrop_fill != "none":
-        draw.rounded_rectangle((0, 0, width - 1, height - 1), radius=corner_radius, fill=backdrop_fill)
+        draw.rounded_rectangle((pad_left, pad_top, width - pad_right - 1, height - pad_bottom - 1),
+                               radius=corner_radius, fill=backdrop_fill)
+
+    positions = []
+    for idx, (text_line, box) in enumerate(zip(shaped_lines, boxes)):
+        x = (total_w - (box[2]-box[0])) // 2 - box[0] + pad_x + pad_left
+        y = pad_y + before_h + idx*line_height - box[1] + pad_top
+        positions.append((text_line, x, y))
+    obstacles = [
+        (x + box[0] - stroke_width, y + box[1] - stroke_width,
+         x + box[2] + stroke_width, y + box[3] + stroke_width)
+        for (_text_line, x, y), box in zip(positions, boxes)
+    ]
+
+    def intersects(candidate, rect):
+        return candidate[0] < rect[2] and candidate[2] > rect[0] and candidate[1] < rect[3] and candidate[3] > rect[1]
 
     def draw_label(item, curr_y):
         nonlocal draw
@@ -179,13 +220,25 @@ def render_arabic_text(text: str, *, font_path=None, font_size=72, color=(255,25
             style = item["style"]
             item_w, item_h = item["width"], item["height"]
             align = style.get("align", "center")
+            base_width = width - pad_left - pad_right
             if align == "left":
-                item_x = pad_x
+                item_x = pad_left + pad_x
             elif align == "right":
-                item_x = width - pad_x - item_w
+                item_x = pad_left + base_width - pad_x - item_w
             else:
-                item_x = (width - item_w) // 2
-            item_y = curr_y
+                item_x = pad_left + (base_width - item_w) // 2
+            item_x = max(0, min(width - item_w, item_x + item["_position_x"]))
+            item_y = max(0, min(height - item_h, curr_y + pad_top + item["_position_y"]))
+            label_rect = (item_x - 2, item_y - 2, item_x + item_w + 2, item_y + item_h + 2)
+            if any(intersects(label_rect, rect) for rect in obstacles):
+                candidates = sorted(range(max(0, pad_top - item_h), min(height - item_h, pad_top + height) + 1),
+                                    key=lambda candidate: abs(candidate - item_y))
+                for candidate_y in candidates:
+                    candidate_rect = (item_x - 2, candidate_y - 2, item_x + item_w + 2, candidate_y + item_h + 2)
+                    if not any(intersects(candidate_rect, rect) for rect in obstacles):
+                        item_y = candidate_y
+                        label_rect = candidate_rect
+                        break
             background = style.get("background")
             shape = style.get("shape", "none")
             if background and shape != "none":
@@ -227,6 +280,7 @@ def render_arabic_text(text: str, *, font_path=None, font_size=72, color=(255,25
                 image.alpha_composite(glow.filter(ImageFilter.GaussianBlur(max(2, int(item["font"].size) // 100))))
                 draw = ImageDraw.Draw(image)
             draw.text((hx, hy), item["text"], font=item["font"], fill=h_color, **text_options)
+            obstacles.append(label_rect)
             curr_y += item_h + 8
 
             if style.get("accent_line"):
@@ -241,12 +295,6 @@ def render_arabic_text(text: str, *, font_path=None, font_size=72, color=(255,25
     curr_y = pad_y
     for item in before_items:
         curr_y = draw_label(item, curr_y)
-
-    positions = []
-    for idx, (text_line, box) in enumerate(zip(shaped_lines, boxes)):
-        x = (width - (box[2]-box[0])) // 2 - box[0]
-        y = curr_y + idx*line_height - box[1]
-        positions.append((text_line, x, y))
 
     if glow_fill and glow_radius:
         glow = Image.new("RGBA", image.size, (0, 0, 0, 0))

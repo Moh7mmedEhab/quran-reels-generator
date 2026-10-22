@@ -212,11 +212,19 @@ def test_verse_endpoint_rejects_out_of_range_ayah():
     assert response.status_code == 400
 
 
-def test_reciter_endpoint_returns_twenty_streamable_reciters():
+def test_reciter_endpoint_returns_streamable_recordings_with_source_metadata():
     response = create_app(TestConfig).test_client().get("/api/reciters")
     assert response.status_code == 200
-    assert len(response.json["reciters"]) == len(RECITERS) == 20
-    assert all(item["audio_base_url"].startswith("https://") for item in RECITERS)
+    assert len(response.json["reciters"]) == len(RECITERS) == 25
+    assert all(item["audio_base_url"].startswith("https://") for item in response.json["reciters"])
+    assert all(item["source"] == "MP3Quran.net" for item in response.json["reciters"])
+    groups = {}
+    for item in response.json["reciters"]:
+        groups.setdefault(item["group_id"], []).append(item)
+    assert len(groups["minshawi"]) == 1
+    assert len(groups["abdul_basit"]) == 2
+    assert len(groups["husary"]) == 5
+    assert {item["read_id"] for item in RECITERS if item["group_id"] == "husary"} == {118, 119, 120, 269, 270}
 
 
 def test_reciter_preview_builds_selected_chapter_url():
@@ -225,13 +233,28 @@ def test_reciter_preview_builds_selected_chapter_url():
     assert response.json["audio_url"].endswith("/055.mp3")
 
 
-def test_background_endpoint_lists_twenty_presets():
+def test_mujawwad_recording_preview_uses_its_own_audio_archive():
+    response = create_app(TestConfig).test_client().get("/api/reciters/abdul_basit_mujawwad/preview?surah=55")
+    assert response.status_code == 200
+    assert response.json["audio_url"] == "https://cdn.mp3quran.net/audio/abdulbasit-abdulsamad/r1/055.mp3"
+
+
+def test_background_endpoint_lists_twenty_three_presets_including_bundled_photos():
     response = create_app(TestConfig).test_client().get("/api/backgrounds")
     assert response.status_code == 200
-    assert len(response.json["backgrounds"]) == 20
+    assert len(response.json["backgrounds"]) == 23
     assert {item["category"] for item in response.json["backgrounds"]} >= {
         "Nature & Landscapes", "Islamic Architecture", "Night & Celestial"
     }
+    from PIL import Image
+    asset_root = Path(__file__).resolve().parents[1] / "static" / "assets" / "backgrounds"
+    for theme in ("lake_dawn", "haram_night", "misty_valley"):
+        with Image.open(asset_root / f"{theme}.jpg") as original:
+            assert original.width == 3000
+        assert (asset_root / f"{theme}_cinematic.jpg").is_file()
+        preview = create_app(TestConfig).test_client().get(f"/api/backgrounds/{theme}/preview?ratio=9:16")
+        assert preview.status_code == 200
+        assert preview.mimetype == "image/jpeg"
 
 
 def test_background_preview_returns_image_and_rejects_bad_ratio():
@@ -264,8 +287,120 @@ def test_video_template_preview_composes_the_arabic_and_viewer_layers():
 def test_font_catalog_lists_bundled_arabic_font_families():
     response = create_app().test_client().get("/api/fonts")
     assert response.status_code == 200
-    assert len(response.json["fonts"]) >= 4
+    assert {"amiri", "amiri_bold", "naskh", "naskh_bold", "sans", "sans_bold", "kufi", "kufi_bold"} <= {
+        item["id"] for item in response.json["fonts"]
+    }
+    assert len(response.json["fonts"]) >= 8
     assert response.json["default"] == "naskh"
+
+
+def test_caption_preview_uses_position_controls_and_validates_safe_ranges():
+    client = create_app(TestConfig).test_client()
+    payload = {
+        "text": "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ", "aspect_ratio": "9:16",
+        "show_surah_title": True, "show_ayah_number": True,
+    }
+    centered = client.post("/api/caption-preview", json=payload)
+    shifted = client.post("/api/caption-preview", json={
+        **payload, "caption_x": 58, "caption_y": 46,
+        "surah_x_offset": -5, "surah_y_offset": -5,
+        "ayah_number_x_offset": 5, "ayah_number_y_offset": 5,
+    })
+    assert centered.status_code == shifted.status_code == 200
+    assert centered.data != shifted.data
+    assert client.post("/api/caption-preview", json={**payload, "caption_x": 101}).status_code == 400
+    assert client.post("/api/caption-preview", json={**payload, "ayah_number_y_offset": 9}).status_code == 400
+
+
+def test_caption_preview_rejects_invalid_caption_and_label_colors():
+    client = create_app(TestConfig).test_client()
+    payload = {"text": "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ"}
+    invalid_values = [
+        {"caption_color": "not-a-color"},
+        {"surah_color": "#12GG00"},
+        {"ayah_color": "#abc"},
+    ]
+    for values in invalid_values:
+        response = client.post("/api/caption-preview", json={**payload, **values})
+        assert response.status_code == 400
+        assert "color" in response.json["error"].lower()
+
+    valid = client.post("/api/caption-preview", json={
+        **payload, "caption_color": "#12aBcD", "surah_color": "#456789", "ayah_color": "#fedcba",
+    })
+    assert valid.status_code == 200
+
+
+def test_generate_rejects_invalid_label_color_before_audio_download(monkeypatch):
+    import app.routes as routes
+    monkeypatch.setattr(routes, "download_recitation", lambda *args, **kwargs: pytest.fail(
+        "Invalid colors should be rejected before fetching audio"))
+    response = create_app(TestConfig).test_client().post("/api/generate", json={
+        "surah": 55, "ayah_start": 13, "ayah_end": 13,
+        "reciter_id": "mishary_alafasy", "surah_color": "invalid",
+    })
+    assert response.status_code == 400
+    assert "Surah name color" in response.json["error"]
+
+
+def test_url_background_import_is_persistent_and_preserves_original_bytes(monkeypatch, tmp_path):
+    from io import BytesIO
+    from PIL import Image
+    import app.routes as routes
+
+    original = BytesIO()
+    Image.new("RGB", (123, 77), (18, 91, 143)).save(original, format="PNG")
+    data = original.getvalue()
+
+    class ImportConfig(TestConfig):
+        OUTPUT_FOLDER = tmp_path / "outputs"
+
+    monkeypatch.setattr(routes, "_download_public_image", lambda _url: (data, "image/png", "images.example"))
+    client = create_app(ImportConfig).test_client()
+    imported = client.post("/api/backgrounds/import-url", json={"url": "https://images.example/photo.png"})
+    assert imported.status_code == 201
+    item = imported.json
+    assert (item["width"], item["height"], item["format"]) == (123, 77, "PNG")
+    assert item["size_bytes"] == len(data)
+    assert client.get(item["file_url"]).data == data
+    assert client.get("/api/backgrounds/imported").json["backgrounds"][0]["id"] == item["id"]
+    assert client.delete(f"/api/backgrounds/imported/{item['id']}").json["deleted"] is True
+    assert client.get(item["file_url"]).status_code == 404
+
+
+def test_url_background_import_blocks_local_hosts_private_dns_and_redirects(monkeypatch):
+    import socket
+    import app.routes as routes
+
+    client = create_app(TestConfig).test_client()
+    for url in ("file:///etc/passwd", "http://localhost/image.png", "http://127.0.0.1/image.png",
+                "http://192.168.1.4/image.png", "https://example.local/image.png"):
+        response = client.post("/api/backgrounds/import-url", json={"url": url})
+        assert response.status_code == 400
+
+    monkeypatch.setattr(routes.socket, "getaddrinfo", lambda *args, **kwargs: [
+        (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.8", 443))
+    ])
+    with pytest.raises(ValueError, match="private network"):
+        routes._resolved_public_addresses("images.example", 443)
+
+    class RedirectResponse:
+        status = 302
+        def getheader(self, name):
+            return "http://127.0.0.1/private.png" if name == "Location" else None
+
+    connections = []
+    class FakeConnection:
+        def __init__(self, *args, **kwargs): connections.append(self)
+        def request(self, *args, **kwargs): pass
+        def getresponse(self): return RedirectResponse()
+        def close(self): pass
+
+    monkeypatch.setattr(routes, "_resolved_public_addresses", lambda *_: ["93.184.216.34"])
+    monkeypatch.setattr(routes, "_PinnedHTTPConnection", FakeConnection)
+    with pytest.raises(ValueError, match="private network"):
+        routes._download_public_image("http://images.example/start")
+    assert len(connections) == 1
 
 
 def test_scene_plan_endpoint_groups_by_word_count_without_inventing_times():
@@ -754,7 +889,7 @@ def test_generate_success_uses_local_ayah_text_and_selected_qari(monkeypatch, tm
     assert captured["theme"] == "desert_dawn"
     assert captured["caption_color"] == "gold"
     assert captured["wrap_width"] == 75
-    assert captured["show_surah_title"] is True
+    assert captured["show_surah_title"] is False
     assert captured["surah_title"] == routes._surah_caption_title(55)
     assert captured["caption_position"] == "center"
     assert captured["caption_style"] == "golden_illuminated"

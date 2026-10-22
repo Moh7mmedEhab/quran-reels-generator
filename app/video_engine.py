@@ -39,6 +39,9 @@ THEMES = {
     "lavender_twilight": {"name": "Ouarzazate at Blue Hour", "top": (30, 20, 50), "bottom": (75, 40, 95), "accent": (230, 190, 255)},
     "jade_courtyard": {"name": "Sheikh Zayed Mosque Interior", "top": (10, 25, 30), "bottom": (20, 55, 50), "accent": (235, 200, 120)},
     "crescent_garden": {"name": "Imperial Crescent & Stars", "top": (12, 16, 24), "bottom": (25, 30, 40), "accent": (240, 205, 110)},
+    "lake_dawn": {"name": "Misty Lake at First Light", "top": (31, 56, 69), "bottom": (41, 65, 66), "accent": (218, 197, 147)},
+    "haram_night": {"name": "Masjid al-Haram by Night", "top": (10, 14, 25), "bottom": (34, 35, 39), "accent": (231, 198, 128)},
+    "misty_valley": {"name": "Sunrise Over a Misty Valley", "top": (94, 112, 115), "bottom": (36, 55, 49), "accent": (232, 211, 166)},
 }
 THEME_CATEGORIES = {
     "sahara_moon": "Night & Celestial", "aurora_drift": "Abstract & Light",
@@ -51,6 +54,8 @@ THEME_CATEGORIES = {
     "pearl_dawn": "Luxury & Minimal", "ocean_calm": "Water & Atmosphere",
     "misty_forest": "Nature & Landscapes", "lavender_twilight": "Abstract & Light",
     "jade_courtyard": "Islamic Architecture", "crescent_garden": "Night & Celestial",
+    "lake_dawn": "Water & Atmosphere", "haram_night": "Islamic Architecture",
+    "misty_valley": "Nature & Landscapes",
 }
 CAPTION_COLORS = {
     "white": "#ffffff", "ivory": "#fff3d2", "gold": "#ffd166", "amber": "#ffb703",
@@ -230,6 +235,8 @@ def render_caption_image(text, *, aspect_ratio, font_path=None, caption_style="c
                          ayah_number_template="gold_medallion", ayah_color=None,
                          surah_scale=None, ayah_number_scale=None,
                          surah_align=None, ayah_number_align=None,
+                         surah_position_x=0, surah_position_y=0,
+                         ayah_number_position_x=0, ayah_number_position_y=0,
                          surah_font_path=None, ayah_number_font_path=None,
                          surah_opacity=None, ayah_number_opacity=None,
                          surah_placement=None, ayah_number_placement=None,
@@ -281,6 +288,9 @@ def render_caption_image(text, *, aspect_ratio, font_path=None, caption_style="c
         surah_template=surah_config, ayah_number_template=number_config, **options,
         surah_font_path=surah_config.get("font_path"),
         ayah_number_font_path=number_config.get("font_path"),
+        surah_position_x=surah_position_x, surah_position_y=surah_position_y,
+        ayah_number_position_x=ayah_number_position_x, ayah_number_position_y=ayah_number_position_y,
+        output_size=(width, height),
     )
 
 
@@ -450,7 +460,7 @@ def _fit_video_clip(clip, size, fit_mode, crop_x, crop_y, vfx):
 
 
 def _adjust_background_frame(frame, *, background_brightness=1, background_contrast=1,
-                            background_saturation=1, background_overlay_color="#0b1626",
+                            background_saturation=1, background_overlay_color="#000000",
                             background_overlay_opacity=0):
     """Apply the same lightweight color grade to still and video background frames."""
     pixels = np.asarray(frame)
@@ -463,7 +473,7 @@ def _adjust_background_frame(frame, *, background_brightness=1, background_contr
     contrast = float(background_contrast)
     saturation = float(background_saturation)
     overlay_opacity = float(background_overlay_opacity)
-    red, green, blue = _parse_color(background_overlay_color, (11, 22, 38))
+    red, green, blue = _parse_color(background_overlay_color, (0, 0, 0))
     pixels = (pixels - 127.5) * contrast + 127.5
     pixels *= brightness
     luminance = (pixels[:, :, 0:1] * .2126 + pixels[:, :, 1:2] * .7152 + pixels[:, :, 2:3] * .0722)
@@ -678,11 +688,13 @@ def _build_video_sequence(clip_specs, *, size, theme, total_duration, fit_mode,
         layers.append(still.with_position("center"))
         sources.append(still)
 
-    composed = CompositeVideoClip(layers, size=(width, height)).with_duration(total_duration)
+    # The theme frame is a full-size opaque base. Reuse it directly instead of
+    # making MoviePy build a full-resolution transparency mask for every frame.
+    composed = CompositeVideoClip(layers, size=(width, height), use_bgclip=True).with_duration(total_duration)
     sources.append(composed)
     shade = ImageClip(np.asarray(Image.new("RGBA", (width, height), (0, 0, 0, 41)))).with_duration(total_duration)
     sources.append(shade)
-    result = CompositeVideoClip([composed, shade], size=(width, height)).with_duration(total_duration)
+    result = CompositeVideoClip([composed, shade], size=(width, height), use_bgclip=True).with_duration(total_duration)
     sources.append(result)
     return result, audio_layers
 
@@ -771,6 +783,7 @@ def render_reel(*, ayahs, output_path, aspect_ratio="9:16", audio_path=None,
                 ayah_number_template="gold_medallion", ayah_color=None,
                 surah_scale=None, ayah_number_scale=None,
                 surah_align=None, ayah_number_align=None,
+                caption_x=50, caption_y=None,
                 caption_position="center", max_lines=5, words_per_scene=8, scene_overrides=None,
                 show_quran_text=True, viewer_surah_name="", viewer_surah_number=1, reciter_name="",
                 translation_lines=None, viewer_options=None,
@@ -778,7 +791,7 @@ def render_reel(*, ayahs, output_path, aspect_ratio="9:16", audio_path=None,
                 background_speed=1.0, background_loop=True,
                 background_audio_enabled=False, background_audio_volume=.08,
                 background_brightness=1, background_contrast=1, background_saturation=1,
-                background_overlay_color="#0b1626", background_overlay_opacity=0,
+                background_overlay_color="#000000", background_overlay_opacity=0,
                 background_animation_enabled=False, background_animation_preset="static",
                 background_animation_intensity=.6, background_animation_duration=12,
                 background_animation_speed=1.0, background_animation_start=0.0,
@@ -852,6 +865,13 @@ def render_reel(*, ayahs, output_path, aspect_ratio="9:16", audio_path=None,
         raise ValueError("Speed must be 0.9, 1.0, or 1.15.")
     if caption_position not in {"upper", "center", "lower"}:
         raise ValueError("Caption position must be upper, center, or lower.")
+    try:
+        caption_x = float(caption_x)
+        caption_y = None if caption_y is None else float(caption_y)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Caption X and Y positions must be numbers from 0 to 100.") from exc
+    if not 0 <= caption_x <= 100 or (caption_y is not None and not 0 <= caption_y <= 100):
+        raise ValueError("Caption X and Y positions must be between 0 and 100 percent.")
     if background_fit not in BACKGROUND_FIT_MODES:
         raise ValueError("Background fit must be cover, contain, stretch, or blurred.")
     try:
@@ -1100,11 +1120,11 @@ def render_reel(*, ayahs, output_path, aspect_ratio="9:16", audio_path=None,
                         still = _call(still, "set_position", "with_position", "center")
                     background_sources.append(still)
                     layers.append(still)
-            video_scene = CompositeVideoClip(layers, size=(width, height)).with_duration(video_duration)
+            video_scene = CompositeVideoClip(layers, size=(width, height), use_bgclip=True).with_duration(video_duration)
             background_sources.append(video_scene)
             dim_layer = ImageClip(np.asarray(Image.new("RGBA", (width, height), (0, 0, 0, 41)))).with_duration(video_duration)
             background_sources.append(dim_layer)
-            background_clip = CompositeVideoClip([video_scene, dim_layer], size=(width, height)).with_duration(video_duration)
+            background_clip = CompositeVideoClip([video_scene, dim_layer], size=(width, height), use_bgclip=True).with_duration(video_duration)
         else:
             wallpaper = _background(background_path, (width, height), theme, background_fit, crop_x, crop_y)
             wallpaper = Image.fromarray(_adjust_background_frame(wallpaper, **background_adjustments))
@@ -1126,12 +1146,12 @@ def render_reel(*, ayahs, output_path, aspect_ratio="9:16", audio_path=None,
                 background_clip = VideoClip(make_frame=make_background_frame, duration=video_duration)
 
         if background_overlay_opacity:
-            overlay_color = _parse_color(background_overlay_color, (11, 22, 38))
+            overlay_color = _parse_color(background_overlay_color, (0, 0, 0))
             overlay_image = Image.new("RGBA", (width, height), (*overlay_color, round(255 * background_overlay_opacity)))
             overlay_clip = ImageClip(np.asarray(overlay_image)).with_duration(video_duration)
             background_sources.append(overlay_clip)
             background_clip = CompositeVideoClip(
-                [background_clip, overlay_clip], size=(width, height)
+                [background_clip, overlay_clip], size=(width, height), use_bgclip=True
             ).with_duration(video_duration)
             background_sources.append(background_clip)
 
@@ -1146,7 +1166,7 @@ def render_reel(*, ayahs, output_path, aspect_ratio="9:16", audio_path=None,
             )
             background_sources.append(light_layer)
             background_clip = CompositeVideoClip(
-                [background_clip, light_layer], size=(width, height)
+                [background_clip, light_layer], size=(width, height), use_bgclip=True
             ).with_duration(video_duration)
             background_sources.append(background_clip)
 
@@ -1184,9 +1204,20 @@ def render_reel(*, ayahs, output_path, aspect_ratio="9:16", audio_path=None,
                     caption_clip = caption_clip.with_effects([fade_in(min(0.2, verse_duration * 0.15))])
                 anchor = {"upper": 0.34, "center": 0.43 if translation and viewer_options.get("show_translation") else 0.54,
                           "lower": 0.72}[caption_position]
-                caption_y = max(int(height * 0.12), min(int(height * anchor - caption_image.height / 2), height - caption_image.height - int(height * 0.12)))
-                scene_caption_y = caption_y
-                caption_clip = _call(caption_clip, "set_position", "with_position", ("center", caption_y))
+                horizontal_center = int(width * caption_x / 100)
+                vertical_center = int(height * (caption_y / 100 if caption_y is not None else anchor))
+                min_x = int(width * .03)
+                max_x = width - caption_image.width - min_x
+                if max_x < min_x:
+                    min_x, max_x = 0, max(0, width - caption_image.width)
+                caption_x_px = max(min_x, min(horizontal_center - caption_image.width // 2, max_x))
+                min_y = int(height * .12)
+                max_y = height - caption_image.height - min_y
+                if max_y < min_y:
+                    min_y, max_y = 0, max(0, height - caption_image.height)
+                caption_y_px = max(min_y, min(vertical_center - caption_image.height // 2, max_y))
+                scene_caption_y = caption_y_px
+                caption_clip = _call(caption_clip, "set_position", "with_position", (caption_x_px, caption_y_px))
                 caption_clips.append(caption_clip)
 
             scene_viewer_options = dict(viewer_options)
@@ -1213,7 +1244,12 @@ def render_reel(*, ayahs, output_path, aspect_ratio="9:16", audio_path=None,
                 duration=video_duration,
             )
             viewer_clips.append(playback_layer)
-        output = CompositeVideoClip([background_clip, *caption_clips, *viewer_clips], size=(width, height)).with_duration(video_duration)
+        # A rendered video frame is always opaque. Giving MoviePy that invariant
+        # prevents creation of a redundant output mask on every frame.
+        output = CompositeVideoClip(
+            [background_clip, *caption_clips, *viewer_clips],
+            size=(width, height), bg_color=(0, 0, 0),
+        ).with_duration(video_duration)
         if audio_segment is not None:
             audio_for_video = _call(audio_segment, "subclip", "subclipped", 0, recitation_audio_duration)
             if background_audio_layers:

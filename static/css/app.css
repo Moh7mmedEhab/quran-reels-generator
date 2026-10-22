@@ -1,6 +1,7 @@
 :root { color-scheme: light; --brand:#006aff; }
 body { background: #f8fafc; color: #131b2e; }
 textarea, input, select, button { font: inherit; }
+#caption-color-hex[aria-invalid="true"], #surah-color-hex[aria-invalid="true"], #ayah-color-hex[aria-invalid="true"] { border-color:#ef4444; background:#fffafa; box-shadow:0 0 0 2px rgb(239 68 68 / .1); }
 button:disabled { cursor: wait; opacity: .72; }
 .selected-ratio { border: 2px solid #006aff !important; background: #e5f1ff !important; color: #0046a8 !important; }
 #reciter-dropdown { max-height: 20rem; }
@@ -216,7 +217,12 @@ button:disabled { cursor: wait; opacity: .72; }
 #preview-stage { min-height:660px; padding:2rem; display:flex; flex-direction:column; align-items:center; justify-content:center; position:relative; overflow:hidden; border:1px solid #e2e8f0; border-radius:1rem; background:#f1f5f9; }
 #reel-mockup { position:relative; width:100%; max-width:340px; padding:12px; border:4px solid #f1f5f9; border-radius:38px; background:#fff; box-shadow:0 25px 50px -12px rgb(15 23 42 / .3); }
 .preview-frame { position:relative; width:100%; aspect-ratio:9/16; overflow:hidden; display:flex; align-items:center; justify-content:center; border-radius:28px; background:#05080d; }
-.caption-preview-overlay { display:none; position:absolute; z-index:10; left:50%; top:50%; height:auto; max-width:none; transform:translateX(-50%); pointer-events:none; }
+.caption-preview-overlay { display:none; position:absolute; z-index:10; left:0; top:0; height:auto; max-width:none; transform:none; pointer-events:none; }
+input[type="checkbox"],input[type="radio"] { accent-color:#006aff; cursor:pointer; transition:accent-color .14s ease,filter .14s ease; }
+input[type="checkbox"] { width:1rem; height:1rem; flex:none; border-radius:.28rem; }
+input[type="checkbox"]:hover,input[type="radio"]:hover { filter:brightness(.94); }
+input[type="checkbox"]:focus-visible,input[type="radio"]:focus-visible { outline:2px solid #006aff; outline-offset:2px; }
+button:focus-visible,summary:focus-visible { outline:2px solid #006aff; outline-offset:2px; }
 .viewer-title-badge { position:absolute; z-index:15; top:5.5%; left:50%; display:flex; align-items:center; justify-content:center; gap:.42rem; width:max-content; max-width:90%; overflow:hidden; padding:.42rem .7rem; transform:translateX(-50%); border:1px solid rgb(255 255 255 / .3); border-radius:999px; background:rgb(16 22 29 / var(--viewer-title-opacity,.88)); color:#fff; box-shadow:0 4px 14px rgb(0 0 0 / .2); font-size:clamp(8px,2.7vw,14px); line-height:1.15; white-space:normal; pointer-events:none; }
 .viewer-title-copy { display:flex; min-width:0; max-width:100%; flex-direction:column; align-items:center; gap:.12em; text-align:center; }
 .viewer-title-copy > span { max-width:100%; overflow-wrap:anywhere; }

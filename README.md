@@ -1,6 +1,6 @@
-# Quran Reels Generator v1.0
+# Quran Reels Generator v1.2
 
-Release 1.0.0 of a light-theme Flask studio for rendering the complete Quran in Arabic with a choice of 20 qaris. MoviePy creates MP4 output at 9:16, 16:9, or 1:1, with optional camera movement and crossfades. PIL renders Arabic captions with right-to-left shaping and bidirectional text processing. The app includes twenty wallpapers, sixteen caption colors, and four long-ayah wrap widths; users can upload image or video backgrounds.
+Release 1.2.0 of a light-theme Flask studio for rendering the complete Quran in Arabic with 20 reciters and 25 timed recordings. MoviePy creates MP4 output at 9:16, 16:9, or 1:1, with optional camera movement and crossfades. PIL renders Arabic captions with right-to-left shaping and bidirectional text processing. The app includes twenty-three wallpapers, sixteen caption colors, and four long-ayah wrap widths; users can upload image or video backgrounds or securely import a public image URL.
 
 ## Run locally
 
@@ -24,6 +24,43 @@ The local launcher keeps Flask's debugger and reloader off by default. Set
 application as `run:app`; for a Linux deployment, set a stable, private
 `QURAN_REELS_SECRET_KEY` and run it behind a TLS-terminating reverse proxy:
 
+## Local image generation with ComfyUI
+
+Image generation uses a ComfyUI server on the same machine by default. Install
+ComfyUI, place a compatible checkpoint in `ComfyUI/models/checkpoints`, start
+its server on port `8188`, then set these values in the project `.env` file (or
+the server environment):
+
+```dotenv
+COMFYUI_BASE_URL=http://127.0.0.1:8188
+COMFYUI_CHECKPOINT=Realistic_Vision_V6.0_NV_B1_fp16.safetensors
+COMFYUI_TIMEOUT_SECONDS=300
+```
+
+The image generator has two main choices: local ComfyUI, which does not use an
+image-service API, or Pollinations online. Pollinations online has a no-key
+classic option and a separate authenticated API option. The classic
+`image.pollinations.ai` option does not require an API key, but it is maintained
+separately and its availability or model list may change. For the current
+`gen.pollinations.ai` API, get a
+server-side key from
+[enter.pollinations.ai](https://enter.pollinations.ai);
+set `POLLINATIONS_API_KEY` in `.env`. The model picker loads the live image
+catalog and honors the models allowed by the configured key. Its default model
+is `black-forest-labs/flux.1-schnell`; override it with
+`POLLINATIONS_IMAGE_MODEL`. Pollinations requests spend Pollen according to the
+selected model and key budget. The key is used only by the server and is not
+exposed to the browser.
+
+The checkpoint name must match a file installed in ComfyUI. The default is
+`Realistic_Vision_V6.0_NV_B1_fp16.safetensors`, an SD 1.5 model. The generator
+sends a built-in text-to-image workflow to ComfyUI's HTTP API and creates
+portrait 576×1024, landscape 1024×576, or square 768×768 images. Generated images and
+JSON metadata are saved under `<QURAN_REELS_OUTPUT_FOLDER>/generated-images`
+and can be selected as video backgrounds. Use a persistent output volume in
+deployments where the application filesystem is ephemeral. ComfyUI and the
+chosen model run on your own hardware; generation speed depends on that hardware.
+
 ```bash
 gunicorn --workers 1 --threads 4 --timeout 600 run:app
 ```
@@ -32,7 +69,9 @@ The renderer uses one background worker by default so concurrent exports do
 not exhaust memory. Keep the output directory on persistent storage and apply
 the retention and access controls required by your deployment.
 
-The renderer uses `static/assets/NotoNaskhArabic-Regular.ttf`. Uthmani Arabic text for all 114 surahs (6,236 ayahs) is included in `static/data/quran_uthmani.json`. The app fetches the chosen qari's chapter recording and verse timing from MP3Quran.net, then advances one ayah at a time at its recitation boundary. This requires an internet connection. A live preview can audition the selected range and update the displayed ayah with the recitation. The Image and Video background tabs include twenty still wallpapers and three silent MP4 loops generated locally from the already credited bundled photos; users can also upload image or video backgrounds. Source background audio is off unless enabled. The selected surah and ayah range must match the number of Arabic text lines entered when you edit the captions.
+The renderer uses bundled Amiri, Noto Naskh Arabic, Noto Sans Arabic, and Noto Kufi Arabic in regular and bold weights. The font picker includes live samples and a Reset Typography action. Uthmani Arabic text for all 114 surahs (6,236 ayahs) is included in `static/data/quran_uthmani.json`. The app fetches the chosen reciter's chapter recording and verse timing from MP3Quran.net, then advances one ayah at a time at its recitation boundary. This requires an internet connection. Twenty reciters provide 25 distinct timed recordings, grouped by reciter and labeled with the recording style and verified riwayah when available. A live preview can audition the selected range and update the displayed ayah with the recitation. The Image and Video background tabs include twenty-three still wallpapers and three silent MP4 loops generated locally from the credited bundled photos; users can also upload image or video backgrounds. Public JPEG, PNG, and WEBP image URLs can also be imported into a persistent gallery. URL imports reject private and local network destinations, pin DNS-resolved public IPs, recheck every redirect, limit downloads to 25 MB, verify image bytes, and preserve the original image file and detected dimensions. Source background audio is off unless enabled. The selected surah and ayah range must match the number of Arabic text lines entered when you edit the captions.
+
+Surah and ayah decorations start disabled in a new studio project. When enabled, each can use a separate font, style, color, opacity, alignment, above/below placement, and X/Y offset. The caption group has its own X/Y position sliders, and each element has a position reset that leaves other settings intact. Position coordinates scale to the selected aspect ratio and resolution. The background color overlay remains disabled by default and starts with black at 0% opacity.
 
 For optional word-synchronized phrase scenes, configure Quran Foundation Content API credentials and a matched chapter-reciter ID map:
 
@@ -50,7 +89,21 @@ Generated MP4s are saved in `static/outputs/` and downloaded through the app. Do
 
 GET /api/version returns the application version. GET /api/youtube-metadata?surah=55&start=13&end=14&reciter_id=mishary_alafasy returns editable Arabic and English YouTube titles, descriptions, tags, and hashtags. GET /api/reciters/<id>/timings returns ayah boundaries and validated word segments when the optional Quran Foundation setup is active. POST /api/generate accepts multipart form data, including an optional video_title and encoder. Renders are asynchronous: poll /api/jobs/<job_id> and download from its download_url.
 
-NVENC encodes H.264 exports when the Quadro is selected or detected by auto. MoviePy scene composition still runs on the CPU. Auto mode falls back to x264 if NVIDIA encoding fails.
+NVENC encodes H.264 exports when supported by the installed GPU and FFmpeg. MoviePy scene composition still runs on the CPU. Auto mode falls back to x264 if hardware encoding is unavailable or fails.
+
+## Rendering benchmark
+
+A controlled 4-second, two-ayah portrait export was profiled before and after
+the MoviePy composite optimization. Both runs used 1080×1920, 30 fps, the
+balanced preset, x264 at CRF 23, the same visual effects, and the same audio.
+Under the same cProfile instrumentation, render time fell from 23.019 seconds
+to 11.795 seconds (48.7% less). Both MP4 files were 304,797 bytes. FFmpeg
+decoded all 120 video frames to identical pixel hashes and the AAC audio to the
+same PCM hash; ffprobe reported matching resolution, frame rate, duration,
+H.264/AAC streams, and file size. This is one short controlled sample, so
+longer reels and different effects can have different speedups. The host had no
+available NVENC or Intel Quick Sync device, so the benchmark used the software
+x264 fallback.
 
 To force an export through NVIDIA NVENC from a terminal, submit a render job and poll its returned job ID:
 

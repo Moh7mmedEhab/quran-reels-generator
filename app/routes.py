@@ -1,13 +1,21 @@
 """Web routes for Quran text, reciters, and video generation."""
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 import hashlib
+import http.client
+import ipaddress
 import json
+import os
+import re
+import secrets
+import socket
+import ssl
 import tempfile
 import time
 from io import BytesIO
 from threading import Lock
 from uuid import uuid4
+from urllib.parse import quote, urljoin, urlsplit
 
 from flask import Blueprint, current_app, jsonify, render_template, request, send_file, send_from_directory, url_for
 from PIL import Image, ImageColor
@@ -43,6 +51,9 @@ from .version import APP_VERSION, DISPLAY_VERSION
 
 bp = Blueprint("main", __name__)
 _AUDIO_PREVIEW_CACHE_LOCK = Lock()
+_IMAGE_GENERATION_LOCK = Lock()
+_POLLINATIONS_MODEL_CACHE_LOCK = Lock()
+_POLLINATIONS_MODEL_CACHE = {"expires": 0.0, "models": []}
 CAPTION_STYLES = {
     "Dynamic Karaoke (Glow)": "karaoke",
     "Minimalist Subtitle Fade": "minimal",
@@ -67,6 +78,169 @@ CAPTION_OPTION_KEYS = (
 )
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 VIDEO_EXTENSIONS = BACKGROUND_VIDEO_EXTENSIONS
+MAX_IMPORTED_IMAGE_BYTES = 25 * 1024 * 1024
+MAX_IMPORTED_IMAGE_PIXELS = 40_000_000
+_IMPORT_IMAGE_FORMATS = {
+    "JPEG": ("image/jpeg", ".jpg"),
+    "PNG": ("image/png", ".png"),
+    "WEBP": ("image/webp", ".webp"),
+}
+
+
+def _public_image_url(url):
+    """Parse an external image URL and reject local or non-public destinations."""
+    url = str(url or "").strip()
+    if any(ord(char) < 33 for char in url) or "\\" in url:
+        raise ValueError("The image URL contains invalid characters.")
+    try:
+        parsed = urlsplit(url)
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError("Enter a valid public image URL.") from exc
+    if (parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname
+            or parsed.username is not None or parsed.password is not None or parsed.fragment):
+        raise ValueError("Use a public HTTP or HTTPS image URL without credentials or a fragment.")
+    host = parsed.hostname.rstrip(".").lower()
+    if not host or host == "localhost" or host.endswith((".localhost", ".local", ".internal")):
+        raise ValueError("Local and internal image URLs are not allowed.")
+    expected_port = 443 if parsed.scheme.lower() == "https" else 80
+    if port not in (None, expected_port):
+        raise ValueError("Image URLs may use only the standard HTTP or HTTPS port.")
+    try:
+        literal = ipaddress.ip_address(host)
+    except ValueError:
+        try:
+            host = host.encode("idna").decode("ascii")
+        except UnicodeError as exc:
+            raise ValueError("The image URL hostname is invalid.") from exc
+        if any(ord(char) < 33 for char in host):
+            raise ValueError("The image URL hostname is invalid.")
+    else:
+        if not literal.is_global:
+            raise ValueError("Local and private network image URLs are not allowed.")
+    return parsed, host, port or expected_port
+
+
+def _resolved_public_addresses(host, port):
+    """Resolve a host once and return only globally routable addresses to pin."""
+    try:
+        rows = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    except OSError as exc:
+        raise ValueError("The image host could not be reached.") from exc
+    addresses = []
+    for row in rows:
+        address = row[4][0]
+        try:
+            parsed = ipaddress.ip_address(address.split("%", 1)[0])
+        except ValueError as exc:
+            raise ValueError("The image host returned an invalid network address.") from exc
+        if not parsed.is_global:
+            raise ValueError("The image URL resolves to a local or private network.")
+        if address not in addresses:
+            addresses.append(address)
+    if not addresses:
+        raise ValueError("The image host did not resolve to a public address.")
+    return addresses
+
+
+class _PinnedHTTPConnection(http.client.HTTPConnection):
+    """HTTP connection pinned to an IP address validated before the request."""
+    def __init__(self, host, address, port, timeout):
+        super().__init__(host, port=port, timeout=timeout)
+        self._address = address
+
+    def connect(self):
+        self.sock = socket.create_connection((self._address, self.port), self.timeout)
+
+
+class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+    """HTTPS connection pinned to a validated IP while retaining hostname TLS checks."""
+    def __init__(self, host, address, port, timeout):
+        super().__init__(host, port=port, timeout=timeout, context=ssl.create_default_context())
+        self._address = address
+
+    def connect(self):
+        raw = socket.create_connection((self._address, self.port), self.timeout)
+        try:
+            self.sock = self._context.wrap_socket(raw, server_hostname=self.host)
+        except Exception:
+            raw.close()
+            raise
+
+
+def _download_public_image(url):
+    """Download a small supported image, revalidating and pinning every redirect."""
+    current_url = url
+    for redirect_count in range(6):
+        parsed, host, port = _public_image_url(current_url)
+        addresses = _resolved_public_addresses(host, port)
+        connection_type = _PinnedHTTPSConnection if parsed.scheme.lower() == "https" else _PinnedHTTPConnection
+        connection = connection_type(host, addresses[0], port, timeout=12)
+        path = quote(parsed.path or "/", safe="/%:@-._~!$&'()*+,;=")
+        if parsed.query:
+            path += "?" + quote(parsed.query, safe="/?%:@-._~!$&'()*+,;=")
+        host_header = f"[{host}]" if ":" in host else host
+        try:
+            connection.request("GET", path, headers={
+                "Host": host_header,
+                "User-Agent": "QuranReels-BackgroundImporter/1.0",
+                "Accept": "image/png,image/jpeg,image/webp",
+                "Accept-Encoding": "identity",
+                "Connection": "close",
+            })
+            response = connection.getresponse()
+            if response.status in {301, 302, 303, 307, 308}:
+                location = response.getheader("Location")
+                if not location or redirect_count >= 5:
+                    raise ValueError("The image URL has too many or invalid redirects.")
+                current_url = urljoin(current_url, location)
+                continue
+            if response.status != 200:
+                raise ValueError(f"The image host returned HTTP {response.status}.")
+            content_type = (response.getheader("Content-Type") or "").split(";", 1)[0].strip().lower()
+            if content_type not in {item[0] for item in _IMPORT_IMAGE_FORMATS.values()}:
+                raise ValueError("The URL must return a JPEG, PNG, or WEBP image.")
+            length = response.getheader("Content-Length")
+            if length:
+                try:
+                    declared_length = int(length)
+                except ValueError as exc:
+                    raise ValueError("The image host returned an invalid file size.") from exc
+                if declared_length > MAX_IMPORTED_IMAGE_BYTES:
+                    raise ValueError("The image is larger than the 25 MB import limit.")
+            body = response.read(MAX_IMPORTED_IMAGE_BYTES + 1)
+            if len(body) > MAX_IMPORTED_IMAGE_BYTES:
+                raise ValueError("The image is larger than the 25 MB import limit.")
+            return body, content_type, host
+        except (OSError, http.client.HTTPException, ssl.SSLError) as exc:
+            raise ValueError("The image could not be downloaded from that URL.") from exc
+        finally:
+            connection.close()
+    raise ValueError("The image URL has too many redirects.")
+
+
+def _imported_background_folder():
+    folder = Path(current_app.config["OUTPUT_FOLDER"]) / "imported-backgrounds"
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
+def _imported_background_path(image_id):
+    if not re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", str(image_id or "")):
+        return None
+    folder = _imported_background_folder()
+    metadata_path = folder / f"{image_id}.json"
+    if not metadata_path.is_file():
+        return None
+    try:
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        filename = metadata.get("filename", "")
+    except (OSError, json.JSONDecodeError):
+        return None
+    if filename != f"{image_id}{Path(filename).suffix}" or Path(filename).suffix not in {".jpg", ".png", ".webp"}:
+        return None
+    image_path = folder / filename
+    return (metadata, image_path) if image_path.is_file() and image_path.parent == folder else None
 
 
 def _caption_options(template, overrides):
@@ -74,6 +248,22 @@ def _caption_options(template, overrides):
     options = {key: template[key] for key in CAPTION_OPTION_KEYS if key in template}
     options.update({key: overrides[key] for key in CAPTION_OPTION_KEYS if key in overrides})
     return options
+
+
+def _caption_position_coordinates(data, template, *, has_translation=False):
+    """Validate output-frame center coordinates shared by preview and export."""
+    preset = data.get("caption_position", template.get("caption_position", "center"))
+    if preset not in {"upper", "center", "lower"}:
+        raise ValueError("Choose upper, center, or lower-third caption placement.")
+    default_y = {"upper": 34, "center": 43 if has_translation else 54, "lower": 72}[preset]
+    try:
+        x = float(data.get("caption_x", 50))
+        y = float(data.get("caption_y", default_y))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Caption X and Y positions must be numbers from 0 to 100.") from exc
+    if not all(0 <= value <= 100 for value in (x, y)):
+        raise ValueError("Caption X and Y positions must be between 0 and 100 percent.")
+    return int(round(x)), int(round(y)), preset
 
 
 def _template_catalog():
@@ -162,6 +352,10 @@ def _viewer_layer_options(data, template=None):
 
 def _label_style_options(data, default_font_id):
     """Validate independent Arabic title/number settings shared by preview and export."""
+    for key, label in (("surah_color", "Surah name color"), ("ayah_color", "Ayah number color")):
+        value = data.get(key)
+        if value not in (None, ""):
+            _validate_editor_color(value, label)
     try:
         surah_opacity = float(data["surah_opacity"]) if data.get("surah_opacity") not in (None, "") else None
         ayah_opacity = float(data["ayah_number_opacity"]) if data.get("ayah_number_opacity") not in (None, "") else None
@@ -169,6 +363,16 @@ def _label_style_options(data, default_font_id):
         raise ValueError("Surah name and ayah number opacity must be valid numbers.") from exc
     if any(value is not None and not 0 <= value <= 1 for value in (surah_opacity, ayah_opacity)):
         raise ValueError("Surah name and ayah number opacity must be between 0 and 1.")
+    try:
+        surah_position_x = float(data.get("surah_x_offset", 0))
+        surah_position_y = float(data.get("surah_y_offset", 0))
+        ayah_position_x = float(data.get("ayah_number_x_offset", 0))
+        ayah_position_y = float(data.get("ayah_number_y_offset", 0))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Surah and ayah position offsets must be numbers from -8 to 8 percent.") from exc
+    if any(not -8 <= value <= 8 for value in
+           (surah_position_x, surah_position_y, ayah_position_x, ayah_position_y)):
+        raise ValueError("Surah and ayah position offsets must be between -8 and 8 percent of the frame.")
     surah_placement = data.get("surah_placement") or None
     ayah_placement = data.get("ayah_number_placement") or None
     if surah_placement not in (None, "above", "below") or ayah_placement not in (None, "above", "below"):
@@ -180,7 +384,20 @@ def _label_style_options(data, default_font_id):
         "ayah_number_opacity": ayah_opacity,
         "surah_placement": surah_placement,
         "ayah_number_placement": ayah_placement,
+        "surah_position_x": surah_position_x,
+        "surah_position_y": surah_position_y,
+        "ayah_number_position_x": ayah_position_x,
+        "ayah_number_position_y": ayah_position_y,
     }
+
+
+def _validate_editor_color(value, label, allow_palette=False):
+    """Reject malformed editor colors before preview/export silently falls back."""
+    if allow_palette and isinstance(value, str) and value in CAPTION_COLORS:
+        return value
+    if not isinstance(value, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", value.strip()):
+        raise ValueError(f"{label} must be a 6-digit hexadecimal color.")
+    return value.strip().lower()
 
 
 def validate_background_upload(path, extension):
@@ -288,7 +505,10 @@ def studio():
                            text_templates=QURAN_TEXT_TEMPLATES,
                            surah_templates=SURAH_NAME_TEMPLATES,
                            ayah_templates=AYAH_NUMBER_TEMPLATES,
-                           font_catalog={key: {"name": value["name"]} for key, value in FONT_CATALOG.items()},
+                           font_catalog={key: {"name": value["name"],
+                                               "css_family": value.get("css_family", "serif"),
+                                               "font_weight": value.get("font_weight", 400)}
+                                         for key, value in FONT_CATALOG.items()},
                            default_font_id=DEFAULT_FONT_ID, copyright_year=datetime.now().year,
                            quality_presets=QUALITY_PRESETS,
                            image_animation_presets=IMAGE_ANIMATION_PRESETS,
@@ -296,6 +516,373 @@ def studio():
                            background_video_templates=available_background_video_templates(
                                static_folder=current_app.static_folder),
                            app_version=APP_VERSION, display_version=DISPLAY_VERSION)
+
+
+@bp.get("/images")
+def image_studio():
+    return render_template("image_generator.html")
+
+
+@bp.get("/api/images/models")
+def pollinations_image_models():
+    """Return the live Pollinations image catalog for the model picker."""
+    import os
+    import urllib.error
+    import urllib.request
+
+    now = time.monotonic()
+    with _POLLINATIONS_MODEL_CACHE_LOCK:
+        if _POLLINATIONS_MODEL_CACHE["expires"] > now:
+            return jsonify(models=_POLLINATIONS_MODEL_CACHE["models"], default_model=os.environ.get(
+                "POLLINATIONS_IMAGE_MODEL", "black-forest-labs/flux.1-schnell"
+            ).strip())
+        headers = {"Accept": "application/json"}
+        api_key = os.environ.get("POLLINATIONS_API_KEY", "").strip()
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        req = urllib.request.Request("https://gen.pollinations.ai/image/models", headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=15) as response:
+                catalog = json.loads(response.read(2 * 1024 * 1024 + 1))
+        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError):
+            if _POLLINATIONS_MODEL_CACHE["models"]:
+                return jsonify(models=_POLLINATIONS_MODEL_CACHE["models"], stale=True, default_model=os.environ.get(
+                    "POLLINATIONS_IMAGE_MODEL", "black-forest-labs/flux.1-schnell"
+                ).strip())
+            return jsonify(error="Pollinations model list is unavailable right now."), 503
+        if not isinstance(catalog, list):
+            return jsonify(error="Pollinations returned an invalid model list."), 502
+        models = []
+        for item in catalog:
+            if not isinstance(item, dict):
+                continue
+            endpoints = item.get("supported_endpoints") or []
+            modalities = item.get("output_modalities") or []
+            if item.get("category") != "image" and "image" not in modalities:
+                continue
+            if endpoints and not any("/image/" in endpoint for endpoint in endpoints):
+                continue
+            name = item.get("name")
+            if not isinstance(name, str) or not name:
+                continue
+            pricing = item.get("pricing") if isinstance(item.get("pricing"), dict) else {}
+            models.append({
+                "name": name,
+                "aliases": [alias for alias in item.get("aliases", []) if isinstance(alias, str)],
+                "title": str(item.get("title") or name),
+                "publisher": str(item.get("publisher") or ""),
+                "pricing": pricing,
+                "paid_only": bool(item.get("paid_only", False)),
+                "community": bool(item.get("community", False)),
+            })
+        models.sort(key=lambda item: (item["publisher"].lower(), item["title"].lower(), item["name"]))
+        _POLLINATIONS_MODEL_CACHE.update(models=models, expires=now + 600)
+        return jsonify(models=models, default_model=os.environ.get(
+            "POLLINATIONS_IMAGE_MODEL", "black-forest-labs/flux.1-schnell"
+        ).strip())
+
+
+class ComfyUIError(RuntimeError):
+    """A safe-to-display failure from the configured ComfyUI server."""
+
+
+class PollinationsError(RuntimeError):
+    """A safe-to-display failure from Pollinations."""
+
+
+class PollinationsNotConfigured(PollinationsError):
+    """Pollinations was selected without a server API key."""
+
+
+def _comfyui_dimensions(ratio):
+    # Realistic Vision V6 is an SD 1.5 checkpoint; these multiples of 64
+    # preserve the selected ratios at a sensible native resolution.
+    return {"9:16": (576, 1024), "16:9": (1024, 576), "1:1": (768, 768)}[ratio]
+
+
+def _comfyui_workflow(prompt, ratio, checkpoint):
+    width, height = _comfyui_dimensions(ratio)
+    seed = secrets.randbits(64)
+    return {
+        "1": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": checkpoint}},
+        "2": {"class_type": "CLIPTextEncode", "inputs": {
+            "text": prompt, "clip": ["1", 1]}},
+        "3": {"class_type": "CLIPTextEncode", "inputs": {
+            "text": "", "clip": ["1", 1]}},
+        "4": {"class_type": "EmptyLatentImage", "inputs": {
+            "width": width, "height": height, "batch_size": 1}},
+        "5": {"class_type": "KSampler", "inputs": {
+            "seed": seed, "steps": 24, "cfg": 6.5, "sampler_name": "dpmpp_2m",
+            "scheduler": "karras", "denoise": 1.0, "model": ["1", 0],
+            "positive": ["2", 0], "negative": ["3", 0], "latent_image": ["4", 0]}},
+        "6": {"class_type": "VAEDecode", "inputs": {
+            "samples": ["5", 0], "vae": ["1", 2]}},
+        "7": {"class_type": "SaveImage", "inputs": {
+            "filename_prefix": "quran-reels", "images": ["6", 0]}},
+    }
+
+
+def _comfyui_json(base_url, path, payload=None, timeout=30):
+    import urllib.request
+
+    data = json.dumps(payload).encode("utf-8") if payload is not None else None
+    headers = {"Content-Type": "application/json"} if data is not None else {}
+    req = urllib.request.Request(f"{base_url}{path}", data=data, headers=headers,
+                                 method="POST" if data is not None else "GET")
+    with urllib.request.urlopen(req, timeout=timeout) as response:
+        return json.loads(response.read())
+
+
+def _generate_comfyui_image(prompt, ratio):
+    import os
+    import time
+    import urllib.parse
+    import urllib.request
+
+    base_url = os.environ.get("COMFYUI_BASE_URL", "http://127.0.0.1:8188").strip().rstrip("/")
+    if not base_url.startswith(("http://", "https://")):
+        raise ComfyUIError("COMFYUI_BASE_URL must be an http or https URL.")
+    checkpoint = os.environ.get(
+        "COMFYUI_CHECKPOINT", "Realistic_Vision_V6.0_NV_B1_fp16.safetensors"
+    ).strip()
+    if not checkpoint or ".." in checkpoint or checkpoint.startswith(("/", "\\")):
+        raise ComfyUIError("Set COMFYUI_CHECKPOINT to a model file installed in ComfyUI.")
+    try:
+        timeout = max(1.0, min(float(os.environ.get("COMFYUI_TIMEOUT_SECONDS", "300")), 1800.0))
+        poll_interval = max(0.1, min(float(os.environ.get("COMFYUI_POLL_INTERVAL_SECONDS", "1")), 10.0))
+    except ValueError as exc:
+        raise ComfyUIError("ComfyUI timeout settings must be numeric.") from exc
+
+    workflow = _comfyui_workflow(prompt, ratio, checkpoint)
+    submitted = _comfyui_json(base_url, "/prompt", {"prompt": workflow}, timeout=30)
+    prompt_id = submitted.get("prompt_id")
+    if not isinstance(prompt_id, str) or not prompt_id:
+        raise ComfyUIError("ComfyUI rejected the workflow. Check that the configured checkpoint is installed.")
+
+    deadline = time.monotonic() + timeout
+    image_info = None
+    while time.monotonic() < deadline:
+        history = _comfyui_json(base_url, f"/history/{urllib.parse.quote(prompt_id, safe='')}", timeout=30)
+        result = history.get(prompt_id, {})
+        for node_output in result.get("outputs", {}).values():
+            images = node_output.get("images", []) if isinstance(node_output, dict) else []
+            if images:
+                image_info = images[0]
+                break
+        if image_info:
+            break
+        status = result.get("status", {})
+        if status.get("status_str") == "error":
+            raise ComfyUIError("ComfyUI failed to render the image. Check the ComfyUI console and model setup.")
+        time.sleep(min(poll_interval, max(0, deadline - time.monotonic())))
+    if not image_info:
+        raise ComfyUIError("ComfyUI did not finish before the configured timeout. Try again or increase COMFYUI_TIMEOUT_SECONDS.")
+
+    filename = image_info.get("filename")
+    if not isinstance(filename, str) or not filename:
+        raise ComfyUIError("ComfyUI completed without returning an image file.")
+    query = urllib.parse.urlencode({
+        "filename": filename,
+        "subfolder": str(image_info.get("subfolder", "")),
+        "type": str(image_info.get("type", "output")),
+    })
+    req = urllib.request.Request(f"{base_url}/view?{query}")
+    with urllib.request.urlopen(req, timeout=30) as response:
+        image_bytes = response.read(20 * 1024 * 1024 + 1)
+    if not image_bytes or len(image_bytes) > 20 * 1024 * 1024:
+        raise ComfyUIError("ComfyUI returned an empty or oversized image.")
+    return image_bytes, checkpoint
+
+
+def _generate_pollinations_image(prompt, ratio, model=None):
+    import os
+    import urllib.parse
+    import urllib.request
+
+    api_key = os.environ.get("POLLINATIONS_API_KEY", "").strip()
+    if not api_key:
+        raise PollinationsNotConfigured("Pollinations needs a server API key. Set POLLINATIONS_API_KEY in the app's .env file.")
+    model = str(model or os.environ.get(
+        "POLLINATIONS_IMAGE_MODEL", "black-forest-labs/flux.1-schnell"
+    )).strip()
+    if not re.fullmatch(r"[A-Za-z0-9_.:/-]{1,120}", model):
+        raise PollinationsError("POLLINATIONS_IMAGE_MODEL must be a valid model identifier.")
+    width, height = _comfyui_dimensions(ratio)
+    query = urllib.parse.urlencode({"model": model, "width": width, "height": height})
+    url = "https://gen.pollinations.ai/image/{}?{}".format(
+        urllib.parse.quote(prompt, safe=""), query
+    )
+    req = urllib.request.Request(url, headers={
+        "Authorization": f"Bearer {api_key}",
+        "Accept": "image/png, image/jpeg, image/webp",
+    })
+    with urllib.request.urlopen(req, timeout=300) as response:
+        image_bytes = response.read(20 * 1024 * 1024 + 1)
+    if not image_bytes or len(image_bytes) > 20 * 1024 * 1024:
+        raise PollinationsError("Pollinations returned an empty or oversized image.")
+    return image_bytes, model
+
+
+def _generate_pollinations_legacy_image(prompt, ratio, model=None):
+    """Use Pollinations' classic image endpoint without an API key."""
+    import urllib.parse
+    import urllib.request
+
+    supported_models = {"flux", "zimage", "klein"}
+    model = str(model or "flux").strip()
+    if model not in supported_models:
+        raise PollinationsError("Choose flux, zimage, or klein for keyless Pollinations generation.")
+    width, height = _comfyui_dimensions(ratio)
+    query = urllib.parse.urlencode({"model": model, "width": width, "height": height})
+    url = "https://image.pollinations.ai/prompt/{}?{}".format(
+        urllib.parse.quote(prompt, safe=""), query
+    )
+    req = urllib.request.Request(url, headers={
+        "Accept": "image/png, image/jpeg, image/webp",
+        "User-Agent": "QuranReelsStudio/1.0",
+    })
+    with urllib.request.urlopen(req, timeout=300) as response:
+        image_bytes = response.read(20 * 1024 * 1024 + 1)
+    if not image_bytes or len(image_bytes) > 20 * 1024 * 1024:
+        raise PollinationsError("Pollinations returned an empty or oversized image.")
+    return image_bytes, model
+
+
+@bp.post("/api/images/generate")
+def generate_image():
+    """Generate and persist an image with ComfyUI or Pollinations."""
+    import urllib.error
+    if request.content_length and request.content_length > 16 * 1024:
+        return jsonify(error="Image-generation request is too large."), 413
+    payload = request.get_json(silent=True) or {}
+    user_prompt = str(payload.get("prompt", "")).strip()
+    if not user_prompt or len(user_prompt) > 4000:
+        return jsonify(error="Enter a prompt of 1–4000 characters."), 400
+    ratio = payload.get("ratio", "9:16")
+    if ratio not in {"9:16", "16:9", "1:1"}:
+        return jsonify(error="Choose a supported aspect ratio."), 400
+    prompt = user_prompt
+    provider = payload.get("provider", "comfyui")
+    if provider not in {"comfyui", "pollinations", "pollinations_legacy"}:
+        return jsonify(error="Choose ComfyUI or one of the Pollinations options as the image generator."), 400
+    if not _IMAGE_GENERATION_LOCK.acquire(blocking=False):
+        return jsonify(error="An image is already being generated. Wait for it to finish before starting another."), 429
+    try:
+        if provider == "pollinations":
+            image_bytes, model_name = _generate_pollinations_image(prompt, ratio, payload.get("model"))
+            provider_name = "Pollinations"
+            error_type = PollinationsError
+        elif provider == "pollinations_legacy":
+            image_bytes, model_name = _generate_pollinations_legacy_image(prompt, ratio, payload.get("model"))
+            provider_name = "Pollinations (no API key)"
+            error_type = PollinationsError
+        else:
+            image_bytes, model_name = _generate_comfyui_image(prompt, ratio)
+            provider_name = "ComfyUI"
+            error_type = ComfyUIError
+        image = Image.open(BytesIO(image_bytes))
+        if image.size != _comfyui_dimensions(ratio):
+            raise error_type(f"{provider_name} returned dimensions that do not match the selected format.")
+        width, height = image.size
+        image.verify()
+        image = Image.open(BytesIO(image_bytes))
+        image_format = image.format
+        formats = {"PNG": ("png", "image/png"), "JPEG": ("jpg", "image/jpeg"),
+                   "WEBP": ("webp", "image/webp")}
+        if image_format not in formats:
+            raise error_type(f"{provider_name} returned an unsupported image format.")
+        ext, mime = formats[image_format]
+        if width < 16 or height < 16:
+            raise error_type(f"{provider_name} returned an image that is too small to use as a background.")
+        image_id = uuid4().hex
+        folder = Path(current_app.config["OUTPUT_FOLDER"]) / "generated-images"
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / f"{image_id}.{ext}").write_bytes(image_bytes)
+        metadata = {
+            "id": image_id, "prompt": user_prompt, "user_prompt": user_prompt,
+            "generation_prompt": prompt, "ratio": ratio,
+            "width": width, "height": height, "mime_type": mime,
+            "provider": provider, "model": f"{provider_name} · {model_name}", "created_at": datetime.now().astimezone().isoformat(),
+            "filename": f"{image_id}.{ext}",
+        }
+        (folder / f"{image_id}.json").write_text(json.dumps(metadata), encoding="utf-8")
+        return jsonify(metadata)
+    except urllib.error.HTTPError as exc:
+        current_app.logger.warning("Image provider %s returned HTTP %s", provider, exc.code)
+        if provider in {"pollinations", "pollinations_legacy"}:
+            message = ("Pollinations rejected the request. Check the configured model and prompt." if exc.code in (400, 404) else
+                       ("Pollinations' classic no-key service could not complete the request. Try its API-key option or local ComfyUI." if provider == "pollinations_legacy" else
+                        "Pollinations could not complete the request. Check the API key, account limits, and try again."))
+        else:
+            message = ("ComfyUI rejected the workflow. Check its checkpoint and workflow configuration." if exc.code in (400, 404) else
+                       "ComfyUI could not complete the request. Check the server and try again.")
+        return jsonify(error=message), 502
+    except urllib.error.URLError:
+        if provider == "pollinations_legacy":
+            return jsonify(error="The Pollinations classic no-key service could not be reached. Try its API-key option or local ComfyUI."), 503
+        if provider in {"pollinations", "pollinations_legacy"}:
+            return jsonify(error="Cannot reach Pollinations. Check the server's internet connection and try again."), 503
+        return jsonify(error="Cannot reach ComfyUI. Start ComfyUI and check COMFYUI_BASE_URL on the server."), 503
+    except PollinationsNotConfigured as exc:
+        return jsonify(error=str(exc)), 503
+    except (ComfyUIError, PollinationsError) as exc:
+        return jsonify(error=str(exc)), 502
+    except Exception:
+        current_app.logger.exception("Image generation failed for provider %s", provider)
+        message = ("Image generation failed. Try the Pollinations API-key option or local ComfyUI." if provider == "pollinations_legacy" else
+                   "Image generation failed. Check the Pollinations configuration and try again." if provider == "pollinations" else
+                   "Image generation failed. Check the ComfyUI server and model configuration.")
+        return jsonify(error=message), 502
+    finally:
+        _IMAGE_GENERATION_LOCK.release()
+
+
+def _generated_image_folder():
+    return Path(current_app.config["OUTPUT_FOLDER"]) / "generated-images"
+
+
+def _read_generated_image_metadata(folder, image_id):
+    try:
+        metadata=json.loads((folder/f"{image_id}.json").read_text(encoding="utf-8"))
+    except (OSError,ValueError):
+        return None
+    extensions={"image/png":".png","image/jpeg":".jpg","image/webp":".webp"}
+    expected=extensions.get(metadata.get("mime_type"))
+    if not expected or metadata.get("filename") != f"{image_id}{expected}":
+        return None
+    return metadata
+
+
+@bp.get("/api/images")
+def generated_images():
+    folder=_generated_image_folder()
+    items=[]
+    if folder.exists():
+        for path in folder.glob("*.json"):
+            try: items.append(json.loads(path.read_text(encoding="utf-8")))
+            except (OSError,ValueError): continue
+    return jsonify(images=sorted(items,key=lambda item:item.get("created_at",""),reverse=True))
+
+
+@bp.get("/api/images/<image_id>/file")
+def generated_image_file(image_id):
+    if not re.fullmatch(r"[a-f0-9]{32}",image_id): return jsonify(error="Invalid image ID."),400
+    folder=_generated_image_folder()
+    metadata=_read_generated_image_metadata(folder,image_id)
+    if not metadata:return jsonify(error="Image not found."),404
+    suffix=Path(metadata["filename"]).suffix.lower()
+    label=secure_filename(str(metadata.get("prompt", ""))[:72]).strip("-_") or "quran-background"
+    return send_file(folder/metadata["filename"],mimetype=metadata["mime_type"],as_attachment=request.args.get("download")=="1",download_name=f"{label}-{image_id[:8]}{suffix}")
+
+
+@bp.delete("/api/images/<image_id>")
+def delete_generated_image(image_id):
+    if not re.fullmatch(r"[a-f0-9]{32}",image_id): return jsonify(error="Invalid image ID."),400
+    folder=_generated_image_folder()
+    metadata=_read_generated_image_metadata(folder,image_id)
+    if not metadata:return jsonify(error="Image not found."),404
+    (folder/metadata["filename"]).unlink(missing_ok=True); (folder/f"{image_id}.json").unlink(missing_ok=True)
+    return jsonify(ok=True)
 
 
 @bp.get("/api/version")
@@ -339,6 +926,103 @@ def list_verses():
     except (TypeError, ValueError) as exc:
         return jsonify(error=str(exc)), 400
     return jsonify({"surah": surah, "start": start, "end": end, "ayahs": verses})
+
+
+@bp.post("/api/backgrounds/import-url")
+def import_background_url():
+    """Fetch a public image through a pinned, redirect-safe server connection."""
+    payload = request.get_json(silent=True) or {}
+    url = str(payload.get("url", "")).strip()
+    if len(url) > 4096:
+        return jsonify(error="Image URL must be 4,096 characters or shorter."), 400
+    try:
+        body, content_type, source_host = _download_public_image(url)
+        with Image.open(BytesIO(body)) as image:
+            image_format = str(image.format or "").upper()
+            if image_format not in _IMPORT_IMAGE_FORMATS:
+                raise ValueError("The downloaded file is not a supported JPEG, PNG, or WEBP image.")
+            expected_type, extension = _IMPORT_IMAGE_FORMATS[image_format]
+            if content_type != expected_type:
+                raise ValueError("The image content does not match the host's image type.")
+            width, height = image.size
+            if width < 16 or height < 16:
+                raise ValueError("The background image is too small to use in a video.")
+            if width * height > MAX_IMPORTED_IMAGE_PIXELS:
+                raise ValueError("The image exceeds the 40-megapixel safety limit.")
+            image.verify()
+        with Image.open(BytesIO(body)) as image:
+            image.load()
+            if image.size != (width, height):
+                raise ValueError("The downloaded image could not be decoded consistently.")
+    except (ValueError, OSError, Image.DecompressionBombError) as exc:
+        return jsonify(error=str(exc)), 400
+
+    image_id = str(uuid4())
+    folder = _imported_background_folder()
+    filename = f"{image_id}{extension}"
+    image_path = folder / filename
+    metadata_path = folder / f"{image_id}.json"
+    image_tmp = folder / f".{image_id}.image.tmp"
+    metadata_tmp = folder / f".{image_id}.json.tmp"
+    metadata = {
+        "id": image_id, "filename": filename, "width": int(width), "height": int(height),
+        "format": image_format, "mime_type": content_type, "size_bytes": len(body),
+        "source_host": source_host,
+        "imported_at": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
+    }
+    try:
+        with image_tmp.open("xb") as stream:
+            stream.write(body)
+            stream.flush()
+            os.fsync(stream.fileno())
+        with metadata_tmp.open("x", encoding="utf-8") as stream:
+            json.dump(metadata, stream, ensure_ascii=True)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(image_tmp, image_path)
+        os.replace(metadata_tmp, metadata_path)
+    except OSError:
+        image_tmp.unlink(missing_ok=True)
+        metadata_tmp.unlink(missing_ok=True)
+        image_path.unlink(missing_ok=True)
+        return jsonify(error="The image could not be saved to the persistent background gallery."), 500
+    return jsonify({**metadata, "file_url": url_for("main.imported_background_file", image_id=image_id)}), 201
+
+
+@bp.get("/api/backgrounds/imported")
+def list_imported_backgrounds():
+    folder = _imported_background_folder()
+    items = []
+    for metadata_path in folder.glob("*.json"):
+        image_id = metadata_path.stem
+        found = _imported_background_path(image_id)
+        if not found:
+            continue
+        metadata, _image_path = found
+        items.append({**metadata, "file_url": url_for("main.imported_background_file", image_id=image_id)})
+    items.sort(key=lambda item: (item.get("imported_at", ""), item["id"]), reverse=True)
+    return jsonify(backgrounds=items)
+
+
+@bp.get("/api/backgrounds/imported/<image_id>/file")
+def imported_background_file(image_id):
+    found = _imported_background_path(image_id)
+    if not found:
+        return jsonify(error="Imported background image was not found."), 404
+    metadata, image_path = found
+    return send_from_directory(image_path.parent, image_path.name, mimetype=metadata["mime_type"],
+                               as_attachment=False, conditional=True, max_age=3600)
+
+
+@bp.delete("/api/backgrounds/imported/<image_id>")
+def delete_imported_background(image_id):
+    found = _imported_background_path(image_id)
+    if not found:
+        return jsonify(error="Imported background image was not found."), 404
+    _metadata, image_path = found
+    (image_path.parent / f"{image_id}.json").unlink(missing_ok=True)
+    image_path.unlink(missing_ok=True)
+    return jsonify(deleted=True, id=image_id)
 
 
 @bp.get("/api/backgrounds")
@@ -589,6 +1273,10 @@ def caption_preview():
     raw_style = payload.get("caption_style", template["caption_style"])
     style = CAPTION_STYLES.get(raw_style, raw_style)
     color = payload.get("caption_color", template["caption_color"])
+    try:
+        color = _validate_editor_color(color, "Quran text color", allow_palette=True)
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
     font_id = payload.get("font_id", template.get("font_id", DEFAULT_FONT_ID))
     wrap_width = payload.get("wrap_width", 85)
     try:
@@ -605,10 +1293,15 @@ def caption_preview():
     custom_opts = _caption_options(template, payload)
     try:
         label_options = _label_style_options(payload, font_id)
+        caption_x, caption_y, _caption_position = _caption_position_coordinates(
+            payload, template, has_translation=bool(str(payload.get("translation", "")).strip())
+        )
     except ValueError as exc:
         return jsonify(error=str(exc)), 400
 
-    show_surah = payload.get("show_surah_title", template["show_surah_title"])
+    default_show_surah = template.get("show_surah_title", False) if "template_id" in payload else False
+    default_show_ayah = template.get("show_ayah_number", False) if "template_id" in payload else False
+    show_surah = payload.get("show_surah_title", default_show_surah)
     if isinstance(show_surah, str):
         show_surah = show_surah.lower() in ("true", "1", "yes", "on")
 
@@ -616,7 +1309,7 @@ def caption_preview():
     ayah_num = int(payload.get("ayah", payload.get("ayah_number", 13)))
     surah_title = _surah_caption_title(surah_num)
     surah_color = payload.get("surah_color", template["surah_color"])
-    show_ayah_number = payload.get("show_ayah_number", show_surah)
+    show_ayah_number = payload.get("show_ayah_number", default_show_ayah)
     if isinstance(show_ayah_number, str):
         show_ayah_number = show_ayah_number.lower() in ("true", "1", "yes", "on")
     surah_template = payload.get("surah_template", template.get("surah_template", "ornamental_gold"))
@@ -662,7 +1355,10 @@ def caption_preview():
 @bp.get("/api/reciters")
 def list_reciters():
     return jsonify({"reciters": [
-        {"id": item["id"], "name": item["name"], "style": item["style"]}
+        {key: item[key] for key in (
+            "id", "group_id", "name", "recording_name", "style", "riwayah",
+            "available_surahs", "source", "source_url", "audio_base_url",
+        )}
         for item in RECITERS
     ]})
 
@@ -896,6 +1592,10 @@ def generate():
         raw_caption_style = data.get("caption_style", template["caption_style"])
         caption_style = CAPTION_STYLES.get(raw_caption_style, raw_caption_style)
         caption_color = data.get("caption_color", template["caption_color"])
+        try:
+            caption_color = _validate_editor_color(caption_color, "Quran text color", allow_palette=True)
+        except ValueError as exc:
+            return jsonify(error=str(exc)), 400
         font_id = data.get("font_id", template.get("font_id", DEFAULT_FONT_ID))
         font_path = resolve_font(font_id, current_app.config.get("ARABIC_FONT"))
         try:
@@ -929,13 +1629,19 @@ def generate():
         custom_opts = _caption_options(template, data)
         try:
             label_options = _label_style_options(data, font_id)
+            caption_x, caption_y, caption_position = _caption_position_coordinates(
+                data, template,
+                has_translation=bool(str(data.get("translation_text", data.get("translation", ""))).strip()),
+            )
         except ValueError as exc:
             return jsonify(error=str(exc)), 400
 
-        show_surah = data.get("show_surah_title", template["show_surah_title"])
+        default_show_surah = template.get("show_surah_title", False) if "template_id" in data else False
+        default_show_ayah = template.get("show_ayah_number", False) if "template_id" in data else False
+        show_surah = data.get("show_surah_title", default_show_surah)
         if isinstance(show_surah, str):
             show_surah = show_surah.lower() in ("true", "1", "yes", "on")
-        show_ayah_number = data.get("show_ayah_number", show_surah)
+        show_ayah_number = data.get("show_ayah_number", default_show_ayah)
         if isinstance(show_ayah_number, str):
             show_ayah_number = show_ayah_number.lower() in ("true", "1", "yes", "on")
 
@@ -957,7 +1663,6 @@ def generate():
             return jsonify(error="Surah size must be 25–70% and ayah number size 20–60% of verse size."), 400
         if surah_align not in {"left", "center", "right"} or ayah_number_align not in {"left", "center", "right"}:
             return jsonify(error="Label alignment must be left, center, or right."), 400
-        caption_position = data.get("caption_position", template["caption_position"])
         background_fit = data.get("background_fit", template.get("background_fit", "cover"))
         if background_fit not in BACKGROUND_FIT_MODES:
             return jsonify(error="Background fit must be cover, contain, stretch, or blurred."), 400
@@ -1046,7 +1751,7 @@ def generate():
         if (not .5 <= background_brightness <= 1.5 or not .5 <= background_contrast <= 1.5
                 or not 0 <= background_saturation <= 2 or not 0 <= background_overlay_opacity <= .5):
             return jsonify(error="Brightness and contrast must be 0.5–1.5, saturation 0–2, and overlay opacity 0–0.5."), 400
-        background_overlay_color = data.get("background_overlay_color", "#0b1626")
+        background_overlay_color = data.get("background_overlay_color", "#000000")
         if not isinstance(background_overlay_color, str) or len(background_overlay_color) != 7 or not background_overlay_color.startswith("#"):
             return jsonify(error="Background overlay color must be a six-digit hex color."), 400
         try:
@@ -1267,6 +1972,7 @@ def generate():
                     reciter_name=reciter["name"], translation_lines=translation_lines,
                     viewer_options=viewer_options,
                     caption_position=caption_position,
+                    caption_x=caption_x, caption_y=caption_y,
                     progress_callback=render_progress,
                     cancel_event=cancel_event,
                     **custom_opts, **label_options

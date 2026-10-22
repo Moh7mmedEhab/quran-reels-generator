@@ -9,9 +9,17 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css', v='studio-2026-10-22-scene-timing-1') }}">
 <link href="https://fonts.googleapis.com" rel="preconnect"/>
 <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Amiri:ital,wght@0,400;0,700;1,400&amp;family=Noto+Naskh+Arabic:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
 <style>
+    @font-face { font-family:'App Amiri'; src:url("{{ url_for('static', filename='assets/fonts/Amiri-Regular.ttf') }}") format('truetype'); font-weight:400; font-display:swap; }
+    @font-face { font-family:'App Amiri'; src:url("{{ url_for('static', filename='assets/fonts/Amiri-Bold.ttf') }}") format('truetype'); font-weight:700; font-display:swap; }
+    @font-face { font-family:'App Noto Naskh'; src:url("{{ url_for('static', filename='assets/fonts/NotoNaskhArabic-Regular.ttf') }}") format('truetype'); font-weight:400; font-display:swap; }
+    @font-face { font-family:'App Noto Naskh'; src:url("{{ url_for('static', filename='assets/fonts/NotoNaskhArabic-Bold.ttf') }}") format('truetype'); font-weight:700; font-display:swap; }
+    @font-face { font-family:'App Noto Sans Arabic'; src:url("{{ url_for('static', filename='assets/fonts/NotoSansArabic-Regular.ttf') }}") format('truetype'); font-weight:400; font-display:swap; }
+    @font-face { font-family:'App Noto Sans Arabic'; src:url("{{ url_for('static', filename='assets/fonts/NotoSansArabic-Bold.ttf') }}") format('truetype'); font-weight:700; font-display:swap; }
+    @font-face { font-family:'App Noto Kufi Arabic'; src:url("{{ url_for('static', filename='assets/fonts/NotoKufiArabic-Regular.ttf') }}") format('truetype'); font-weight:400; font-display:swap; }
+    @font-face { font-family:'App Noto Kufi Arabic'; src:url("{{ url_for('static', filename='assets/fonts/NotoKufiArabic-Bold.ttf') }}") format('truetype'); font-weight:700; font-display:swap; }
     @layer base {
       html, body { margin: 0; padding: 0; font-family: 'Inter', system-ui, -apple-system, sans-serif; }
       body { overscroll-behavior: none; }
@@ -19,7 +27,7 @@
     ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
     ::-webkit-scrollbar-track { background: transparent; }
-    .font-quran { font-family: 'Amiri', 'Noto Naskh Arabic', serif; }
+    .font-quran { font-family: 'App Noto Naskh', serif; }
   </style>
 <script>
 window.tailwind = window.tailwind || {};
@@ -41,6 +49,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
 <span class="hidden sm:inline-flex items-center px-2 py-0.5 rounded-md bg-brand-50 text-brand-700 border border-brand-200 text-xs font-semibold tracking-wide">Studio {{ display_version }}</span>
 </div>
 </div>
+<nav class="flex items-center gap-2 text-xs sm:text-sm" aria-label="Main navigation"><a href="/" aria-current="page" class="rounded-lg bg-brand-50 px-3 py-2 font-semibold text-brand-700">Video Generator</a><a href="/images" class="rounded-lg px-3 py-2 font-medium text-gray-600 hover:bg-gray-100">AI Image Generator</a></nav>
 </div>
 </header>
 <!-- Main Content Workbench -->
@@ -125,8 +134,8 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
 <div class="truncate text-left">
 <div class="text-sm font-semibold text-gray-900 truncate" id="selected-reciter-name">Mishary Rashid Alafasy</div>
 <div class="text-xs text-gray-500 truncate flex items-center gap-1.5 mt-0.5">
-<span class="px-1.5 py-0.2 rounded bg-gray-100 text-gray-600 text-[11px] font-medium">Murattal</span>
-<span>Hafs 'an 'Asim (Studio Master)</span>
+<span class="px-1.5 py-0.2 rounded bg-gray-100 text-gray-600 text-[11px] font-medium" id="selected-reciter-style">Murattal</span>
+<span id="selected-reciter-riwayah">Hafs 'an Asim</span>
 </div>
 </div>
 </div>
@@ -137,12 +146,16 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
 <div class="p-1 pb-2">
 <div class="flex items-center gap-2 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-900 text-xs">
 <span class="material-symbols-outlined text-[16px] text-gray-400">search</span>
-<input class="w-full bg-transparent text-gray-900 placeholder-gray-400 focus:outline-none text-xs" id="reciter-filter-input" placeholder="Search 20 authentic reciters..." type="text"/>
+<input class="w-full bg-transparent text-gray-900 placeholder-gray-400 focus:outline-none text-xs" id="reciter-filter-input" placeholder="Search reciters..." type="text"/>
 </div>
 </div>
 <ul class="flex flex-col gap-1 mt-1" id="reciters-list">
 <li class="px-3 py-2 text-xs text-gray-500" id="reciters-loading">Loading reciters…</li></ul>
 </div>
+<label class="mt-2 flex flex-col gap-1 text-[11px] font-semibold text-gray-600" for="reciter-style-select">Available recording and reading
+<select id="reciter-style-select" class="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-normal text-gray-800"></select>
+</label>
+<p id="reciter-source-note" class="mt-1 text-[10px] leading-relaxed text-gray-500"></p>
 </div>
 </div>
 <!-- 2. Audio & Scripture Settings -->
@@ -223,6 +236,16 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
 <span class="wallpaper-upload-copy"><strong>Choose image or video</strong><small id="background-file-name">One selected item is used. Enable a sequence to use more.</small></span>
 <span class="wallpaper-browse">Browse</span>
 </label>
+<details class="rounded-lg border border-gray-200 bg-white p-2.5" id="background-url-import">
+<summary class="cursor-pointer text-[11px] font-semibold text-gray-700">Import an image from a public URL · Optional</summary>
+<div class="mt-2 grid gap-2">
+<label for="background-image-url" class="text-[10px] text-gray-600">Image URL <input id="background-image-url" type="url" inputmode="url" autocomplete="url" maxlength="4096" placeholder="https://example.com/image.jpg" class="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-xs"></label>
+<button id="import-background-url-btn" type="button" class="rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-[11px] font-semibold text-brand-700 hover:bg-brand-100">Import image</button>
+<p id="background-url-import-status" class="text-[10px] text-gray-500" role="status" aria-live="polite">Only public HTTP or HTTPS JPEG, PNG, and WEBP images are accepted. Imports are stored in this app’s persistent gallery.</p>
+<div id="background-url-import-preview" class="hidden rounded-lg border border-gray-200 bg-slate-50 p-2"></div>
+<div id="imported-background-gallery" class="grid grid-cols-2 gap-2" aria-label="Imported background images"></div>
+</div>
+</details>
 <div class="grid gap-2 rounded-lg border border-gray-200 bg-white p-2.5">
 <div class="flex items-center gap-2 border-b border-gray-100 pb-2 text-[11px] font-bold text-gray-700"><span class="material-symbols-outlined text-[16px] text-brand-600" aria-hidden="true">movie</span><span>Media Sequence</span></div>
 <label class="flex items-start gap-2 text-[11px] font-semibold text-gray-700"><input id="sequence-enabled" type="checkbox"><span>Enable Sequential Background Media<small class="mt-0.5 block font-normal text-gray-500">Off by default. Uploaded images and videos play in order when enabled. The sequence is kept when disabled.</small></span></label>
@@ -253,11 +276,11 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
 <label class="flex flex-col gap-1 text-[10px] text-gray-600">Brightness <span id="background-brightness-value">100%</span><input id="background-brightness" type="range" min="0.5" max="1.5" step="0.01" value="1"></label>
 <label class="flex flex-col gap-1 text-[10px] text-gray-600">Contrast <span id="background-contrast-value">100%</span><input id="background-contrast" type="range" min="0.5" max="1.5" step="0.01" value="1"></label>
 <label class="flex flex-col gap-1 text-[10px] text-gray-600">Saturation <span id="background-saturation-value">100%</span><input id="background-saturation" type="range" min="0" max="2" step="0.01" value="1"></label>
-<label class="flex items-center justify-between gap-2 text-[10px] text-gray-600">Overlay color <input id="background-overlay-color" type="color" value="#0b1626" class="h-7 w-9 rounded border border-gray-200"></label>
+<label class="flex items-center justify-between gap-2 text-[10px] text-gray-600">Overlay color <input id="background-overlay-color" type="color" value="#000000" class="h-7 w-9 rounded border border-gray-200"></label>
 <label class="col-span-2 flex flex-col gap-1 text-[10px] text-gray-600">Overlay strength <span id="background-overlay-opacity-value">0%</span><input id="background-overlay-opacity" type="range" min="0" max="0.5" step="0.01" value="0"></label>
 </div>
 <details class="rounded-xl border border-gray-200 bg-white p-3" id="background-animation-panel">
-<summary class="cursor-pointer text-[11px] font-semibold text-gray-700">Background Animation</summary>
+<summary class="cursor-pointer text-[11px] font-semibold text-gray-700">Background Animation · Optional</summary>
 <p class="mt-2 text-[10px] text-gray-500">Uploaded images stay still unless a camera move is enabled. Presets use the same crop motion in the rendered video.</p>
 <div class="mt-3 grid grid-cols-2 gap-3">
 <label class="col-span-2 flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-[11px] font-semibold text-gray-700"><input id="background-animation-enabled" type="checkbox"> Enable Background Animation</label>
@@ -273,7 +296,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
 </div>
 </details>
 <details class="rounded-xl border border-gray-200 bg-white p-3" id="background-atmosphere-panel">
-<summary class="cursor-pointer text-[11px] font-semibold text-gray-700">Atmosphere &amp; Lighting</summary>
+<summary class="cursor-pointer text-[11px] font-semibold text-gray-700">Atmosphere &amp; Lighting · Optional</summary>
 <p class="mt-2 text-[10px] text-gray-500">A low-contrast golden light bloom drifts slowly over any still or video background. It stays off until enabled.</p>
 <div class="mt-3 grid grid-cols-2 gap-3">
 <label class="col-span-2 flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-[11px] font-semibold text-gray-700"><input id="background-atmosphere-enabled" type="checkbox"> Enable Ambient Light Drift</label>
@@ -398,7 +421,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
 </div>
 </section>
 <details class="rounded-xl border border-gray-200 bg-white p-3" id="custom-template-manager">
-<summary class="cursor-pointer text-[11px] font-semibold text-gray-700">My reusable templates</summary>
+<summary class="cursor-pointer text-[11px] font-semibold text-gray-700">My reusable templates · Optional</summary>
 <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
 <label class="flex min-w-0 flex-col gap-1 text-[10px] font-semibold text-gray-600">Template name<input id="custom-template-name" maxlength="48" placeholder="e.g. Dawn reflections" class="min-w-0 rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-xs font-normal"></label>
 <button id="save-custom-template-btn" type="button" class="self-end rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-xs font-semibold text-brand-700 hover:bg-brand-100">Save current design</button>
@@ -423,6 +446,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
 <button class="background-choice{% if loop.first %} selected-background{% endif %}" data-theme="{{ theme_id }}" data-category="{{ theme_categories.get(theme_id, 'Other') }}" data-top="{{ wallpaper.top|join(',') }}" data-bottom="{{ wallpaper.bottom|join(',') }}" type="button"><img class="background-swatch" loading="lazy" alt="" src="/api/backgrounds/{{ theme_id }}/preview?ratio=9:16&amp;v=cinematic-1"><span><strong>{{ wallpaper.name }}</strong><small>{{ theme_categories.get(theme_id, 'Other') }}</small></span></button>
 {% endfor %}
 </div>
+<section class="mt-5 border-t border-gray-200 pt-4" aria-labelledby="ai-background-title"><div class="mb-2 flex items-center justify-between"><div><h2 id="ai-background-title" class="text-xs font-bold text-gray-800">AI generated backgrounds</h2><p class="text-[10px] text-gray-500">Select a saved image to preview it and include it in the video export.</p></div><a href="/images" class="text-[10px] font-semibold text-brand-700 underline">Generate image</a></div><div id="ai-background-options" class="grid grid-cols-2 gap-2.5"><p class="col-span-2 text-[10px] text-gray-500">Loading saved images…</p></div></section>
 </div>
 <div id="background-video-gallery" class="hidden rounded-xl border border-gray-200 bg-white p-3" role="tabpanel" aria-labelledby="background-video-tab">
 <input id="background-video-template" type="hidden" value="">
@@ -472,6 +496,8 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
 <select class="w-full rounded-xl border border-gray-200 bg-white text-gray-900 px-3 py-2 text-xs focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none" id="arabic-font">
 {% for font_id, font in font_catalog.items() %}<option value="{{ font_id }}" {% if font_id == default_font_id %}selected{% endif %}>{{ font.name }}</option>{% endfor %}
 </select>
+<p id="font-preview-sample" class="mt-1 rounded-lg border border-gray-100 bg-slate-50 px-2 py-1 text-right text-base text-gray-800" lang="ar" dir="rtl">بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</p>
+<button id="reset-typography-btn" type="button" class="mt-1 rounded-lg border border-gray-200 bg-white px-2 py-1 text-[10px] font-semibold text-gray-700 hover:border-brand-300">Reset Typography</button>
 </div>
 <div class="flex flex-col gap-1">
 <label class="text-[11px] font-semibold text-gray-600" for="max-lines">Maximum lines per scene</label>
@@ -486,26 +512,42 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
 <button class="caption-color-choice{% if loop.first %} selected-caption-color{% endif %}" data-color="{{ color_id }}" style="--caption-swatch:{{ color_value }}" title="{{ color_id|title }}" aria-label="{{ color_id|title }}" type="button"></button>
 {% endfor %}
 </div>
+<div class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-2"><label class="flex items-center gap-2 text-[10px] text-gray-600" for="caption-color-picker">Custom Quran text color<input id="caption-color-picker" type="color" value="#ffffff" class="h-7 w-9 rounded border border-gray-200"></label><input id="caption-color-hex" type="text" value="#ffffff" maxlength="7" pattern="#[0-9a-fA-F]{6}" aria-label="Quran text hexadecimal color" class="w-full rounded-lg border border-gray-200 px-2 py-1 text-[11px] font-mono" placeholder="#ffffff"></div>
 </div>
 <div class="grid grid-cols-2 gap-3">
-<label class="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-[11px] font-medium text-gray-700"><input id="show-surah-title" type="checkbox" checked> Show Surah name</label>
-<label class="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-[11px] font-medium text-gray-700"><input id="show-ayah-number" type="checkbox" checked> Show ayah number</label>
+<label class="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-[11px] font-medium text-gray-700"><input id="show-surah-title" type="checkbox"> Show Surah name</label>
+<label class="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-[11px] font-medium text-gray-700"><input id="show-ayah-number" type="checkbox"> Show ayah number</label>
 <label class="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-[11px] font-medium text-gray-700"><input id="show-quran-text" type="checkbox" checked> Show Quran text</label>
 <div class="flex flex-col gap-1"><label class="text-[11px] font-semibold text-gray-600" for="caption-position">Caption placement</label><select id="caption-position" class="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs"><option value="upper">Upper</option><option value="center" selected>Center</option><option value="lower">Lower third</option></select></div>
 </div>
+<details class="rounded-xl border border-gray-200 bg-white p-3" id="element-position-controls" open>
+<summary class="cursor-pointer text-[11px] font-semibold text-gray-700">Layout and Element Positioning</summary>
+<div class="mt-3 grid grid-cols-2 gap-3">
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Caption X · frame % <span id="caption-x-value">50%</span><input id="caption-x" type="range" min="0" max="100" step="1" value="50" class="preview-range"></label>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Caption Y · frame % <span id="caption-y-value">54%</span><input id="caption-y" type="range" min="0" max="100" step="1" value="54" class="preview-range"></label>
+<button id="reset-caption-position" type="button" class="col-span-2 rounded-lg border border-gray-200 bg-slate-50 px-3 py-1.5 text-[10px] font-semibold text-gray-700 hover:border-brand-300">Reset Position · Caption</button>
+<p class="col-span-2 text-[9px] leading-relaxed text-gray-500">X and Y are the caption center as a percentage of the output frame. Safe margins keep the caption visible in portrait, landscape, and square exports.</p>
+</div>
+</details>
 <details class="rounded-xl border border-gray-200 bg-white p-3" id="independent-label-templates">
-<summary class="cursor-pointer text-[11px] font-semibold text-gray-700">Independent Surah name and ayah number styles</summary>
+<summary class="cursor-pointer text-[11px] font-semibold text-gray-700">Surah and ayah decorations · Optional</summary>
 <div class="mt-3 grid grid-cols-2 gap-3">
 <label class="flex flex-col gap-1 text-[11px] font-semibold text-gray-600" for="surah-name-template">Surah template<select id="surah-name-template" class="rounded-lg border border-gray-200 bg-white px-2 py-2 text-xs font-normal">{% for template_id, item in surah_templates.items() %}<option value="{{ template_id }}">{{ item.name }}</option>{% endfor %}</select></label>
 <label class="flex flex-col gap-1 text-[11px] font-semibold text-gray-600" for="ayah-number-template">Ayah number template<select id="ayah-number-template" class="rounded-lg border border-gray-200 bg-white px-2 py-2 text-xs font-normal">{% for template_id, item in ayah_templates.items() %}<option value="{{ template_id }}">{{ item.name }}</option>{% endfor %}</select></label>
-<label class="flex items-center justify-between gap-2 text-[11px] text-gray-600">Surah color<input id="surah-color" type="color" value="#ffd166" class="h-7 w-10 rounded border border-gray-200"></label>
-<label class="flex items-center justify-between gap-2 text-[11px] text-gray-600">Ayah number color<input id="ayah-color" type="color" value="#ffdf8e" class="h-7 w-10 rounded border border-gray-200"></label>
+<div class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-2"><label class="flex items-center gap-2 text-[11px] text-gray-600" for="surah-color">Surah color<input id="surah-color" type="color" value="#ffd166" class="h-7 w-9 rounded border border-gray-200"></label><input id="surah-color-hex" type="text" value="#ffd166" maxlength="7" pattern="#[0-9a-fA-F]{6}" aria-label="Surah name hexadecimal color" class="w-full rounded-lg border border-gray-200 px-2 py-1 text-[10px] font-mono" placeholder="#ffd166"></div>
+<div class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-2"><label class="flex items-center gap-2 text-[11px] text-gray-600" for="ayah-color">Ayah number color<input id="ayah-color" type="color" value="#ffdf8e" class="h-7 w-9 rounded border border-gray-200"></label><input id="ayah-color-hex" type="text" value="#ffdf8e" maxlength="7" pattern="#[0-9a-fA-F]{6}" aria-label="Ayah number hexadecimal color" class="w-full rounded-lg border border-gray-200 px-2 py-1 text-[10px] font-mono" placeholder="#ffdf8e"></div>
 <label class="flex flex-col gap-1 text-[10px] text-gray-600">Surah font<select id="surah-font-id" class="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs">{% for font_id, font in font_catalog.items() %}<option value="{{ font_id }}" {% if font_id == default_font_id %}selected{% endif %}>{{ font.name }}</option>{% endfor %}</select></label>
 <label class="flex flex-col gap-1 text-[10px] text-gray-600">Ayah number font<select id="ayah-number-font-id" class="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs">{% for font_id, font in font_catalog.items() %}<option value="{{ font_id }}" {% if font_id == default_font_id %}selected{% endif %}>{{ font.name }}</option>{% endfor %}</select></label>
 <label class="flex flex-col gap-1 text-[10px] text-gray-600">Surah name size <input id="surah-scale" type="range" min="0.25" max="0.7" step="0.01" value="0.46" class="preview-range"></label>
 <label class="flex flex-col gap-1 text-[10px] text-gray-600">Ayah number size <input id="ayah-number-scale" type="range" min="0.2" max="0.6" step="0.01" value="0.38" class="preview-range"></label>
 <label class="flex flex-col gap-1 text-[10px] text-gray-600">Surah name opacity <input id="surah-opacity" type="range" min="0" max="1" step="0.05" value="0.9" class="preview-range"></label>
 <label class="flex flex-col gap-1 text-[10px] text-gray-600">Ayah number opacity <input id="ayah-number-opacity" type="range" min="0" max="1" step="0.05" value="0.96" class="preview-range"></label>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Surah X offset · % of frame <span id="surah-x-offset-value">0%</span><input id="surah-x-offset" type="range" min="-8" max="8" step="0.5" value="0" class="preview-range"></label>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Surah Y offset · % of frame <span id="surah-y-offset-value">0%</span><input id="surah-y-offset" type="range" min="-8" max="8" step="0.5" value="0" class="preview-range"></label>
+<button id="reset-surah-position" type="button" class="rounded-lg border border-gray-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold text-gray-700 hover:border-brand-300">Reset Position · Surah</button>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Ayah number X offset · % of frame <span id="ayah-number-x-offset-value">0%</span><input id="ayah-number-x-offset" type="range" min="-8" max="8" step="0.5" value="0" class="preview-range"></label>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Ayah number Y offset · % of frame <span id="ayah-number-y-offset-value">0%</span><input id="ayah-number-y-offset" type="range" min="-8" max="8" step="0.5" value="0" class="preview-range"></label>
+<button id="reset-ayah-number-position" type="button" class="rounded-lg border border-gray-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold text-gray-700 hover:border-brand-300">Reset Position · Ayah number</button>
 <label class="flex flex-col gap-1 text-[10px] text-gray-600">Surah alignment <select id="surah-align" class="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs"><option value="left">Left</option><option value="center" selected>Center</option><option value="right">Right</option></select></label>
 <label class="flex flex-col gap-1 text-[10px] text-gray-600">Ayah alignment <select id="ayah-number-align" class="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs"><option value="left">Left</option><option value="center" selected>Center</option><option value="right">Right</option></select></label>
 <label class="flex flex-col gap-1 text-[10px] text-gray-600">Surah name position <select id="surah-placement" class="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs"><option value="above">Above Quran text</option><option value="below">Below Quran text</option></select></label>
@@ -513,7 +555,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
 </div>
 </details>
 <details class="rounded-xl border border-gray-200 bg-white p-3" id="viewer-title-controls">
-<summary class="cursor-pointer text-[11px] font-semibold text-gray-700">Video Header</summary>
+<summary class="cursor-pointer text-[11px] font-semibold text-gray-700">Video Header · Optional</summary>
 <div class="mt-3 grid grid-cols-2 gap-3">
 <label class="col-span-2 flex items-center gap-2 text-[11px] text-gray-700"><input id="viewer-title-enabled" type="checkbox" checked> Show video header</label>
 <label class="col-span-2 flex items-center gap-2 text-[11px] text-gray-700"><input id="viewer-title-icon-enabled" type="checkbox" checked> Show Quran book icon</label>
@@ -532,7 +574,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
 </div>
 </details>
 <details class="rounded-xl border border-gray-200 bg-white p-3" id="translation-controls">
-<summary class="cursor-pointer text-[11px] font-semibold text-gray-700">English Translation</summary>
+<summary class="cursor-pointer text-[11px] font-semibold text-gray-700">English Translation · Optional</summary>
 <div class="mt-3 grid grid-cols-2 gap-3">
 <label class="col-span-2 flex items-center gap-2 text-[11px] text-gray-700"><input id="show-translation" type="checkbox"> Show supplied translation</label>
 <label class="col-span-2 flex flex-col gap-1 text-[10px] text-gray-600">One translation per selected ayah, in range order<textarea id="translation-text" rows="3" dir="auto" placeholder="Translations are not included. Add your chosen translation here, one ayah per line." class="rounded-lg border border-gray-200 bg-white px-2 py-2 text-xs font-normal"></textarea></label>
@@ -545,7 +587,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
 </div>
 </details>
 <details class="rounded-xl border border-gray-200 bg-white p-3" id="waveform-controls">
-<summary class="cursor-pointer text-[11px] font-semibold text-gray-700">Audio animation · playback-synced bars</summary>
+<summary class="cursor-pointer text-[11px] font-semibold text-gray-700">Audio animation · Optional</summary>
 <div class="mt-3 grid grid-cols-2 gap-3">
 <label class="col-span-2 flex items-center gap-2 text-[11px] text-gray-700"><input id="show-waveform" type="checkbox" checked> Show waveform while playback runs</label>
 <label class="flex flex-col gap-1 text-[10px] text-gray-600">Waveform style<select id="waveform-style" class="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs"><option value="gold">Gold</option><option value="white">White</option><option value="glow">Glow</option><option value="minimal">Minimal</option></select></label>
@@ -556,7 +598,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
 </div>
 </details>
 <details class="rounded-xl border border-gray-200 bg-white p-3" id="reciter-badge-controls">
-<summary class="cursor-pointer text-[11px] font-semibold text-gray-700">Reciter badge</summary>
+<summary class="cursor-pointer text-[11px] font-semibold text-gray-700">Reciter badge · Optional</summary>
 <div class="mt-3 grid grid-cols-2 gap-3">
 <label class="col-span-2 flex items-center gap-2 text-[11px] text-gray-700"><input id="show-reciter-badge" type="checkbox"> Also show a separate reciter badge</label>
 <label class="col-span-2 flex flex-col gap-1 text-[10px] text-gray-600">Badge label · blank uses selected reciter<input id="reciter-label" maxlength="60" placeholder="Sheikh Mishary Rashid Alafasy" class="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs font-normal"></label>
@@ -566,7 +608,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
 </div>
 </details>
 <details class="rounded-xl border border-gray-200 bg-white p-3" id="progress-bar-controls">
-<summary class="cursor-pointer text-[11px] font-semibold text-gray-700">Progress bar · true video timeline</summary>
+<summary class="cursor-pointer text-[11px] font-semibold text-gray-700">Progress bar · Optional · true video timeline</summary>
 <div class="mt-3 grid grid-cols-2 gap-3">
 <label class="col-span-2 flex items-center gap-2 text-[11px] text-gray-700"><input id="show-progress" type="checkbox" checked> Show playback progress in video</label>
 <label class="flex items-center justify-between gap-2 text-[10px] text-gray-600">Progress color<input id="progress-color" type="color" value="#edbd36" class="h-7 w-9 rounded border border-gray-200"></label>
@@ -575,7 +617,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
 </div>
 </details>
 <details class="rounded-xl border border-gray-200 bg-white p-3">
-<summary class="cursor-pointer text-[11px] font-semibold text-gray-700">Caption background and glow</summary>
+<summary class="cursor-pointer text-[11px] font-semibold text-gray-700">Caption background and glow · Optional</summary>
 <div class="mt-3 grid grid-cols-2 gap-3">
 <label class="flex items-center gap-2 text-[11px] text-gray-700"><input id="text-bg-enabled" type="checkbox" checked> Show caption panel (disable to remove text background)</label>
 <label class="flex items-center gap-2 text-[11px] text-gray-700">Backdrop color <input id="text-bg-color" type="color" value="#090806" class="h-7 w-9 rounded border border-gray-200"></label>
@@ -610,7 +652,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
 <button id="render-cancel-btn" class="hidden mt-2 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:border-red-300 hover:text-red-700" type="button">Cancel render</button>
 </div>
 <details id="youtube-metadata-panel" class="hidden rounded-xl border border-gray-200 bg-white p-3">
-<summary class="cursor-pointer text-xs font-semibold text-gray-800">YouTube metadata · Arabic and English</summary>
+<summary class="cursor-pointer text-xs font-semibold text-gray-800">YouTube metadata · Optional · Arabic and English</summary>
 <div class="mt-3 flex flex-wrap items-center justify-between gap-2">
 <p class="text-[10px] text-gray-500">Editable local metadata from this Surah, ayah range, and selected reciter. No translation is generated.</p>
 <button id="refresh-youtube-metadata" type="button" class="rounded-lg border border-brand-200 bg-brand-50 px-3 py-1.5 text-[10px] font-semibold text-brand-700">Generate / refresh</button>
@@ -769,6 +811,8 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
   const videoTemplates = {{ video_templates|tojson }};
   const textTemplates = {{ text_templates|tojson }};
   const fontCatalog = {{ font_catalog|tojson }};
+  const captionColorValues = {{ caption_colors|tojson }};
+  const defaultFontId = {{ default_font_id|tojson }};
   const imageAnimationPresets = {{ image_animation_presets|tojson }};
   const backgroundSequenceTemplates = {{ background_sequence_templates|tojson }};
   const backgroundVideoTemplates = {{ background_video_templates|tojson }};
@@ -836,6 +880,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
   const ayahText = $('ayah-text');
   let acceptedAyahText = ayahText.value;
   const reciterList = $('reciters-list');
+  const reciterStyleSelect = $('reciter-style-select');
   const PROJECT_DRAFT_KEY = 'quran-reels-studio-draft-v1';
   const SAVED_PROJECTS_KEY = 'quran-reels-studio-projects-v1';
   const CUSTOM_DESIGNS_KEY = 'quran-reels-studio-custom-designs-v1';
@@ -844,9 +889,12 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     'show-quran-text','viewer-title-enabled','viewer-title-icon-enabled','viewer-header-surah-enabled','viewer-header-surah-language','viewer-header-range-enabled','viewer-header-range-language','viewer-header-range-format','viewer-header-qari-enabled','viewer-title-text','viewer-title-template','viewer-title-color','viewer-title-opacity','viewer-title-size','viewer-title-position',
     'show-translation','translation-text','translation-color','translation-size','translation-bg-enabled','translation-bg-color','translation-bg-opacity','show-waveform','waveform-style','waveform-color','waveform-count','waveform-speed',
     'show-reciter-badge','reciter-label','reciter-color','reciter-background','reciter-opacity','show-progress','progress-color','progress-track-color','progress-height',
-    'surah-name-template','ayah-number-template','surah-color','ayah-color','surah-scale',
+    'surah-name-template','ayah-number-template','surah-color','ayah-color','surah-color-hex','ayah-color-hex',
+    'caption-color-picker','caption-color-hex','surah-scale',
     'ayah-number-scale','surah-align','ayah-number-align','surah-font-id','ayah-number-font-id',
-    'surah-opacity','ayah-number-opacity','surah-placement','ayah-number-placement','caption-position','text-bg-enabled',
+    'surah-opacity','ayah-number-opacity','surah-placement','ayah-number-placement',
+    'surah-x-offset','surah-y-offset','ayah-number-x-offset','ayah-number-y-offset',
+    'caption-position','caption-x','caption-y','text-bg-enabled',
     'text-bg-color','text-bg-opacity','glow-type','glow-radius','quran-text-template','wrap-width',
     'transition-style','background-fit','background-crop-x','background-crop-y','background-speed',
     'background-animation-enabled','background-motion-direction','background-animation-preset','background-animation-intensity',
@@ -1208,6 +1256,8 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
       ratio = ['9:16','16:9','1:1'].includes(snapshot.ratio) ? snapshot.ratio : ratio;
       theme = document.querySelector(`.background-choice[data-theme="${snapshot.theme}"]`) ? snapshot.theme : theme;
       captionColor = snapshot.captionColor || captionColor;
+      syncCaptionColorControls(); syncLabelColorControls('surah'); syncLabelColorControls('ayah');
+      updateFontPreviews();
       wrapWidth = Number(snapshot.wrapWidth || 85);
       speed = Number(snapshot.speed || 1);
       scenePlanManual = Boolean(snapshot.scenePlanManual || snapshot.sceneTextDraft);
@@ -1356,6 +1406,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     ratio = ['9:16','16:9','1:1'].includes(design.ratio) ? design.ratio : ratio;
     selectedTemplateId = videoTemplates[design.videoTemplate] ? design.videoTemplate : selectedTemplateId;
     captionColor = design.captionColor || captionColor;
+    syncCaptionColorControls();
     wrapWidth = Number(design.wrapWidth || 85); speed = Number(design.speed || 1);
     for (const [id,value] of Object.entries(design.fields || {})) {
       const element = $(id);
@@ -1363,6 +1414,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
       if (element.type === 'checkbox' || element.type === 'radio') element.checked = Boolean(value);
       else element.value = value;
     }
+    updateFontPreviews(); syncLabelColorControls('surah'); syncLabelColorControls('ayah');
     const designWordLimit = String($('words-per-scene').value || '8');
     appliedWordsPerScene = /^[1-9]\d?$/.test(designWordLimit) && Number(designWordLimit) <= 30
       ? Number(designWordLimit) : 8;
@@ -1509,19 +1561,18 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     applyVideoTemplate(selectedTemplateId);
     refreshSavedProjects(); refreshCustomDesigns();
     const draft = safeReadStorage(PROJECT_DRAFT_KEY, null);
-    if ([1, 2].includes(draft?.state?.version)) {
+    if ([1, 2, 3].includes(draft?.state?.version)) {
       activeProjectId = draft.projectId || 'draft';
       await applyProjectSnapshot(draft.state, activeProjectId);
     } else {
+      $('show-surah-title').checked = false;
+      $('show-ayah-number').checked = false;
       setWallpaperPreview(); updateCaptionPreview().catch(showError); updateSurahInfo(); await loadVerses();
     }
     undoHistory = [makeEditorSnapshot()]; redoHistory = [];
     lastPersistedSignature = snapshotSignature(undoHistory[0]);
     refreshSavedProjects(activeProjectId); updateHistoryButtons();
-    if (selectedReciter && reciterById.has(selectedReciter)) {
-      const name = reciterById.get(selectedReciter).name;
-      $('selected-reciter-name').textContent = name; updatePreviewReciterName(name);
-    }
+    if (selectedReciter && reciterById.has(selectedReciter)) chooseReciterRecording(reciterById.get(selectedReciter));
     const missingMedia = Boolean(draft?.state?.mediaClips?.length && backgroundClipRows.length === 0);
     setProjectStatus(missingMedia ? 'Project restored; re-select its custom background media' :
                      draft?.state ? 'Draft restored from this browser' : 'Autosaves in this browser', missingMedia);
@@ -1534,6 +1585,58 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     if (ratio === '9:16') return [edge, Math.floor(edge * 16 / 9 / 2) * 2];
     if (ratio === '16:9') return [Math.floor(edge * 16 / 9 / 2) * 2, edge];
     return [edge, edge];
+  }
+
+  function defaultCaptionY() {
+    const position = $('caption-position').value;
+    if (position === 'upper') return 34;
+    if (position === 'lower') return 72;
+    return activeTranslationText() ? 43 : 54;
+  }
+  function validHexColor(value) { return /^#[\da-f]{6}$/i.test(String(value || '').trim()); }
+  function syncCaptionColorControls() {
+    const color = captionColorValues[captionColor] || captionColor;
+    if (!validHexColor(color)) return;
+    $('caption-color-picker').value = color;
+    $('caption-color-hex').value = color;
+    $('caption-color-hex').setAttribute('aria-invalid', 'false');
+  }
+  function syncLabelColorControls(name, color = null) {
+    const picker = $(`${name}-color`), text = $(`${name}-color-hex`);
+    const value = color || picker.value;
+    if (!validHexColor(value)) return;
+    picker.value = value; text.value = value; text.setAttribute('aria-invalid', 'false');
+  }
+  function updateFontPreviews() {
+    const font = fontCatalog[$('arabic-font').value] || fontCatalog[defaultFontId];
+    const family = font?.css_family || 'serif', weight = font?.font_weight || 400;
+    $('font-preview-sample').style.fontFamily = `'${family}', serif`;
+    $('font-preview-sample').style.fontWeight = String(weight);
+    ayahText.style.fontFamily = `'${family}', serif`;
+    ayahText.style.fontWeight = String(weight);
+  }
+  function applyCaptionColor(color) {
+    if (!validHexColor(color)) return false;
+    captionColor = color.toLowerCase();
+    syncCaptionColorControls();
+    document.querySelectorAll('.caption-color-choice').forEach(button => {
+      button.classList.toggle('selected-caption-color', captionColorValues[button.dataset.color]?.toLowerCase() === captionColor);
+    });
+    hideRenderedVideo(); updateCaptionPreview().catch(() => {}); scheduleProjectAutosave();
+    return true;
+  }
+  function applyLabelColor(name, color) {
+    if (!validHexColor(color)) return false;
+    syncLabelColorControls(name, color.toLowerCase());
+    hideRenderedVideo(); updateCaptionPreview().catch(() => {}); scheduleProjectAutosave();
+    return true;
+  }
+  function updatePositionValueLabels() {
+    ['caption-x','caption-y','surah-x-offset','surah-y-offset','ayah-number-x-offset','ayah-number-y-offset'].forEach(id => {
+      const output = $(`${id}-value`); if (!output) return;
+      const value = Number($(id).value);
+      output.textContent = `${value > 0 ? '+' : ''}${value}%`;
+    });
   }
   function updateCanvasSummary() {
     const [width, height] = currentOutputSize();
@@ -1614,6 +1717,46 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     setPlaybackIcon(false);
   }
   const reciterById = new Map();
+  const recitersByGroupId = new Map();
+  let selectedReciterGroupId = '';
+
+  function updateSelectedReciterView(reciter) {
+    if (!reciter) return;
+    selectedReciterGroupId = reciter.group_id || reciter.id;
+    const recordings = recitersByGroupId.get(selectedReciterGroupId) || [reciter];
+    $('selected-reciter-name').textContent = reciter.name;
+    $('selected-reciter-style').textContent = reciter.style || 'Recording';
+    $('selected-reciter-riwayah').textContent = reciter.riwayah || reciter.recording_name || '';
+    $('reciter-source-note').textContent = `Source: ${reciter.source || 'MP3Quran.net'} · ${reciter.available_surahs || 114} surahs · timing matched to this recording`;
+    reciterStyleSelect.replaceChildren();
+    recordings.forEach(recording => {
+      const option = document.createElement('option');
+      option.value = recording.id;
+      option.textContent = [recording.style, recording.riwayah].filter(Boolean).join(' · ') || recording.recording_name;
+      option.title = recording.recording_name || option.textContent;
+      reciterStyleSelect.append(option);
+    });
+    reciterStyleSelect.value = reciter.id;
+    reciterStyleSelect.disabled = recordings.length < 2;
+    reciterList.querySelectorAll('.reciter-option').forEach(item => {
+      item.classList.toggle('bg-brand-50/70', item.dataset.groupId === selectedReciterGroupId);
+    });
+    updatePreviewReciterName(reciter.name);
+  }
+
+  function chooseReciterRecording(reciter, refreshAudio = true) {
+    if (!reciter) return;
+    stopRecitationPreview();
+    selectedReciter = reciter.id;
+    previewAyahTimingRows = []; previewTimings = [];
+    playbackSceneText = null;
+    updateSelectedReciterView(reciter);
+    refreshSceneLabels(); renderSceneTimeline();
+    hideRenderedVideo();
+    if (refreshAudio) {
+      loadRecitationTimings({quiet:true}).then(() => updateCaptionPreview()).catch(showError);
+    }
+  }
 
   function hideRenderedVideo() {
     const video = $('rendered-video');
@@ -2206,6 +2349,11 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
                             surah_placement:$('surah-placement').value,
                             ayah_number_placement:$('ayah-number-placement').value,
                             caption_position:$('caption-position').value,
+                            caption_x:Number($('caption-x').value), caption_y:Number($('caption-y').value),
+                            surah_x_offset:Number($('surah-x-offset').value),
+                            surah_y_offset:Number($('surah-y-offset').value),
+                            ayah_number_x_offset:Number($('ayah-number-x-offset').value),
+                            ayah_number_y_offset:Number($('ayah-number-y-offset').value),
                             translation:activeTranslationText(),
                             text_bg_enabled:$('text-bg-enabled').checked,
                             text_bg_color:$('text-bg-color').value,
@@ -2228,10 +2376,17 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
       const scale = frameBox.width / sourceSize[0];
       const outputHeight = sourceSize[1], captionHeight = caption.naturalHeight;
       const hasTranslation = Boolean(activeTranslationText());
-      const anchor = {'upper':.34,'center':hasTranslation ? .43 : .54,'lower':.72}[$('caption-position').value] || .54;
-      const y = Math.max(Math.trunc(outputHeight*.12),
-        Math.min(Math.trunc(outputHeight*anchor-captionHeight/2), outputHeight-captionHeight-Math.trunc(outputHeight*.12)));
+      const captionWidth = caption.naturalWidth;
+      let minX = Math.trunc(sourceSize[0]*.03), maxX = sourceSize[0]-captionWidth-minX;
+      if (maxX < minX) { minX=0; maxX=Math.max(0,sourceSize[0]-captionWidth); }
+      const centerX = Math.trunc(sourceSize[0]*Number($('caption-x').value)/100);
+      const x = Math.max(minX, Math.min(centerX-Math.trunc(captionWidth/2), maxX));
+      let minY = Math.trunc(outputHeight*.12), maxY = outputHeight-captionHeight-minY;
+      if (maxY < minY) { minY=0; maxY=Math.max(0,outputHeight-captionHeight); }
+      const centerY = Math.trunc(outputHeight*Number($('caption-y').value)/100);
+      const y = Math.max(minY, Math.min(centerY-Math.trunc(captionHeight/2), maxY));
       caption.style.width = `${caption.naturalWidth*scale}px`;
+      caption.style.left = `${x*scale}px`;
       caption.style.top = `${y*scale}px`;
       caption.style.display = 'block';
       if (hasTranslation) {
@@ -3119,6 +3274,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     theme = preset.theme;
     $('caption-style').value = preset.caption_style;
     captionColor = preset.caption_color;
+    syncCaptionColorControls();
     $('arabic-font').value = preset.font_id || 'naskh';
     $('max-lines').value = String(preset.max_lines || 5);
     $('show-surah-title').checked = Boolean(preset.show_surah_arabic ?? preset.show_surah_title);
@@ -3128,17 +3284,22 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     $('ayah-number-template').value = preset.ayah_number_template || 'gold_medallion';
     $('surah-color').value = preset.surah_color || '#ffd166';
     $('ayah-color').value = preset.ayah_color || '#ffdf8e';
+    syncLabelColorControls('surah'); syncLabelColorControls('ayah');
     $('surah-scale').value = preset.surah_scale || '0.46';
     $('ayah-number-scale').value = preset.ayah_number_scale || '0.38';
     $('surah-align').value = preset.surah_align || 'center';
     $('ayah-number-align').value = preset.ayah_number_align || 'center';
     $('surah-font-id').value = preset.surah_font_id || preset.font_id || $('arabic-font').value;
     $('ayah-number-font-id').value = preset.ayah_number_font_id || preset.font_id || $('arabic-font').value;
+    updateFontPreviews();
     $('surah-opacity').value = preset.surah_opacity ?? 0.9;
     $('ayah-number-opacity').value = preset.ayah_number_opacity ?? 0.96;
     $('surah-placement').value = preset.surah_placement || 'above';
     $('ayah-number-placement').value = preset.ayah_number_placement || 'above';
     $('caption-position').value = preset.caption_position || 'center';
+    $('caption-x').value = '50'; $('caption-y').value = String(defaultCaptionY());
+    ['surah-x-offset','surah-y-offset','ayah-number-x-offset','ayah-number-y-offset'].forEach(id => { $(id).value = '0'; });
+    updatePositionValueLabels();
     $('text-bg-enabled').checked = Boolean(preset.text_bg_enabled);
     $('text-bg-color').value = preset.text_bg_color || '#000000';
     $('text-bg-opacity').value = preset.text_bg_opacity ?? 0.65;
@@ -3229,7 +3390,9 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     if (!preset) return;
     $('caption-style').value = preset.caption_style;
     captionColor = preset.caption_color;
+    syncCaptionColorControls();
     $('arabic-font').value = preset.font_id;
+    updateFontPreviews();
     $('text-bg-enabled').checked = Boolean(preset.text_bg_enabled);
     $('text-bg-color').value = preset.text_bg_color;
     $('text-bg-opacity').value = preset.text_bg_opacity;
@@ -3655,36 +3818,37 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
 
   fetch('/api/reciters').then(response => response.json()).then(({reciters}) => {
     reciterList.replaceChildren();
-    reciters.forEach((reciter, index) => {
+    reciters.forEach(reciter => {
       reciterById.set(reciter.id, reciter);
+      const groupId = reciter.group_id || reciter.id;
+      if (!recitersByGroupId.has(groupId)) recitersByGroupId.set(groupId, []);
+      recitersByGroupId.get(groupId).push(reciter);
+    });
+    recitersByGroupId.forEach((recordings, groupId) => {
+      const reciter = recordings[0];
       const item = document.createElement('li');
       item.className = 'reciter-option flex items-center justify-between px-3 py-2 rounded-lg hover:bg-gray-50 text-gray-700 cursor-pointer transition-colors';
-      item.dataset.name = reciter.name; item.dataset.id = reciter.id;
+      item.dataset.name = reciter.name; item.dataset.groupId = groupId;
+      item.dataset.search = [reciter.name, ...recordings.flatMap(recording => [recording.style, recording.riwayah, recording.recording_name])]
+        .filter(Boolean).join(' ').toLowerCase();
       const name = document.createElement('span'); name.className = 'text-sm font-medium'; name.textContent = reciter.name;
-      const type = document.createElement('span'); type.className = 'text-[11px] text-gray-500 bg-gray-100 px-2 py-0.5 rounded-md'; type.textContent = reciter.style;
+      const type = document.createElement('span'); type.className = 'text-[11px] text-gray-500 bg-gray-100 px-2 py-0.5 rounded-md';
+      type.textContent = recordings.length > 1 ? `${recordings.length} recordings` : [reciter.style, reciter.riwayah].filter(Boolean).join(' · ');
       item.append(name, type);
-      if (index === 0) item.classList.add('bg-brand-50/70');
       item.addEventListener('click', () => {
-        stopRecitationPreview();
-        selectedReciter = reciter.id;
-        previewAyahTimingRows = []; previewTimings = [];
-        playbackSceneText = null;
-        refreshSceneLabels(); renderSceneTimeline();
-        $('selected-reciter-name').textContent = reciter.name;
-        updatePreviewReciterName(reciter.name);
+        const selected = recordings.find(recording => recording.id === selectedReciter) || reciter;
+        chooseReciterRecording(selected);
         $('reciter-dropdown').classList.add('hidden');
-        hideRenderedVideo();
-        loadRecitationTimings({quiet:true}).then(() => updateCaptionPreview()).catch(() => {});
       });
       reciterList.append(item);
     });
-    const selected = reciterById.get(selectedReciter);
-    if (selected) {
-      $('selected-reciter-name').textContent = selected.name;
-      updatePreviewReciterName(selected.name);
-      reciterList.querySelector(`[data-id="${CSS.escape(selectedReciter)}"]`)?.classList.add('bg-brand-50/70');
-    }
+    const selected = reciterById.get(selectedReciter) || reciters[0];
+    if (selected) chooseReciterRecording(selected);
   }).catch(() => { reciterList.textContent = 'Could not load reciters.'; });
+
+  reciterStyleSelect.addEventListener('change', event => {
+    chooseReciterRecording(reciterById.get(event.target.value));
+  });
 
   $('reciter-trigger').addEventListener('click', event => {
     event.stopPropagation();
@@ -3695,7 +3859,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
   $('reciter-dropdown').addEventListener('click', event => event.stopPropagation());
   $('reciter-filter-input').addEventListener('input', event => {
     const query = event.target.value.toLowerCase();
-    document.querySelectorAll('.reciter-option').forEach(item => { item.hidden = !item.textContent.toLowerCase().includes(query); });
+    document.querySelectorAll('.reciter-option').forEach(item => { item.hidden = !item.dataset.search.includes(query); });
   });
   $('preview-sample-btn').addEventListener('click', async () => {
     const button = $('preview-sample-btn');
@@ -3924,7 +4088,35 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
   $('wallpaper-jump').addEventListener('click', () => $('background-options').scrollIntoView({behavior:'smooth',block:'center'}));
   $('toggle-safezone-btn').addEventListener('click', () => $('safezone-overlay').classList.toggle('hidden'));
   $('caption-style').addEventListener('change', () => { hideRenderedVideo(); updateCaptionPreview().catch(() => {}); });
-  $('caption-position').addEventListener('change', () => { hideRenderedVideo(); updateCaptionPreview().catch(() => {}); });
+  $('caption-position').addEventListener('change', () => { $('caption-y').value = String(defaultCaptionY()); updatePositionValueLabels(); hideRenderedVideo(); updateCaptionPreview().catch(() => {}); });
+  $('caption-color-picker').addEventListener('input', event => applyCaptionColor(event.target.value));
+  $('caption-color-hex').addEventListener('input', event => {
+    const valid = validHexColor(event.target.value); event.target.setAttribute('aria-invalid', String(!valid));
+    if (valid) { $('caption-color-picker').value = event.target.value; applyCaptionColor(event.target.value); }
+  });
+  ['surah','ayah'].forEach(name => {
+    $(`${name}-color`).addEventListener('input', event => applyLabelColor(name, event.target.value));
+    $(`${name}-color-hex`).addEventListener('input', event => {
+      const valid = validHexColor(event.target.value); event.target.setAttribute('aria-invalid', String(!valid));
+      if (valid) { $(`${name}-color`).value = event.target.value; applyLabelColor(name, event.target.value); }
+    });
+  });
+  ['caption-x','caption-y','surah-x-offset','surah-y-offset','ayah-number-x-offset','ayah-number-y-offset'].forEach(id => {
+    $(id).addEventListener('input', () => { updatePositionValueLabels(); hideRenderedVideo(); updateCaptionPreview().catch(() => {}); });
+    $(id).addEventListener('change', () => { updatePositionValueLabels(); hideRenderedVideo(); updateCaptionPreview().catch(() => {}); });
+  });
+  $('reset-caption-position').addEventListener('click', () => {
+    $('caption-x').value = '50'; $('caption-y').value = String(defaultCaptionY());
+    updatePositionValueLabels(); hideRenderedVideo(); updateCaptionPreview().catch(() => {}); scheduleProjectAutosave();
+  });
+  $('reset-surah-position').addEventListener('click', () => {
+    $('surah-x-offset').value = '0'; $('surah-y-offset').value = '0';
+    updatePositionValueLabels(); hideRenderedVideo(); updateCaptionPreview().catch(() => {}); scheduleProjectAutosave();
+  });
+  $('reset-ayah-number-position').addEventListener('click', () => {
+    $('ayah-number-x-offset').value = '0'; $('ayah-number-y-offset').value = '0';
+    updatePositionValueLabels(); hideRenderedVideo(); updateCaptionPreview().catch(() => {}); scheduleProjectAutosave();
+  });
   ['text-bg-enabled','text-bg-color','text-bg-opacity','glow-type','glow-radius'].forEach(id => {
     $(id).addEventListener('input', () => { hideRenderedVideo(); updateCaptionPreview().catch(() => {}); });
     $(id).addEventListener('change', () => { hideRenderedVideo(); updateCaptionPreview().catch(() => {}); });
@@ -3934,9 +4126,17 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     updateScenePlan().then(updateCaptionPreview).catch(showError);
   });
   ['arabic-font','max-lines'].forEach(id => $(id).addEventListener('change', () => {
+    updateFontPreviews();
     hideRenderedVideo(); scenePlanManual = false;
     updateScenePlan().then(updateCaptionPreview).catch(showError);
   }));
+  $('reset-typography-btn').addEventListener('click', () => {
+    $('arabic-font').value = defaultFontId;
+    $('surah-font-id').value = defaultFontId; $('ayah-number-font-id').value = defaultFontId;
+    $('max-lines').value = '5'; $('surah-scale').value = '0.46'; $('ayah-number-scale').value = '0.38';
+    updateFontPreviews(); hideRenderedVideo(); scenePlanManual = false;
+    updateScenePlan().then(updateCaptionPreview).catch(showError); scheduleProjectAutosave();
+  });
   $('show-surah-title').addEventListener('change', () => {
     scenePlanManual = false; updateScenePlan().then(updateCaptionPreview).catch(showError);
   });
@@ -3959,6 +4159,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
   });
   document.querySelectorAll('.caption-color-choice').forEach(button => button.addEventListener('click', () => {
     captionColor = button.dataset.color;
+    syncCaptionColorControls();
     document.querySelectorAll('.caption-color-choice').forEach(item => item.classList.toggle('selected-caption-color', item === button));
     hideRenderedVideo();
     updateCaptionPreview().catch(() => {});
@@ -4149,6 +4350,9 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
       form.set('surah_opacity', $('surah-opacity').value); form.set('ayah_number_opacity', $('ayah-number-opacity').value);
       form.set('surah_placement', $('surah-placement').value); form.set('ayah_number_placement', $('ayah-number-placement').value);
       form.set('caption_position', $('caption-position').value);
+      form.set('caption_x', $('caption-x').value); form.set('caption_y', $('caption-y').value);
+      form.set('surah_x_offset', $('surah-x-offset').value); form.set('surah_y_offset', $('surah-y-offset').value);
+      form.set('ayah_number_x_offset', $('ayah-number-x-offset').value); form.set('ayah_number_y_offset', $('ayah-number-y-offset').value);
       form.set('text_bg_enabled', $('text-bg-enabled').checked);
       form.set('text_bg_color', $('text-bg-color').value);
       form.set('text_bg_opacity', $('text-bg-opacity').value);
@@ -4289,5 +4493,133 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     loadVerses().then(updateCaptionPreview).catch(showError);
   });
 })();
+</script>
+<script>
+window.addEventListener('DOMContentLoaded', () => {
+  const input = document.getElementById('background-image-url');
+  const importButton = document.getElementById('import-background-url-btn');
+  const status = document.getElementById('background-url-import-status');
+  const gallery = document.getElementById('imported-background-gallery');
+  const preview = document.getElementById('background-url-import-preview');
+  if (!input || !importButton || !gallery || !status || !preview) return;
+  const setStatus = (message, isError = false) => {
+    status.textContent = message;
+    status.classList.toggle('text-red-700', isError);
+    status.classList.toggle('text-gray-500', !isError);
+  };
+  const useImage = async item => {
+    const response = await fetch(item.file_url);
+    if (!response.ok) throw new Error('This imported image is no longer available.');
+    const blob = await response.blob();
+    const extension = item.format === 'JPEG' ? 'jpg' : item.format.toLowerCase();
+    const file = new File([blob], `imported-${item.id}.${extension}`, {type:item.mime_type});
+    const transfer = new DataTransfer(); transfer.items.add(file);
+    const fileInput = document.getElementById('background-file');
+    fileInput.files = transfer.files;
+    const sequence = document.getElementById('sequence-enabled');
+    if (sequence.checked) { sequence.checked = false; sequence.dispatchEvent(new Event('change', {bubbles:true})); }
+    localStorage.removeItem('quranReelsGeneratedBackgroundId');
+    localStorage.setItem('quranReelsImportedBackgroundId', item.id);
+    document.querySelectorAll('.background-choice').forEach(choice => choice.classList.remove('selected-background'));
+    fileInput.dispatchEvent(new Event('change', {bubbles:true}));
+  };
+  const renderGallery = async () => {
+    const response = await fetch('/api/backgrounds/imported');
+    if (!response.ok) throw new Error('Imported background gallery is unavailable.');
+    const items = (await response.json()).backgrounds || [];
+    gallery.replaceChildren();
+    if (!items.length) {
+      const empty = document.createElement('p'); empty.className = 'col-span-2 text-[10px] text-gray-500';
+      empty.textContent = 'No URL images imported yet.'; gallery.append(empty); return items;
+    }
+    for (const item of items) {
+      const card = document.createElement('article'); card.className = 'overflow-hidden rounded-lg border border-gray-200 bg-white';
+      const image = document.createElement('img'); image.src = item.file_url; image.alt = `Imported background, ${item.width} by ${item.height} pixels`;
+      image.className = 'h-24 w-full object-contain bg-slate-100';
+      const info = document.createElement('div'); info.className = 'p-2';
+      const dimensions = document.createElement('p'); dimensions.className = 'text-[9px] text-gray-600';
+      dimensions.textContent = `${item.width} × ${item.height} · ${(item.size_bytes / 1048576).toFixed(1)} MB`;
+      const actions = document.createElement('div'); actions.className = 'mt-1.5 flex gap-1.5';
+      const use = document.createElement('button'); use.type = 'button'; use.dataset.action = 'use'; use.dataset.id = item.id;
+      use.className = 'flex-1 rounded-md bg-brand-50 px-2 py-1 text-[9px] font-semibold text-brand-700 hover:bg-brand-100'; use.textContent = 'Use background';
+      const remove = document.createElement('button'); remove.type = 'button'; remove.dataset.action = 'remove'; remove.dataset.id = item.id;
+      remove.className = 'rounded-md border border-gray-200 px-2 py-1 text-[9px] font-semibold text-gray-600 hover:border-red-300 hover:text-red-700'; remove.textContent = 'Remove';
+      actions.append(use, remove); info.append(dimensions, actions); card.append(image, info); gallery.append(card);
+    }
+    return items;
+  };
+  importButton.addEventListener('click', async () => {
+    if (!input.value.trim()) { setStatus('Enter an image URL first.', true); input.focus(); return; }
+    importButton.disabled = true; setStatus('Fetching and validating the public image…'); preview.classList.add('hidden');
+    try {
+      const response = await fetch('/api/backgrounds/import-url', {
+        method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({url:input.value.trim()})
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Image import failed.');
+      const image = document.createElement('img'); image.src = result.file_url; image.alt = 'Preview of imported background';
+      image.className = 'max-h-52 w-full rounded-md bg-slate-100 object-contain';
+      const info = document.createElement('p'); info.className = 'mt-2 text-[10px] text-gray-600';
+      info.textContent = `${result.width} × ${result.height} pixels · ${(result.size_bytes / 1048576).toFixed(1)} MB · saved from ${result.source_host}`;
+      const use = document.createElement('button'); use.type = 'button'; use.className = 'mt-2 rounded-lg bg-brand-600 px-3 py-2 text-[10px] font-semibold text-white hover:bg-brand-700';
+      use.textContent = 'Use this background'; use.addEventListener('click', async () => {
+        try { await useImage(result); setStatus('Imported image selected as the video background.'); }
+        catch (error) { setStatus(error.message, true); }
+      });
+      preview.replaceChildren(image, info, use); preview.classList.remove('hidden');
+      input.value = ''; await renderGallery(); setStatus('Image imported. Review its preview, then choose Use this background.');
+    } catch (error) { setStatus(error.message, true); }
+    finally { importButton.disabled = false; }
+  });
+  gallery.addEventListener('click', async event => {
+    const button = event.target.closest('button[data-action]'); if (!button) return;
+    button.disabled = true;
+    try {
+      if (button.dataset.action === 'use') {
+        const response = await fetch('/api/backgrounds/imported');
+        if (!response.ok) throw new Error('Imported background gallery is unavailable.');
+        const item = (await response.json()).backgrounds.find(row => row.id === button.dataset.id);
+        if (!item) throw new Error('This imported image was removed.');
+        await useImage(item); setStatus(`Selected ${item.width} × ${item.height} image as the video background.`);
+      } else {
+        const response = await fetch(`/api/backgrounds/imported/${encodeURIComponent(button.dataset.id)}`, {method:'DELETE'});
+        const result = await response.json(); if (!response.ok) throw new Error(result.error || 'Could not remove imported image.');
+        if (localStorage.getItem('quranReelsImportedBackgroundId') === button.dataset.id) localStorage.removeItem('quranReelsImportedBackgroundId');
+        await renderGallery(); setStatus('Imported image removed from the persistent gallery.');
+      }
+    } catch (error) { setStatus(error.message, true); }
+    finally { button.disabled = false; }
+  });
+  renderGallery().catch(error => setStatus(error.message, true));
+  const savedId = localStorage.getItem('quranReelsImportedBackgroundId');
+  if (savedId) fetch('/api/backgrounds/imported').then(response => response.ok ? response.json() : Promise.reject())
+    .then(data => { const item = (data.backgrounds || []).find(row => row.id === savedId); if (item) return useImage(item); })
+    .catch(() => { localStorage.removeItem('quranReelsImportedBackgroundId'); });
+});
+</script>
+<script>
+// Rehydrate a gallery selection through the exact upload path used by video exports.
+window.addEventListener('DOMContentLoaded', async () => {
+  const id=localStorage.getItem('quranReelsGeneratedBackgroundId'); if(!id)return;
+  try { const response=await fetch(`/api/images/${encodeURIComponent(id)}/file`); if(!response.ok)throw Error('not found');
+    const blob=await response.blob(); const file=new File([blob],`generated-${id}.${blob.type==='image/jpeg'?'jpg':blob.type.split('/')[1]||'png'}`,{type:blob.type});
+    const transfer=new DataTransfer();transfer.items.add(file);const input=document.getElementById('background-file');input.files=transfer.files;input.dispatchEvent(new Event('change',{bubbles:true}));
+  } catch(error) { localStorage.removeItem('quranReelsGeneratedBackgroundId'); const label=document.getElementById('background-file-name');if(label)label.textContent='Previously selected AI background is deleted or unavailable. Choose another background.'; }
+});
+window.addEventListener('DOMContentLoaded', async () => {
+  const grid=document.getElementById('ai-background-options'); if(!grid)return;
+  try {
+    const response=await fetch('/api/images'); if(!response.ok)throw Error('Gallery unavailable');
+    const data=await response.json(); grid.replaceChildren();
+    if(!data.images.length){grid.innerHTML='<p class="col-span-2 text-[10px] text-gray-500">No AI images saved yet. Generate one to add it here.</p>';return;}
+    for(const image of data.images){
+      const button=document.createElement('button');button.type='button';button.className='ai-background-choice overflow-hidden rounded-xl border border-gray-200 bg-white text-left hover:border-brand-400';button.dataset.id=image.id;
+      const thumbnail=document.createElement('img');thumbnail.src=`/api/images/${image.id}/file`;thumbnail.alt='AI generated background';thumbnail.className='h-24 w-full object-cover';
+      const label=document.createElement('span');label.className='block p-2';const title=document.createElement('strong');title.className='block text-[10px] text-gray-800';title.textContent=image.prompt.slice(0,58);const meta=document.createElement('small');meta.className='text-[9px] text-gray-500';meta.textContent=`AI generated · ${image.ratio} · ${image.width}×${image.height}`;label.append(title,meta);button.append(thumbnail,label);grid.append(button);
+      if(localStorage.getItem('quranReelsGeneratedBackgroundId')===image.id){button.classList.add('ring-2','ring-brand-500');document.querySelectorAll('.background-choice').forEach(item=>item.classList.remove('selected-background'));}
+    }
+    grid.addEventListener('click',async event=>{const button=event.target.closest('.ai-background-choice');if(!button)return;const id=button.dataset.id;try{const fileResponse=await fetch(`/api/images/${encodeURIComponent(id)}/file`);if(!fileResponse.ok)throw Error('This saved image is no longer available.');const blob=await fileResponse.blob();const extension=blob.type==='image/jpeg'?'jpg':blob.type==='image/webp'?'webp':'png';const file=new File([blob],`ai-background-${id}.${extension}`,{type:blob.type});const transfer=new DataTransfer();transfer.items.add(file);const input=document.getElementById('background-file');input.files=transfer.files;document.querySelectorAll('.background-choice').forEach(item=>item.classList.remove('selected-background'));const sequence=document.getElementById('sequence-enabled');if(sequence.checked){sequence.checked=false;sequence.dispatchEvent(new Event('change',{bubbles:true}));}localStorage.setItem('quranReelsGeneratedBackgroundId',id);document.querySelectorAll('.ai-background-choice').forEach(item=>item.classList.toggle('ring-2',item===button));input.dispatchEvent(new Event('change',{bubbles:true}));}catch(error){const message=document.getElementById('background-file-name');if(message)message.textContent=error.message;}});
+  }catch(error){grid.textContent='Saved AI backgrounds could not be loaded.';}
+});
 </script>
 </body></html>

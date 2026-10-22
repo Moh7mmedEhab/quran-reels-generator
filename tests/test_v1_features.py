@@ -105,6 +105,42 @@ def test_filename_sanitizer_preserves_arabic_and_removes_filesystem_controls():
     assert len(sanitize_video_filename("😀" * 300).encode("utf-8")) <= 184
 
 
+def test_all_bundled_arabic_fonts_render_quran_text_and_marks():
+    from app.font_catalog import FONT_CATALOG
+    from app.text_renderer import render_arabic_text
+
+    sample = "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ ۞"
+    assert {"amiri", "amiri_bold", "naskh", "naskh_bold", "sans", "sans_bold", "kufi", "kufi_bold"} <= set(FONT_CATALOG)
+    rendered = {}
+    for font_id, font in FONT_CATALOG.items():
+        assert font["file"].is_file(), f"Missing bundled font {font_id}"
+        image = render_arabic_text(sample, font_path=font["file"], font_size=56,
+                                   color=(255, 255, 255, 255), max_width=600,
+                                   backdrop_fill=None, stroke_width=1)
+        assert image.getbbox()
+        rendered[font_id] = image.tobytes()
+    assert len(set(rendered.values())) > 1
+
+
+def test_new_caption_labels_are_off_by_default_and_independent_label_offsets_render():
+    from app.text_renderer import render_arabic_text
+
+    sample = "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ"
+    base_args = dict(text=sample, ayah_number=7, surah_title="سُورَةُ الفَاتِحَةِ",
+                     font_size=54, max_width=700, backdrop_fill=None, output_size=(1080, 1920))
+    default = render_arabic_text(**base_args)
+    explicit_off = render_arabic_text(**base_args, show_surah_title=False, show_ayah_number=False)
+    assert default.size == explicit_off.size
+    assert default.tobytes() == explicit_off.tobytes()
+
+    shifted = render_arabic_text(**base_args, show_surah_title=True, show_ayah_number=True,
+                                 surah_position_x=-5, surah_position_y=-5,
+                                 ayah_number_position_x=5, ayah_number_position_y=5)
+    centered = render_arabic_text(**base_args, show_surah_title=True, show_ayah_number=True)
+    assert shifted.size != centered.size
+    assert shifted.tobytes() != centered.tobytes()
+
+
 def test_quran_foundation_word_timing_is_opt_in_and_word_count_checked(monkeypatch):
     import app.word_alignment as alignment
 
@@ -241,7 +277,7 @@ def test_version_and_metadata_endpoints_use_selected_surah_range_and_reciter():
     client = create_app().test_client()
     version = client.get("/api/version")
     assert version.status_code == 200
-    assert version.json["version"] == "1.0.0"
+    assert version.json["version"] == "1.2.0"
     metadata = client.get(
         "/api/youtube-metadata?surah=55&start=13&end=14&reciter_id=mishary_alafasy"
     )
@@ -284,7 +320,7 @@ def test_template_exposes_image_video_tabs_and_release_version():
     assert b'id="api-curl-command"' in page.data
     assert b"function currentRenderCurl()" in page.data
     assert b"window.location.origin + '/api/generate'" in page.data
-    assert b"Studio v1.0" in page.data
+    assert b"Studio v1.2" in page.data
     assert b"Misty Forest Drift" in page.data
 
 

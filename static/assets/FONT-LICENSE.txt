@@ -153,3 +153,10 @@ License: OFL-1.1
 
 License: GPL-3+
 License-Reference: /usr/share/common-licenses/GPL-3
+
+Files: fonts/Amiri-Regular.ttf fonts/Amiri-Bold.ttf
+Copyright: 2010-2022 The Amiri Project Authors
+Source: https://github.com/aliftype/amiri
+License: SIL Open Font License 1.1
+ See fonts/Amiri-OFL.txt for the complete license text distributed with
+ these files.

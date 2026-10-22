@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Image Generator · Quran Reels</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-slate-50 text-slate-900">
+  <header class="border-b bg-white">
+    <nav class="mx-auto flex max-w-6xl items-center justify-between p-4">
+      <strong>Quran Reels Studio</strong>
+      <div class="flex gap-4 text-sm">
+        <a href="/" class="text-slate-600">Video Generator</a>
+        <a href="/images" aria-current="page" class="font-semibold text-blue-700">AI Image Generator</a>
+      </div>
+    </nav>
+  </header>
+  <main class="mx-auto grid max-w-6xl gap-6 p-5 lg:grid-cols-[1fr_1fr]">
+    <section class="rounded-2xl border bg-white p-6 shadow-sm">
+      <h1 class="text-2xl font-bold">Create a cinematic background</h1>
+      <p class="mt-2 text-sm text-slate-500">Choose a generator, then describe the image you want.</p>
+      <fieldset class="mt-6">
+        <legend class="text-sm font-semibold">Image generator</legend>
+        <div class="mt-2 grid gap-3 sm:grid-cols-2">
+          <label class="cursor-pointer rounded-xl border p-4 has-[:checked]:border-blue-600 has-[:checked]:bg-blue-50">
+            <span class="font-semibold"><input type="radio" name="provider" value="comfyui" checked> Local ComfyUI</span>
+            <span class="mt-1 block text-xs text-slate-500">Use your installed model. No Pollinations account or API key is needed.</span>
+          </label>
+          <label class="cursor-pointer rounded-xl border p-4 has-[:checked]:border-blue-600 has-[:checked]:bg-blue-50">
+            <span class="font-semibold"><input type="radio" name="provider" value="pollinations"> Pollinations online</span>
+            <span class="mt-1 block text-xs text-slate-500">Choose the authenticated API or the classic no-key option.</span>
+          </label>
+        </div>
+      </fieldset>
+      <div id="pollinations-options" class="mt-4 hidden rounded-xl bg-slate-50 p-4">
+        <fieldset>
+          <legend class="text-sm font-semibold">Pollinations access</legend>
+          <div class="mt-2 grid gap-2 sm:grid-cols-2">
+            <label class="cursor-pointer rounded-lg border bg-white p-3 has-[:checked]:border-blue-600 has-[:checked]:bg-blue-50">
+              <span class="text-sm font-semibold"><input type="radio" name="pollinations-mode" value="keyless" checked> No API key</span>
+              <span class="mt-1 block text-xs text-slate-500">Use Pollinations Classic directly. No account key required.</span>
+            </label>
+            <label class="cursor-pointer rounded-lg border bg-white p-3 has-[:checked]:border-blue-600 has-[:checked]:bg-blue-50">
+              <span class="text-sm font-semibold"><input type="radio" name="pollinations-mode" value="api"> API key</span>
+              <span class="mt-1 block text-xs text-slate-500">Uses POLLINATIONS_API_KEY on the server; model costs apply.</span>
+            </label>
+          </div>
+        </fieldset>
+        <div id="pollinations-api-options" class="mt-4 hidden">
+          <label for="pollinations-model" class="block text-sm font-semibold">Pollinations image model</label>
+          <select id="pollinations-model" class="mt-2 w-full rounded-lg border bg-white p-2" disabled>
+            <option>Loading image models…</option>
+          </select>
+          <p id="pollinations-model-info" class="mt-2 text-xs text-slate-500" aria-live="polite"></p>
+        </div>
+        <div id="pollinations-keyless-options" class="mt-4">
+          <label for="pollinations-legacy-model" class="block text-sm font-semibold">Classic model</label>
+          <select id="pollinations-legacy-model" class="mt-2 w-full rounded-lg border bg-white p-2">
+            <option value="flux">Flux · photorealistic</option>
+            <option value="zimage">Z-Image · artistic</option>
+            <option value="klein">Klein · fast</option>
+          </select>
+          <p class="mt-2 text-xs text-slate-500">This no-key service is the classic Pollinations route. Its availability and model list are managed by Pollinations.</p>
+        </div>
+      </div>
+      <label for="prompt" class="mt-6 block text-sm font-semibold">Image prompt</label>
+      <textarea id="prompt" rows="7" class="mt-2 w-full rounded-xl border p-3" placeholder="Describe exactly what you want to see…">A peaceful photorealistic cinematic background: a serene mountain lake at dawn, soft mist above the water, distant mountain silhouettes, subtle natural blue and warm gold light, realistic water and stone textures, calm uncluttered composition with generous negative space through the center, important subjects near the outer edges, natural colors.</textarea>
+      <fieldset class="mt-6">
+        <legend class="text-sm font-semibold">Format</legend>
+        <div class="mt-2 grid grid-cols-3 gap-2">
+          <label class="flex cursor-pointer flex-col items-center gap-2 rounded-xl border p-3 text-xs">
+            <span class="h-12 w-7 rounded border-2 border-blue-500 bg-blue-50" aria-hidden="true"></span>
+            <span><input type="radio" name="ratio" value="9:16" checked> Portrait · 9:16</span>
+          </label>
+          <label class="flex cursor-pointer flex-col items-center gap-2 rounded-xl border p-3 text-xs">
+            <span class="h-7 w-12 rounded border-2 border-slate-400 bg-slate-50" aria-hidden="true"></span>
+            <span><input type="radio" name="ratio" value="16:9"> Landscape · 16:9</span>
+          </label>
+          <label class="flex cursor-pointer flex-col items-center gap-2 rounded-xl border p-3 text-xs">
+            <span class="h-9 w-9 rounded border-2 border-slate-400 bg-slate-50" aria-hidden="true"></span>
+            <span><input type="radio" name="ratio" value="1:1"> Square · 1:1</span>
+          </label>
+        </div>
+      </fieldset>
+      <button id="generate" class="mt-6 w-full rounded-xl bg-blue-700 px-4 py-3 font-semibold text-white">Generate image</button>
+      <p id="status" class="mt-3 text-sm" role="status" aria-live="polite"></p>
+    </section>
+    <section class="rounded-2xl border bg-white p-6 shadow-sm">
+      <h2 class="text-lg font-semibold">Preview</h2>
+      <div id="empty" class="mt-4 grid min-h-96 place-items-center rounded-xl bg-slate-100 text-sm text-slate-500">Your generated image will appear here.</div>
+      <img id="preview" class="mt-4 hidden max-h-[70vh] w-full rounded-xl object-contain" alt="Generated image">
+      <div id="details" class="mt-3 text-sm text-slate-500"></div>
+      <div id="actions" class="mt-3 hidden gap-3">
+        <a id="download" class="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white">Download</a>
+        <button id="use" class="rounded-lg border px-4 py-2 text-sm">Use in video generator</button>
+      </div>
+    </section>
+  </main>
+  <dialog id="lightbox" class="max-h-[95vh] max-w-[95vw] rounded-xl p-2 backdrop:bg-black/80">
+    <button id="close-lightbox" class="float-right rounded bg-white px-3 py-1">Close</button>
+    <img id="lightbox-image" class="max-h-[88vh] max-w-[92vw] object-contain" alt="Full-size generated image">
+  </dialog>
+  <section class="mx-auto max-w-6xl px-5 pb-10">
+    <h2 class="mb-4 text-xl font-semibold">Your generated images</h2>
+    <div id="gallery" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"></div>
+  </section>
+  <script>
+    const prompt = document.querySelector('#prompt');
+    const status = document.querySelector('#status');
+    const preview = document.querySelector('#preview');
+    const gallery = document.querySelector('#gallery');
+    const providerRadios = document.querySelectorAll('[name=provider]');
+    const pollinationsOptions = document.querySelector('#pollinations-options');
+    const pollinationsModeRadios = document.querySelectorAll('[name=pollinations-mode]');
+    const pollinationsApiOptions = document.querySelector('#pollinations-api-options');
+    const pollinationsKeylessOptions = document.querySelector('#pollinations-keyless-options');
+    const pollinationsModel = document.querySelector('#pollinations-model');
+    const pollinationsModelInfo = document.querySelector('#pollinations-model-info');
+    let pollinationsModels = [];
+    let galleryItems = [];
+
+    function selectedPollinationsModel() {
+      return pollinationsModels.find(model => model.name === pollinationsModel.value);
+    }
+
+    function updatePollinationsModelInfo() {
+      const model = selectedPollinationsModel();
+      if (!model) { pollinationsModelInfo.textContent = ''; return; }
+      const price = model.pricing && Object.keys(model.pricing).length
+        ? ' · Pollen pricing: ' + JSON.stringify(model.pricing)
+        : '';
+      pollinationsModelInfo.textContent = (model.paid_only ? 'Paid model' : 'Pricing depends on the model and your Pollinations account') + price;
+      localStorage.setItem('quranReelsPollinationsImageModel', model.name);
+    }
+
+    async function loadPollinationsModels() {
+      try {
+        const response = await fetch('/api/images/models');
+        if (!response.ok) throw new Error('Live Pollinations model list is unavailable.');
+        const data = await response.json();
+        pollinationsModels = data.models || [];
+        if (!pollinationsModels.length) throw new Error('No Pollinations image models are available for this API key.');
+        const savedModel = localStorage.getItem('quranReelsPollinationsImageModel');
+        const preferred = savedModel || data.default_model;
+        const selected = pollinationsModels.find(model => model.name === preferred || model.aliases.includes(preferred)) || pollinationsModels[0];
+        pollinationsModel.replaceChildren();
+        for (const model of pollinationsModels) {
+          const option = document.createElement('option');
+          option.value = model.name;
+          option.textContent = [model.publisher, model.title].filter(Boolean).join(' · ') + (model.paid_only ? ' · paid' : '');
+          pollinationsModel.append(option);
+        }
+        pollinationsModel.value = selected.name;
+        pollinationsModel.disabled = false;
+        updatePollinationsModelInfo();
+      } catch (error) {
+        pollinationsModel.replaceChildren(new Option('Model catalog unavailable', ''));
+        pollinationsModelInfo.textContent = error.message + ' The configured default model can still be used.';
+      }
+    }
+
+    function updateProviderOptions() {
+      const selectedProvider = document.querySelector('[name=provider]:checked').value;
+      pollinationsOptions.classList.toggle('hidden', selectedProvider !== 'pollinations');
+      updatePollinationsModeOptions();
+    }
+
+    function updatePollinationsModeOptions() {
+      const selectedMode = document.querySelector('[name=pollinations-mode]:checked').value;
+      pollinationsApiOptions.classList.toggle('hidden', selectedMode !== 'api');
+      pollinationsKeylessOptions.classList.toggle('hidden', selectedMode !== 'keyless');
+    }
+    providerRadios.forEach(radio => radio.addEventListener('change', updateProviderOptions));
+    pollinationsModeRadios.forEach(radio => radio.addEventListener('change', updatePollinationsModeOptions));
+    pollinationsModel.addEventListener('change', updatePollinationsModelInfo);
+    updateProviderOptions();
+    loadPollinationsModels();
+
+    document.querySelector('#generate').onclick = async () => {
+      const text = prompt.value.trim();
+      if (!text) { status.textContent = 'Enter an image prompt first.'; return; }
+      const button = document.querySelector('#generate');
+      button.disabled = true;
+      const generator = document.querySelector('[name=provider]:checked').value;
+      const pollinationsMode = document.querySelector('[name=pollinations-mode]:checked').value;
+      const provider = generator === 'pollinations'
+        ? (pollinationsMode === 'api' ? 'pollinations' : 'pollinations_legacy')
+        : 'comfyui';
+      const providerLabel = provider === 'pollinations' ? 'Pollinations API' : provider === 'pollinations_legacy' ? 'Pollinations without an API key' : 'Local ComfyUI';
+      status.textContent = 'Generating with ' + providerLabel + '…';
+      try {
+        const response = await fetch('/api/images/generate', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({prompt: text, ratio: document.querySelector('[name=ratio]:checked').value, provider,
+            model: provider === 'pollinations' ? pollinationsModel.value : provider === 'pollinations_legacy' ? document.querySelector('#pollinations-legacy-model').value : undefined})
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Generation failed.');
+        preview.src = '/api/images/' + data.id + '/file';
+        preview.classList.remove('hidden');
+        document.querySelector('#empty').classList.add('hidden');
+        document.querySelector('#details').textContent = data.width + ' × ' + data.height + ' · ' + data.model;
+        const download = document.querySelector('#download');
+        download.href = '/api/images/' + data.id + '/file?download=1';
+        download.download = 'quran-reel-background.' + ({'image/png':'png', 'image/webp':'webp', 'image/jpeg':'jpg'}[data.mime_type] || 'png');
+        document.querySelector('#actions').classList.remove('hidden');
+        document.querySelector('#actions').classList.add('flex');
+        document.querySelector('#use').onclick = () => {
+          localStorage.setItem('quranReelsGeneratedBackgroundId', data.id);
+          location.href = '/';
+        };
+        status.textContent = 'Image ready.';
+        await loadGallery();
+      } catch (error) {
+        status.textContent = error.message;
+      } finally {
+        button.disabled = false;
+      }
+    };
+
+    function renderGallery() {
+      gallery.replaceChildren();
+      if (!galleryItems.length) {
+        const empty = document.createElement('div');
+        empty.className = 'col-span-full rounded-xl border border-dashed bg-white p-8 text-center';
+        const title = document.createElement('p');
+        title.className = 'font-semibold';
+        title.textContent = 'No generated images yet';
+        const detail = document.createElement('p');
+        detail.className = 'mt-2 text-sm text-slate-500';
+        detail.textContent = 'Create an image with the prompt and format above. Saved images will appear here.';
+        empty.append(title, detail);
+        gallery.append(empty);
+        return;
+      }
+      const items = [...galleryItems].sort((a, b) => b.created_at.localeCompare(a.created_at));
+      for (const image of items) {
+        const card = document.createElement('article');
+        card.className = 'overflow-hidden rounded-xl border bg-white p-3';
+        const thumbnail = document.createElement('img');
+        thumbnail.className = 'mb-2 h-48 w-full cursor-zoom-in rounded-lg object-cover';
+        thumbnail.src = '/api/images/' + image.id + '/file';
+        thumbnail.alt = 'Generated background preview';
+        thumbnail.onclick = () => {
+          document.querySelector('#lightbox-image').src = thumbnail.src;
+          document.querySelector('#lightbox').showModal();
+        };
+        const promptText = document.createElement('p');
+        promptText.className = 'line-clamp-3 text-xs';
+        promptText.textContent = image.user_prompt || image.prompt;
+        const details = document.createElement('p');
+        details.className = 'my-2 text-xs text-slate-500';
+        details.textContent = image.width + ' × ' + image.height + ' · ' + image.ratio + ' · ' + new Date(image.created_at).toLocaleString();
+        const actions = document.createElement('div');
+        actions.className = 'flex flex-wrap gap-2';
+        actions.innerHTML = '<a class="rounded bg-slate-900 px-2 py-1 text-xs text-white" href="/api/images/' + image.id + '/file?download=1">Download</a><button class="use rounded border px-2 py-1 text-xs" data-id="' + image.id + '">Use in video</button><button class="regen rounded border px-2 py-1 text-xs" data-id="' + image.id + '">Regenerate</button><button class="variation rounded border px-2 py-1 text-xs" data-id="' + image.id + '">Variation</button><button class="delete rounded border px-2 py-1 text-xs" data-id="' + image.id + '">Delete</button>';
+        card.append(thumbnail, promptText, details, actions);
+        gallery.append(card);
+      }
+    }
+
+    async function loadGallery() {
+      try {
+        const response = await fetch('/api/images');
+        if (!response.ok) throw new Error('Gallery could not load.');
+        galleryItems = (await response.json()).images;
+        renderGallery();
+      } catch (error) {
+        gallery.textContent = error.message;
+      }
+    }
+
+    gallery.onclick = async event => {
+      const id = event.target.dataset.id;
+      if (event.target.matches('.use')) {
+        localStorage.setItem('quranReelsGeneratedBackgroundId', id);
+        location.href = '/';
+      } else if (event.target.matches('.delete')) {
+        const response = await fetch('/api/images/' + id, {method: 'DELETE'});
+        if (response.ok) await loadGallery();
+      } else if (event.target.matches('.regen, .variation')) {
+        const image = galleryItems.find(item => item.id === id);
+        prompt.value = image.user_prompt || image.prompt;
+        if (event.target.matches('.variation')) {
+          prompt.value += '\n\nCreate a distinct visual interpretation while preserving the subject and overall mood.';
+        }
+        document.querySelector('[name=ratio][value="' + image.ratio + '"]').checked = true;
+        document.querySelector('#generate').click();
+        window.scrollTo({top: 0, behavior: 'smooth'});
+      }
+    };
+
+    document.querySelector('#close-lightbox').onclick = () => document.querySelector('#lightbox').close();
+    loadGallery();
+  </script>
+</body>
+</html>

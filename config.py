@@ -5,6 +5,12 @@ import os
 import secrets
 from pathlib import Path
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).resolve().parent / ".env")
+except ImportError:
+    pass
+
 
 BASE_DIR = Path(__file__).resolve().parent
 

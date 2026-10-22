@@ -62,3 +62,22 @@ def test_multi_ayah_audio_ends_at_final_selected_ayah_boundary(monkeypatch, tmp_
     assert track.end == 612.62
     assert track.ayah_durations == [41.18, 11.38]
     assert sum(track.ayah_durations) == pytest.approx(track.end - track.start)
+
+
+@pytest.mark.parametrize("recording_id,expected_read_id", [
+    ("abdul_basit_mujawwad", 51),
+    ("husary_warsh", 120),
+    ("husary_duri", 269),
+    ("husary_qalun", 270),
+])
+def test_alternate_recordings_use_their_own_timing_read(monkeypatch, recording_id, expected_read_id):
+    requested = []
+
+    def fake_timings(surah, read_id):
+        requested.append((surah, read_id))
+        return (TIMING_ROWS[1],)
+
+    monkeypatch.setattr(audio_sources, "_get_surah_timings", fake_timings)
+    rows = audio_sources.get_recitation_timings(RECITERS_BY_ID[recording_id], 55, 29, 29)
+    assert rows == [TIMING_ROWS[1]]
+    assert requested == [(55, expected_read_id)]
