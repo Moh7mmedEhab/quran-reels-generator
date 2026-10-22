@@ -51,6 +51,112 @@ def test_nvenc_command_uses_hardware_encoder_and_maps_mixed_audio(tmp_path):
     assert command[-1] == str(tmp_path / "out.mp4")
 
 
+def test_nvenc_broken_pipe_cleanup_preserves_ffmpeg_error(monkeypatch, tmp_path):
+    import io
+    import app.ffmpeg_encoder as encoder_module
+
+    class BrokenPipe:
+        closed = False
+
+        def write(self, _frame):
+            raise BrokenPipeError("FFmpeg exited")
+
+        def close(self):
+            raise BrokenPipeError("pipe close also failed")
+
+    class FailedProcess:
+        stdin = BrokenPipe()
+        stderr = io.BytesIO(b"encoder exited with an NVENC error\n")
+
+        def poll(self):
+            return 1
+
+        def wait(self, timeout=None):
+            return 1
+
+        def terminate(self):
+            raise AssertionError("an exited process must not be terminated")
+
+        def kill(self):
+            raise AssertionError("an exited process must not be killed")
+
+    process = FailedProcess()
+    monkeypatch.setattr(encoder_module.subprocess, "Popen", lambda *args, **kwargs: process)
+
+    class Clip:
+        size = (240, 426)
+        duration = 1
+        audio = None
+
+        def iter_frames(self, **kwargs):
+            yield np.zeros((426, 240, 3), dtype=np.uint8)
+
+    with pytest.raises(RuntimeError, match="encoder exited with an NVENC error"):
+        encoder_module.write_hardware_video(
+            Clip(), tmp_path / "broken.mp4", fps=24, ffmpeg="ffmpeg",
+            encoder="nvidia", crf=23, audio_bitrate="192k", audio_fps=48000,
+        )
+
+
+def test_nvenc_cancellation_stops_process_and_removes_temporary_audio(monkeypatch, tmp_path):
+    import io
+    import threading
+    from pathlib import Path
+    import app.ffmpeg_encoder as encoder_module
+    from app.job_errors import JobCancelled
+
+    class Pipe:
+        closed = False
+
+        def close(self):
+            self.closed = True
+
+    class RunningProcess:
+        stdin = Pipe()
+        stderr = io.BytesIO()
+        returncode = None
+        terminated = False
+
+        def poll(self):
+            return self.returncode
+
+        def terminate(self):
+            self.terminated = True
+            self.returncode = -15
+
+        def wait(self, timeout=None):
+            return self.returncode
+
+    process = RunningProcess()
+    monkeypatch.setattr(encoder_module.subprocess, "Popen", lambda *args, **kwargs: process)
+    cancel_event = threading.Event()
+    cancel_event.set()
+
+    class Audio:
+        def write_audiofile(self, path, **kwargs):
+            Path(path).write_bytes(b"temporary pcm")
+
+    class Clip:
+        size = (240, 426)
+        duration = 1
+        audio = Audio()
+
+        def iter_frames(self, **kwargs):
+            yield np.zeros((426, 240, 3), dtype=np.uint8)
+
+    output = tmp_path / "cancelled.mp4"
+    audio_path = output.with_name("cancelled_nvidia_audio.wav")
+    with pytest.raises(JobCancelled):
+        encoder_module.write_hardware_video(
+            Clip(), output, fps=24, ffmpeg="ffmpeg", encoder="nvidia",
+            crf=23, audio_bitrate="192k", audio_fps=48000,
+            cancel_event=cancel_event,
+        )
+    assert process.terminated
+    assert process.stdin.closed
+    assert not audio_path.exists()
+
+
 def test_intel_qsv_command_uses_hardware_encoder_and_nv12(tmp_path):
     from app.ffmpeg_encoder import build_qsv_command
     command = build_qsv_command(
@@ -72,6 +178,31 @@ def test_nvidia_render_fails_early_with_actionable_capability_error(monkeypatch,
     })
     with pytest.raises(ValueError, match="NVIDIA NVENC is unavailable.*Driver not active"):
         render_reel(ayahs=["آية"], output_path=tmp_path / "never.mp4", encoder="nvidia")
+
+
+def test_auto_encoder_falls_back_to_x264_when_nvenc_fails_during_render(monkeypatch, tmp_path):
+    import app.ffmpeg_encoder as encoder_module
+
+    monkeypatch.setattr(encoder_module, "hardware_encoder_status", lambda: {
+        "ffmpeg": "/usr/bin/ffmpeg",
+        "nvidia": {"available": True, "name": "Quadro T2000", "gpu_index": 0},
+        "intel": {"available": False, "name": "Intel UHD", "reason": "No media device"},
+    })
+
+    def fail_nvenc(*args, **kwargs):
+        raise RuntimeError("mock NVENC encode failure")
+
+    monkeypatch.setattr(encoder_module, "write_hardware_video", fail_nvenc)
+    output = tmp_path / "fallback.mp4"
+    result = render_reel(
+        ayahs=["بِسْمِ اللَّهِ"], output_path=output, aspect_ratio="9:16",
+        output_size=(240, 426), fps=24, quality="fast", duration_per_ayah=.5,
+        encoder="auto", show_surah_title=False,
+    )
+    assert output.is_file() and output.stat().st_size > 1024
+    assert result["requested_encoder"] == "auto"
+    assert result["encoder"] == "cpu"
+    assert "mock NVENC encode failure" in result["fallback_reason"]
 
 
 def test_intel_render_fails_early_when_quick_sync_is_unavailable(monkeypatch, tmp_path):
@@ -404,19 +535,167 @@ def test_arabic_caption_font_uses_raqm_layout_when_available():
         assert font.layout_engine == ImageFont.Layout.RAQM
 
 
-def test_long_ayah_scene_plan_preserves_every_uthmani_character():
+def test_long_ayah_without_word_timing_stays_whole_for_its_ayah_duration():
     from app.scenes import build_scene_plan
     long_ayah = get_ayahs(2, 282, 282)[0]
     scenes = build_scene_plan([long_ayah], ayah_start=282, max_lines=4,
                               show_surah_title=True, default_duration=90)
-    assert len(scenes) > 1
-    assert all(scene["ayah_number"] == 282 for scene in scenes)
-    assert [scene["segment_index"] for scene in scenes] == list(range(1, len(scenes) + 1))
-    assert all(scene["timing_mode"] == "character_weighted_estimate" for scene in scenes)
-    assert "".join(long_ayah.split()) == "".join("".join(scene["text"].split()) for scene in scenes)
+    assert len(scenes) == 1
+    assert scenes[0]["ayah_number"] == 282
+    assert scenes[0]["segment_index"] == scenes[0]["segment_count"] == 1
+    assert scenes[0]["timing_mode"] == "default_duration_estimate"
+    assert scenes[0]["text"] == long_ayah
     assert sum(scene["duration"] for scene in scenes) == pytest.approx(90)
     assert scenes[0]["start_time"] == 0
     assert scenes[-1]["end_time"] == pytest.approx(90)
+
+
+def test_word_boundary_split_preserves_arabic_marks_punctuation_and_repeated_words():
+    from app.scenes import split_ayah_at_word_boundaries
+    ayah = "قُلْ هُوَ اللَّهُ أَحَدٌ ۚ قُلْ هُوَ اللَّهُ"
+    parts = split_ayah_at_word_boundaries(ayah, max_words=3, max_characters=100)
+    assert all(1 <= len(part.split()) <= 3 for part in parts)
+    assert "".join(ayah.split()) == "".join("".join(part.split()) for part in parts)
+    assert sum(part.split().count("قُلْ") for part in parts) == 2
+    assert any(part.endswith("ۚ") for part in parts)
+
+
+def test_word_timestamps_are_required_for_automatic_phrase_scene_timing():
+    from app.scenes import build_scene_plan
+    ayah = " ".join(["بِسْمِ", "اللَّهِ", "الرَّحْمَٰنِ", "الرَّحِيمِ"] * 8)
+    word_times = [[{"start": index * .5, "end": index * .5 + .4}
+                   for index, _ in enumerate(ayah.split())]]
+    scenes = build_scene_plan([ayah], durations=[30], word_timings=word_times,
+                              output_size=(240, 426), max_lines=1, wrap_width=65)
+    assert len(scenes) > 1
+    assert all(scene["timing_mode"] == "word_timestamp" for scene in scenes)
+    assert "".join(ayah.split()) == "".join("".join(scene["text"].split()) for scene in scenes)
+    assert scenes[0]["start_time"] == pytest.approx(0)
+    assert scenes[-1]["end_time"] == pytest.approx(word_times[0][-1]["end"])
+    assert [scene["word_start_index"] for scene in scenes] == sorted(
+        scene["word_start_index"] for scene in scenes
+    )
+
+
+def test_configured_word_count_sets_scene_boundaries_and_voice_timestamps_set_durations():
+    from app.scenes import build_scene_plan
+    ayah = "قُلْ هُوَ اللَّهُ أَحَدٌ " * 3
+    words = ayah.split()
+    word_times = [[{"start": index * .75, "end": index * .75 + .5}
+                   for index in range(len(words))]]
+    scenes = build_scene_plan(
+        [ayah], durations=[20], word_timings=word_times, words_per_scene=4,
+        output_size=(1080, 1920), wrap_width=95, max_lines=8,
+    )
+    assert [scene["word_count"] for scene in scenes] == [4, 4, 4]
+    assert [scene["start_time"] for scene in scenes] == pytest.approx([0, 3, 6])
+    assert [scene["end_time"] for scene in scenes] == pytest.approx([2.75, 5.75, 8.75])
+    assert all(scene["timing_mode"] == "word_timestamp" for scene in scenes)
+    assert "".join(ayah.split()) == "".join("".join(scene["text"].split()) for scene in scenes)
+
+
+def test_manual_scene_durations_are_individual_and_shift_only_sequential_caption_positions():
+    from app.scenes import build_scene_plan
+    ayah = "أَوَّلٌ ثَانٍ ثَالِثٌ رَابِعٌ خَامِسٌ سَادِسٌ"
+    words = ayah.split()
+    rows = [
+        {"scene_id":"part-1", "ayah_number":1, "text":" ".join(words[:2]), "manual_duration":11},
+        {"scene_id":"part-2", "ayah_number":1, "text":" ".join(words[2:4]), "manual_duration":9},
+        {"scene_id":"part-3", "ayah_number":1, "text":" ".join(words[4:]), "manual_duration":7.5},
+    ]
+    plan = build_scene_plan([ayah], durations=[40], scene_overrides=rows)
+    assert [scene["duration"] for scene in plan] == pytest.approx([11, 9, 7.5])
+    assert [scene["start_time"] for scene in plan] == pytest.approx([0, 11, 20])
+    assert [scene["end_time"] for scene in plan] == pytest.approx([11, 20, 27.5])
+    assert [scene["automatic_duration"] for scene in plan] != pytest.approx([11, 9, 7.5])
+
+    rows[0]["manual_duration"] = 12
+    changed = build_scene_plan([ayah], durations=[40], scene_overrides=rows)
+    assert [scene["duration"] for scene in changed] == pytest.approx([12, 9, 7.5])
+    assert [scene["start_time"] for scene in changed] == pytest.approx([0, 12, 21])
+    assert [scene["end_time"] for scene in changed] == pytest.approx([12, 21, 28.5])
+
+    # Reset just the second scene by omitting its manual override. Other edits
+    # stay applied and the second scene returns to its original weighted span.
+    rows[1].pop("manual_duration")
+    reset_one = build_scene_plan([ayah], durations=[40], scene_overrides=rows)
+    assert reset_one[0]["duration"] == pytest.approx(12)
+    assert reset_one[1]["duration"] == pytest.approx(reset_one[1]["automatic_duration"])
+    assert reset_one[2]["duration"] == pytest.approx(7.5)
+    assert reset_one[2]["start_time"] == pytest.approx(reset_one[1]["end_time"])
+
+
+@pytest.mark.parametrize("duration", [0, -1, "NaN", "inf", True, 3600.01])
+def test_scene_manual_duration_rejects_invalid_values(duration):
+    from app.scenes import build_scene_plan
+    with pytest.raises(ValueError, match="Scene duration"):
+        build_scene_plan(["أَوَّلٌ ثَانٍ"], durations=[4], scene_overrides=[
+            {"ayah_number":1, "text":"أَوَّلٌ ثَانٍ", "manual_duration":duration},
+        ])
+
+
+@pytest.mark.parametrize("extension", [0, .1, 1.0])
+def test_final_caption_can_outlast_selected_audio_without_changing_audio_timing(extension):
+    from app.scenes import build_scene_plan
+
+    audio_duration = 41.18
+    requested_duration = audio_duration + extension
+    plan = build_scene_plan(["أَوَّلٌ ثَانٍ"], ayah_start=29, durations=[audio_duration], scene_overrides=[
+        {"scene_id":"final", "ayah_number":29, "text":"أَوَّلٌ ثَانٍ",
+         "manual_duration":requested_duration},
+    ])
+    scene = plan[0]
+    assert scene["automatic_duration"] == pytest.approx(audio_duration)
+    assert scene["duration"] == pytest.approx(requested_duration)
+    assert scene["start_time"] == pytest.approx(0)
+    assert scene["end_time"] == pytest.approx(requested_duration)
+    if extension:
+        assert scene["audio_overrun_seconds"] == pytest.approx(extension)
+        assert "Quran audio remains cropped" in scene["timing_warning"]
+    else:
+        assert "timing_warning" not in scene
+
+
+def test_exact_word_timestamps_keep_caption_start_anchored_and_reject_overlap():
+    from app.scenes import build_scene_plan
+    ayah = "أَوَّلٌ ثَانٍ ثَالِثٌ رَابِعٌ"
+    rows = [
+        {"scene_id":"first", "ayah_number":1, "text":"أَوَّلٌ ثَانٍ", "manual_duration":.8},
+        {"scene_id":"second", "ayah_number":1, "text":"ثَالِثٌ رَابِعٌ", "manual_duration":.7},
+    ]
+    words = [[{"start":.1,"end":.35},{"start":.55,"end":.9},
+              {"start":1.2,"end":1.5},{"start":1.75,"end":2.05}]]
+    plan = build_scene_plan([ayah], durations=[3], word_timings=words, scene_overrides=rows)
+    assert [scene["duration"] for scene in plan] == pytest.approx([.8, .7])
+    assert [scene["start_time"] for scene in plan] == pytest.approx([.1, 1.2])
+    assert [scene["end_time"] for scene in plan] == pytest.approx([.9, 1.9])
+    rows[0]["manual_duration"] = 1.3
+    with pytest.raises(ValueError, match="overlaps the previous caption"):
+        build_scene_plan([ayah], durations=[3], word_timings=words, scene_overrides=rows)
+
+
+def test_untimed_word_count_preview_has_no_guessed_times_and_export_keeps_whole_ayah():
+    from app.scenes import build_scene_plan
+    ayah = "قُلْ هُوَ اللَّهُ أَحَدٌ " * 3
+    preview = build_scene_plan(
+        [ayah], words_per_scene=4, preview_untimed_splits=True,
+        output_size=(1080, 1920), wrap_width=95, max_lines=8,
+    )
+    assert [scene["word_count"] for scene in preview] == [4, 4, 4]
+    assert all(scene["duration"] is None and scene["start_time"] is None for scene in preview)
+    exported = build_scene_plan([ayah], durations=[9], words_per_scene=4)
+    assert len(exported) == 1
+    assert exported[0]["text"] == ayah.strip()
+    assert exported[0]["duration"] == 9
+    assert exported[0]["timing_mode"] == "ayah_timestamp"
+
+
+def test_invalid_word_timing_count_fails_closed():
+    from app.scenes import build_scene_plan
+    with pytest.raises(ValueError, match="exact whitespace-delimited word count"):
+        build_scene_plan(["بِسْمِ اللَّهِ"], durations=[3], word_timings=[[
+            {"start": 0, "end": 1},
+        ]])
 
 
 def test_manual_scene_plan_only_accepts_order_preserving_splits():
@@ -435,28 +714,516 @@ def test_manual_scene_plan_only_accepts_order_preserving_splits():
             {"ayah_number": 13, "text": " ".join(words[split:])},
             {"ayah_number": 13, "text": " ".join(words[:split])},
         ])
+    with pytest.raises(ValueError, match="word boundaries"):
+        build_scene_plan([ayah], ayah_start=13, scene_overrides=[
+            {"ayah_number": 13, "text": words[0][:-1]},
+            {"ayah_number": 13, "text": words[0][-1:] + " " + " ".join(words[1:])},
+        ])
 
 
-def test_manual_phrase_share_moves_scene_boundary_without_changing_ayah_duration():
+def test_manual_percentage_timing_is_rejected_and_ayah_timing_uses_labeled_weighted_split_estimates():
     from app.scenes import build_scene_plan
     ayah = get_ayahs(55, 13, 13)[0]
     words = ayah.split()
     middle = len(words) // 2
-    scenes = build_scene_plan([ayah], ayah_start=13, durations=[8.0], scene_overrides=[
-        {"ayah_number":13,"text":" ".join(words[:middle]),"duration_fraction":.35},
-        {"ayah_number":13,"text":" ".join(words[middle:]),"duration_fraction":.65},
+    overrides = [
+        {"ayah_number":13,"text":" ".join(words[:middle])},
+        {"ayah_number":13,"text":" ".join(words[middle:])},
+    ]
+    scenes = build_scene_plan([ayah], ayah_start=13, durations=[8.0], scene_overrides=overrides)
+    assert len(scenes) == 2
+    assert all(scene["timing_mode"] == "weighted_estimate" for scene in scenes)
+    assert all(scene["timing_approximate"] is True for scene in scenes)
+    assert sum(scene["duration"] for scene in scenes) == pytest.approx(8.0)
+    assert scenes[0]["duration"] != pytest.approx(scenes[1]["duration"])
+    overrides[0]["duration_fraction"] = .35
+    with pytest.raises(ValueError, match="percentage timing is no longer supported"):
+        build_scene_plan([ayah], ayah_start=13, durations=[8.0], scene_overrides=overrides)
+
+
+def test_scene_word_redistribution_moves_exact_words_forward_and_backward_without_crossing_ayahs():
+    from app.scenes import redistribute_scene_words
+    ayahs = ["أَوَّلٌ ثَانٍ ثَالِثٌ رَابِعٌ خَامِسٌ سَادِسٌ", "سَابِعٌ ثَامِنٌ"]
+    scenes = [
+        {"ayah_number": 1, "text": "أَوَّلٌ ثَانٍ"},
+        {"ayah_number": 1, "text": "ثَالِثٌ رَابِعٌ"},
+        {"ayah_number": 1, "text": "خَامِسٌ سَادِسٌ"},
+        {"ayah_number": 2, "text": ayahs[1]},
+    ]
+
+    grown_by_one = redistribute_scene_words(ayahs, scenes, scene_index=0, requested_word_count=3)
+    assert [row["word_count"] for row in grown_by_one["scenes"][:3]] == [3, 1, 2]
+    assert "".join(ayahs[0].split()) == "".join(
+        "".join(row["text"].split()) for row in grown_by_one["scenes"][:3]
+    )
+
+    grown = redistribute_scene_words(ayahs, grown_by_one["scenes"], scene_index=0, requested_word_count=5)
+    assert [row["text"] for row in grown["scenes"]] == [
+        "أَوَّلٌ ثَانٍ ثَالِثٌ رَابِعٌ خَامِسٌ", "سَادِسٌ", ayahs[1],
+    ]
+    assert grown["word_count"] == 5 and grown["max_words"] == 6
+
+    reduced_by_one = redistribute_scene_words(ayahs, grown["scenes"], scene_index=0, requested_word_count=4)
+    assert [row["word_count"] for row in reduced_by_one["scenes"][:2]] == [4, 2]
+    reduced = redistribute_scene_words(ayahs, reduced_by_one["scenes"], scene_index=0, requested_word_count=2)
+    assert [row["text"] for row in reduced["scenes"]] == [
+        "أَوَّلٌ ثَانٍ", "ثَالِثٌ رَابِعٌ خَامِسٌ سَادِسٌ", ayahs[1],
+    ]
+    assert "".join(ayahs[0].split()) == "".join(
+        "".join(row["text"].split()) for row in reduced["scenes"][:2]
+    )
+    assert reduced["scenes"][2]["text"] == ayahs[1]
+
+
+def test_scene_word_redistribution_maximum_never_crosses_ayah_boundary():
+    from app.scenes import redistribute_scene_words
+    ayahs = ["أَوَّلٌ ثَانٍ", "ثَالِثٌ رَابِعٌ"]
+    scenes = [
+        {"ayah_number":1,"text":"أَوَّلٌ"},
+        {"ayah_number":1,"text":"ثَانٍ"},
+        {"ayah_number":2,"text":ayahs[1]},
+    ]
+    with pytest.raises(ValueError, match="at most 2 words"):
+        redistribute_scene_words(ayahs, scenes, scene_index=0, requested_word_count=99)
+    result = redistribute_scene_words(ayahs, scenes, scene_index=0, requested_word_count=2)
+    assert result["word_count"] == result["max_words"] == 2
+    assert [scene["text"] for scene in result["scenes"]] == [ayahs[0], ayahs[1]]
+
+
+def test_scene_word_redistribution_recomputes_limits_for_the_selected_scene():
+    from app.scenes import redistribute_scene_words
+    ayah = "أَوَّلٌ ثَانٍ ثَالِثٌ رَابِعٌ خَامِسٌ سَادِسٌ"
+    scenes = [
+        {"ayah_number":1,"text":"أَوَّلٌ ثَانٍ"},
+        {"ayah_number":1,"text":"ثَالِثٌ رَابِعٌ"},
+        {"ayah_number":1,"text":"خَامِسٌ سَادِسٌ"},
+    ]
+    middle = redistribute_scene_words([ayah], scenes, scene_index=1, requested_word_count=4)
+    assert middle["selected_scene_index"] == 1
+    assert middle["word_count"] == 4 and middle["max_words"] == 4
+    with pytest.raises(ValueError, match="at most 4 words"):
+        redistribute_scene_words([ayah], scenes, scene_index=1, requested_word_count=99)
+    first = redistribute_scene_words([ayah], middle["scenes"], scene_index=0, requested_word_count=1)
+    assert first["selected_scene_index"] == 0
+    assert first["word_count"] == 1
+    assert first["max_words"] == 6
+
+
+def test_scene_word_redistribution_can_shrink_final_segment_and_obeys_explicit_locks():
+    from app.scenes import redistribute_scene_words, set_scene_lock
+    ayahs = ["أَوَّلٌ ثَانٍ ثَالِثٌ رَابِعٌ"]
+    initial = [{"ayah_number": 1, "text": ayahs[0]}]
+    split = redistribute_scene_words(ayahs, initial, scene_index=0, requested_word_count=2)
+    assert [scene["word_count"] for scene in split["scenes"]] == [2, 2]
+    assert "".join(ayahs[0].split()) == "".join(
+        "".join(scene["text"].split()) for scene in split["scenes"]
+    )
+
+    reduced = redistribute_scene_words(ayahs, split["scenes"], scene_index=1, requested_word_count=1)
+    assert [scene["word_count"] for scene in reduced["scenes"]] == [2, 1, 1]
+    assert "".join(ayahs[0].split()) == "".join(
+        "".join(scene["text"].split()) for scene in reduced["scenes"]
+    )
+    locked = set_scene_lock(ayahs, reduced["scenes"], scene_index=1, locked=True)
+    with pytest.raises(ValueError, match="Unlock this scene"):
+        redistribute_scene_words(ayahs, locked["scenes"], scene_index=1, requested_word_count=2)
+    with pytest.raises(ValueError, match="at least one"):
+        redistribute_scene_words(ayahs, split["scenes"], scene_index=0, requested_word_count=0)
+
+
+def test_locked_scene_is_unchanged_when_previous_scene_grows_or_shrinks():
+    from app.scenes import redistribute_scene_words, set_scene_lock
+    ayah = "أَوَّلٌ ثَانٍ ثَالِثٌ رَابِعٌ خَامِسٌ سَادِسٌ"
+    rows = [
+        {"ayah_number":1,"scene_id":"first","text":"أَوَّلٌ ثَانٍ"},
+        {"ayah_number":1,"scene_id":"protected","text":"ثَالِثٌ رَابِعٌ"},
+        {"ayah_number":1,"scene_id":"last","text":"خَامِسٌ سَادِسٌ"},
+    ]
+    locked = set_scene_lock([ayah], rows, scene_index=1, locked=True)["scenes"]
+    shrunk = redistribute_scene_words([ayah], locked, scene_index=0, requested_word_count=1)
+    assert [scene["text"] for scene in shrunk["scenes"]] == [
+        "أَوَّلٌ", "ثَانٍ", "ثَالِثٌ رَابِعٌ", "خَامِسٌ سَادِسٌ",
+    ]
+    assert shrunk["scenes"][2]["scene_id"] == "protected"
+    assert shrunk["scenes"][2]["locked"] is True
+    with pytest.raises(ValueError, match="at most 2 words"):
+        redistribute_scene_words([ayah], locked, scene_index=0, requested_word_count=3)
+
+
+def test_scene_text_edit_accepts_only_exact_next_source_words():
+    from app.scenes import edit_scene_text
+    ayah = "أَوَّلٌ ثَانٍ ثَالِثٌ رَابِعٌ خَامِسٌ"
+    rows = [
+        {"ayah_number":1,"scene_id":"first","text":"أَوَّلٌ ثَانٍ"},
+        {"ayah_number":1,"scene_id":"second","text":"ثَالِثٌ رَابِعٌ خَامِسٌ"},
+    ]
+    edited = edit_scene_text([ayah], rows, scene_index=0, text="أَوَّلٌ ثَانٍ ثَالِثٌ")
+    assert [scene["text"] for scene in edited["scenes"]] == ["أَوَّلٌ ثَانٍ ثَالِثٌ", "رَابِعٌ خَامِسٌ"]
+    assert [scene["scene_id"] for scene in edited["scenes"]][0] == "first"
+    with pytest.raises(ValueError, match="exact next words"):
+        edit_scene_text([ayah], rows, scene_index=0, text="ثَانٍ أَوَّلٌ")
+
+
+def test_word_redistribution_recalculates_scene_audio_boundaries_from_word_timestamps():
+    from app.scenes import build_scene_plan, redistribute_scene_words
+    ayah = "أَوَّلٌ ثَانٍ ثَالِثٌ رَابِعٌ خَامِسٌ سَادِسٌ"
+    source_rows = [
+        {"ayah_number":1,"text":"أَوَّلٌ ثَانٍ"},
+        {"ayah_number":1,"text":"ثَالِثٌ رَابِعٌ"},
+        {"ayah_number":1,"text":"خَامِسٌ سَادِسٌ"},
+    ]
+    timings = [[{"start": .2 + index * .5, "end": .45 + index * .5} for index in range(6)]]
+    allocation = redistribute_scene_words([ayah], source_rows, scene_index=0, requested_word_count=4)
+    plan = build_scene_plan([ayah], durations=[4], word_timings=timings,
+                            scene_overrides=allocation["scenes"])
+    assert [scene["word_start_index"] for scene in plan] == [0, 4]
+    assert [scene["start_time"] for scene in plan] == pytest.approx([.2, 2.2])
+    assert [scene["end_time"] for scene in plan] == pytest.approx([1.95, 2.95])
+    assert [scene["duration"] for scene in plan] == pytest.approx([1.75, .75])
+    assert [scene["word_count"] for scene in plan] == [4, 2]
+    assert plan[1]["start_time"] > plan[0]["end_time"]  # Preserve measured silence.
+
+    reduced = redistribute_scene_words([ayah], allocation["scenes"], scene_index=0, requested_word_count=2)
+    reduced_plan = build_scene_plan([ayah], durations=[4], word_timings=timings,
+                                    scene_overrides=reduced["scenes"])
+    assert [scene["start_time"] for scene in reduced_plan] == pytest.approx([.2, 1.2])
+    assert [scene["end_time"] for scene in reduced_plan] == pytest.approx([.95, 2.95])
+    assert [scene["text"] for scene in reduced_plan] == ["أَوَّلٌ ثَانٍ", "ثَالِثٌ رَابِعٌ خَامِسٌ سَادِسٌ"]
+    assert " ".join(word for scene in reduced_plan for word in scene["text"].split()) == ayah
+
+
+def test_scene_split_and_merge_retime_each_assigned_word_and_reject_overlap():
+    from app.scenes import build_scene_plan, merge_scene_with_previous, split_scene_by_word_count
+    ayah = "أَوَّلٌ ثَانٍ ثَالِثٌ رَابِعٌ خَامِسٌ"
+    timings = [[
+        {"start":.1,"end":.35}, {"start":.55,"end":.9},
+        {"start":1.2,"end":1.5}, {"start":1.75,"end":2.05},
+        {"start":2.4,"end":2.75},
+    ]]
+    initial = [{"ayah_number":1,"scene_id":"whole","text":ayah,"locked":False}]
+    split = split_scene_by_word_count([ayah], initial, scene_index=0, words_per_scene=2)
+    plan = build_scene_plan([ayah], durations=[3], word_timings=timings,
+                            scene_overrides=split["scenes"])
+    assert [row["start_time"] for row in plan] == pytest.approx([.1,1.2,2.4])
+    assert [row["end_time"] for row in plan] == pytest.approx([.9,2.05,2.75])
+    merged = merge_scene_with_previous([ayah], split["scenes"], scene_index=1)
+    merged_plan = build_scene_plan([ayah], durations=[3], word_timings=timings,
+                                   scene_overrides=merged["scenes"])
+    assert [row["text"] for row in merged_plan] == ["أَوَّلٌ ثَانٍ ثَالِثٌ رَابِعٌ", "خَامِسٌ"]
+    assert [row["start_time"] for row in merged_plan] == pytest.approx([.1,2.4])
+    assert [row["end_time"] for row in merged_plan] == pytest.approx([2.05,2.75])
+    with pytest.raises(ValueError, match="out of order"):
+        build_scene_plan([ayah], durations=[3], word_timings=[[
+            {"start":.1,"end":.7}, {"start":.6,"end":.9}, *timings[0][2:],
+        ]], scene_overrides=split["scenes"])
+
+
+def test_merge_previous_preserves_order_and_refuses_to_cross_ayah_boundary():
+    from app.scenes import merge_scene_with_previous
+    ayahs = ["أَوَّلٌ ثَانٍ ثَالِثٌ رَابِعٌ", "خَامِسٌ سَادِسٌ"]
+    rows = [
+        {"ayah_number":1,"text":"أَوَّلٌ ثَانٍ"},
+        {"ayah_number":1,"text":"ثَالِثٌ رَابِعٌ"},
+        {"ayah_number":2,"text":ayahs[1]},
+    ]
+    merged = merge_scene_with_previous(ayahs, rows, scene_index=1)
+    assert merged["scenes"][0]["text"] == ayahs[0]
+    assert merged["scenes"][0]["word_count"] == 4
+    assert merged["selected_scene_index"] == 0
+    assert merged["scenes"][1]["text"] == ayahs[1]
+    with pytest.raises(ValueError, match="across ayah boundaries"):
+        merge_scene_with_previous(ayahs, rows, scene_index=2)
+
+
+def test_split_scene_by_word_count_creates_exact_groups_and_final_remainder():
+    from app.scenes import split_scene_by_word_count
+    ayah = "كَلِمَة١ كَلِمَة٢ كَلِمَة٣ كَلِمَة٤ كَلِمَة٥ كَلِمَة٦ كَلِمَة٧ كَلِمَة٨ كَلِمَة٩ كَلِمَة١٠ كَلِمَة١١ كَلِمَة١٢"
+    result = split_scene_by_word_count([ayah], [{"ayah_number":7,"text":ayah}],
+                                       ayah_start=7, scene_index=0, words_per_scene=4)
+    assert result["word_counts"] == [4,4,4]
+    assert [row["text"].split() for row in result["scenes"]] == [ayah.split()[0:4], ayah.split()[4:8], ayah.split()[8:12]]
+    assert "".join(ayah.split()) == "".join("".join(row["text"].split()) for row in result["scenes"])
+
+
+def test_exported_video_uses_each_edited_scene_caption_at_word_timed_boundaries(tmp_path, monkeypatch):
+    from moviepy import AudioClip, VideoFileClip
+    from PIL import Image
+    import app.video_engine as engine
+
+    ayah = "كَلِمَة١ كَلِمَة٢ كَلِمَة٣ كَلِمَة٤ كَلِمَة٥ كَلِمَة٦ كَلِمَة٧ كَلِمَة٨ كَلِمَة٩ كَلِمَة١٠ كَلِمَة١١ كَلِمَة١٢"
+    chunks = [" ".join(ayah.split()[offset:offset + 4]) for offset in (0, 4, 8)]
+    rendered_texts = []
+    colors = [(230, 35, 45), (30, 210, 65), (35, 75, 235)]
+
+    def caption_for_scene(text, *, output_size, **_options):
+        rendered_texts.append(text)
+        return Image.new("RGBA", (80, 40), (*colors[len(rendered_texts) - 1], 255))
+
+    monkeypatch.setattr(engine, "render_caption_image", caption_for_scene)
+    audio_path = tmp_path / "recitation.wav"
+    tone = AudioClip(lambda time: .05 * np.sin(2 * np.pi * 220 * np.asarray(time)),
+                     duration=3, fps=44100)
+    tone.write_audiofile(str(audio_path), fps=44100, codec="pcm_s16le", logger=None)
+    tone.close()
+    output_path = tmp_path / "split-scenes.mp4"
+    word_times = [[{"start": index * .2, "end": index * .2 + .16} for index in range(12)]]
+
+    metadata = render_reel(
+        ayahs=[ayah], output_path=output_path, aspect_ratio="9:16",
+        output_size=(240, 426), fps=24, quality="fast", encoder="cpu",
+        audio_path=audio_path, audio_start=0, audio_end=3, ayah_durations=[3],
+        word_timings=word_times, words_per_scene=4, ayah_start=7,
+        scene_overrides=[{"ayah_number":7,"text":chunk} for chunk in chunks],
+        show_surah_title=False, show_ayah_number=False, transition="cut",
+    )
+    assert rendered_texts == chunks
+    assert ayah not in rendered_texts
+    assert metadata["scene_count"] == 3
+    assert metadata["phrase_timing_mode"] == "word_timestamp"
+    assert metadata["phrase_timing_approximate"] is False
+    video = VideoFileClip(str(output_path))
+    try:
+        observed = [video.get_frame(time)[213, 120].astype("int16") for time in (.25, 1.05, 2.05)]
+        assert observed[0][0] > observed[0][1] * 2
+        assert observed[1][1] > observed[1][0] * 2
+        assert observed[2][2] > observed[2][0] * 2
+    finally:
+        video.close()
+
+
+def test_export_applies_manual_caption_durations_without_shifting_recitation(tmp_path, monkeypatch):
+    from moviepy import VideoFileClip
+    from PIL import Image
+    import subprocess
+    import wave
+    import app.video_engine as engine
+
+    ayah = "أَوَّلٌ ثَانٍ ثَالِثٌ رَابِعٌ"
+    chunks = ["أَوَّلٌ ثَانٍ", "ثَالِثٌ رَابِعٌ"]
+    colors = [(230, 35, 45), (30, 210, 65)]
+    def caption_for_scene(text, *, output_size, **_options):
+        return Image.new("RGBA", (80, 40), (*colors[chunks.index(text)], 255))
+
+    monkeypatch.setattr(engine, "render_caption_image", caption_for_scene)
+    audio_path = tmp_path / "manual-timed-recitation.wav"
+    sample_rate = 44100
+    source_times = np.arange(sample_rate * 3, dtype=np.float64) / sample_rate
+    source_tone = (0.4 * np.sin(2 * np.pi * 220 * source_times) * 32767).astype("int16")
+    with wave.open(str(audio_path), "wb") as audio_file:
+        audio_file.setnchannels(1)
+        audio_file.setsampwidth(2)
+        audio_file.setframerate(sample_rate)
+        audio_file.writeframes(source_tone.tobytes())
+    output_path = tmp_path / "manual-caption-duration.mp4"
+    metadata = render_reel(
+        ayahs=[ayah], output_path=output_path, aspect_ratio="9:16",
+        output_size=(240, 426), fps=24, quality="fast", encoder="cpu",
+        audio_path=audio_path, audio_start=0, audio_end=3, ayah_durations=[3],
+        word_timings=[[{"start":.1,"end":.35},{"start":.55,"end":.9},
+                       {"start":1.2,"end":1.5},{"start":1.75,"end":2.05}]],
+        ayah_start=1,
+        scene_overrides=[
+            {"scene_id":"first", "ayah_number":1, "text":chunks[0], "manual_duration":.8},
+            {"scene_id":"second", "ayah_number":1, "text":chunks[1], "manual_duration":.6},
+        ],
+        show_surah_title=False, show_ayah_number=False, transition="cut",
+    )
+    assert metadata["duration"] == pytest.approx(3, abs=.08)
+    video = VideoFileClip(str(output_path))
+    try:
+        red = video.get_frame(.3)[213, 120].astype("int16")
+        gap = video.get_frame(1.0)[213, 120].astype("int16")
+        green = video.get_frame(1.5)[213, 120].astype("int16")
+        after_manual_window = video.get_frame(1.85)[213, 120].astype("int16")
+        assert red[0] > red[1] * 2
+        assert gap[0] < 180 and gap[1] < 180
+        assert green[1] > green[0] * 2
+        assert after_manual_window[1] < 180
+        assert video.audio.duration == pytest.approx(3, abs=.08)
+        extracted_audio = tmp_path / "exported-audio.wav"
+        subprocess.run([
+            "ffmpeg", "-y", "-v", "error", "-i", str(output_path),
+            "-vn", "-ac", "1", "-ar", str(sample_rate), "-c:a", "pcm_s16le", str(extracted_audio),
+        ], check=True, capture_output=True)
+        with wave.open(str(extracted_audio), "rb") as audio_file:
+            audio_samples = np.frombuffer(audio_file.readframes(audio_file.getnframes()), dtype="<i2").astype("float64") / 32768
+        sample_times = np.arange(int(.05 * sample_rate), int(.1 * sample_rate)) / sample_rate
+        expected = np.sin(2 * np.pi * 220 * sample_times)
+        actual = audio_samples[int(.05 * sample_rate):int(.1 * sample_rate)]
+        correlation = np.corrcoef(expected, actual)[0, 1]
+        assert correlation > .98
+    finally:
+        video.close()
+
+
+@pytest.mark.parametrize("caption_extension", [.1, 1.0])
+def test_caption_tail_extends_video_as_silence_without_extending_selected_recitation(
+        tmp_path, monkeypatch, caption_extension):
+    from moviepy import VideoFileClip
+    from PIL import Image
+    import subprocess
+    import wave
+    import app.video_engine as engine
+
+    ayah = "أَوَّلٌ ثَانٍ"
+    monkeypatch.setattr(engine, "render_caption_image", lambda text, **_: Image.new(
+        "RGBA", (80, 40), (230, 35, 45, 255),
+    ))
+    audio_path = tmp_path / "selected-two-second-ayah.wav"
+    sample_rate = 44100
+    source_times = np.arange(sample_rate * 2, dtype=np.float64) / sample_rate
+    source_tone = (0.4 * np.sin(2 * np.pi * 220 * source_times) * 32767).astype("int16")
+    with wave.open(str(audio_path), "wb") as audio_file:
+        audio_file.setnchannels(1)
+        audio_file.setsampwidth(2)
+        audio_file.setframerate(sample_rate)
+        audio_file.writeframes(source_tone.tobytes())
+
+    output_path = tmp_path / "caption-tail-with-silent-audio.mp4"
+    metadata = render_reel(
+        ayahs=[ayah], output_path=output_path, aspect_ratio="9:16",
+        output_size=(240, 426), fps=24, quality="fast", encoder="cpu",
+        audio_path=audio_path, audio_start=0, audio_end=2, ayah_durations=[2],
+        scene_overrides=[{"scene_id":"final", "ayah_number":1, "text":ayah,
+                          "manual_duration":2 + caption_extension}],
+        show_surah_title=False, show_ayah_number=False, transition="cut",
+        audio_fps=sample_rate,
+    )
+
+    assert metadata["duration"] == pytest.approx(2 + caption_extension, abs=.08)
+    assert metadata["video_duration"] == pytest.approx(2 + caption_extension, abs=.08)
+    assert metadata["recitation_audio_duration"] == pytest.approx(2, abs=.08)
+    assert metadata["caption_audio_overrun_seconds"] == pytest.approx(caption_extension, abs=.08)
+    assert metadata["caption_timing_warnings"]
+
+    video = VideoFileClip(str(output_path))
+    try:
+        assert video.duration == pytest.approx(2 + caption_extension, abs=.08)
+        assert video.audio.duration == pytest.approx(2 + caption_extension, abs=.08)
+        final_caption = video.get_frame(2 + caption_extension / 2)[213, 120].astype("int16")
+        assert final_caption[0] > final_caption[1] * 2
+        extracted_audio = tmp_path / "caption-tail-audio.wav"
+        subprocess.run([
+            "ffmpeg", "-y", "-v", "error", "-i", str(output_path),
+            "-vn", "-ac", "1", "-ar", str(sample_rate), "-c:a", "pcm_s16le", str(extracted_audio),
+        ], check=True, capture_output=True)
+        with wave.open(str(extracted_audio), "rb") as audio_file:
+            exported = np.frombuffer(
+                audio_file.readframes(audio_file.getnframes()), dtype="<i2",
+            ).astype("float64") / 32768
+        assert len(exported) >= sample_rate * (2 + caption_extension) - 100
+        source_probe = source_tone[int(.2 * sample_rate):int(1.8 * sample_rate)].astype("float64") / 32768
+        output_probe = exported[int(.2 * sample_rate):int(1.8 * sample_rate)]
+        assert np.corrcoef(source_probe, output_probe)[0, 1] > .98
+        silent_tail = exported[int((2 + caption_extension / 2) * sample_rate):]
+        assert np.sqrt(np.mean(silent_tail ** 2)) < .003
+    finally:
+        video.close()
+
+
+def test_multi_ayah_export_contains_only_the_selected_audio_interval(tmp_path):
+    from moviepy import VideoFileClip
+    import subprocess
+    import wave
+
+    sample_rate = 44100
+    duration = 3.5
+    sample_times = np.arange(int(sample_rate * duration), dtype=np.float64) / sample_rate
+    source_signal = np.empty_like(sample_times)
+    intervals = ((0.0, .5, 880), (.5, 1.5, 220), (1.5, 2.5, 440), (2.5, 3.5, 880))
+    for start, end, frequency in intervals:
+        selected = (sample_times >= start) & (sample_times < end)
+        source_signal[selected] = .35 * np.sin(2 * np.pi * frequency * sample_times[selected])
+    audio_path = tmp_path / "three-distinct-ayah-tones.wav"
+    with wave.open(str(audio_path), "wb") as audio_file:
+        audio_file.setnchannels(1)
+        audio_file.setsampwidth(2)
+        audio_file.setframerate(sample_rate)
+        audio_file.writeframes((source_signal * 32767).astype("int16").tobytes())
+
+    output_path = tmp_path / "selected-two-ayahs-only.mp4"
+    metadata = render_reel(
+        ayahs=["أَوَّلٌ ثَانٍ", "ثَالِثٌ رَابِعٌ"], output_path=output_path,
+        aspect_ratio="9:16", output_size=(240, 426), fps=24, quality="fast",
+        encoder="cpu", audio_path=audio_path, audio_start=.5, audio_end=2.5,
+        ayah_durations=[1, 1], ayah_start=29, show_quran_text=False,
+        show_surah_title=False, show_ayah_number=False, transition="cut",
+        audio_fps=sample_rate,
+    )
+
+    assert metadata["duration"] == pytest.approx(2, abs=.08)
+    assert metadata["recitation_source_start"] == pytest.approx(.5)
+    assert metadata["recitation_source_end"] == pytest.approx(2.5)
+    assert metadata["recitation_audio_duration"] == pytest.approx(2, abs=.08)
+    video = VideoFileClip(str(output_path))
+    try:
+        extracted_audio = tmp_path / "selected-two-ayahs-only.wav"
+        subprocess.run([
+            "ffmpeg", "-y", "-v", "error", "-i", str(output_path),
+            "-vn", "-ac", "1", "-ar", str(sample_rate), "-c:a", "pcm_s16le", str(extracted_audio),
+        ], check=True, capture_output=True)
+        with wave.open(str(extracted_audio), "rb") as audio_file:
+            exported = np.frombuffer(
+                audio_file.readframes(audio_file.getnframes()), dtype="<i2",
+            ).astype("float64") / 32768
+        assert video.audio.duration == pytest.approx(2, abs=.08)
+        early = exported[int(.2 * sample_rate):int(.45 * sample_rate)]
+        late = exported[int(1.55 * sample_rate):int(1.8 * sample_rate)]
+        assert np.sqrt(np.mean(early ** 2)) > .15
+        assert np.sqrt(np.mean(late ** 2)) > .15
+        early_220 = np.sin(2 * np.pi * 220 * (np.arange(len(early)) / sample_rate + .2))
+        late_440 = np.sin(2 * np.pi * 440 * (np.arange(len(late)) / sample_rate + 1.55))
+        assert np.corrcoef(early_220, early)[0, 1] > .97
+        assert np.corrcoef(late_440, late)[0, 1] > .97
+    finally:
+        video.close()
+
+
+def test_split_export_uses_labeled_weighted_timing_when_only_ayah_duration_exists(tmp_path, monkeypatch):
+    from moviepy import AudioClip, VideoFileClip
+    from PIL import Image
+    import app.video_engine as engine
+    from app.scenes import build_scene_plan
+
+    ayah = "قُلْ هُوَ اللَّهُ أَحَدٌ رَبُّ السَّمَاوَاتِ وَالْأَرْضِ"
+    chunks = ["قُلْ هُوَ اللَّهُ", "أَحَدٌ رَبُّ السَّمَاوَاتِ وَالْأَرْضِ"]
+    palette = [(230, 35, 45), (30, 210, 65)]
+    rendered_texts = []
+
+    def caption_for_scene(text, *, output_size, **_options):
+        rendered_texts.append(text)
+        return Image.new("RGBA", (80, 40), (*palette[len(rendered_texts) - 1], 255))
+
+    monkeypatch.setattr(engine, "render_caption_image", caption_for_scene)
+    audio_path = tmp_path / "recitation-weighted.wav"
+    tone = AudioClip(lambda time: .05 * np.sin(2 * np.pi * 220 * np.asarray(time)), duration=3, fps=44100)
+    tone.write_audiofile(str(audio_path), fps=44100, codec="pcm_s16le", logger=None)
+    tone.close()
+    output_path = tmp_path / "weighted-scenes.mp4"
+    metadata = render_reel(
+        ayahs=[ayah], output_path=output_path, aspect_ratio="9:16", output_size=(240,426),
+        fps=24, quality="fast", encoder="cpu", audio_path=audio_path, audio_start=0,
+        audio_end=3, ayah_durations=[3], words_per_scene=4, ayah_start=7,
+        scene_overrides=[{"ayah_number":7,"text":chunk} for chunk in chunks],
+        show_surah_title=False, show_ayah_number=False, transition="cut",
+    )
+    assert rendered_texts == chunks
+    assert metadata["scene_count"] == 2
+    assert metadata["phrase_timing_mode"] == "weighted_estimate"
+    assert metadata["phrase_timing_approximate"] is True
+    plan = build_scene_plan([ayah], ayah_start=7, durations=[3], scene_overrides=[
+        {"ayah_number":7,"text":chunk} for chunk in chunks
     ])
-    assert scenes[0]["duration"] == pytest.approx(2.8)
-    assert scenes[0]["start_time"] == 0
-    assert scenes[0]["end_time"] == pytest.approx(2.8)
-    assert scenes[1]["start_time"] == pytest.approx(2.8)
-    assert scenes[1]["end_time"] == pytest.approx(8.0)
-    assert all(scene["timing_mode"] == "manual_fraction_estimate" for scene in scenes)
-    with pytest.raises(ValueError, match="sum to 100%"):
-        build_scene_plan([ayah], ayah_start=13, durations=[8.0], scene_overrides=[
-            {"ayah_number":13,"text":" ".join(words[:middle]),"duration_fraction":.35},
-            {"ayah_number":13,"text":" ".join(words[middle:]),"duration_fraction":.55},
-        ])
+    assert sum(scene["duration"] for scene in plan) == pytest.approx(3)
+    assert plan[0]["duration"] != pytest.approx(plan[1]["duration"])
+    video = VideoFileClip(str(output_path))
+    try:
+        first_sample = video.get_frame(plan[0]["duration"] / 2)[213, 120].astype("int16")
+        second_sample = video.get_frame(plan[0]["duration"] + plan[1]["duration"] / 2)[213, 120].astype("int16")
+        assert first_sample[0] > first_sample[1] * 2
+        assert second_sample[1] > second_sample[0] * 2
+    finally:
+        video.close()
 
 
 def test_bundled_arabic_font_catalog_contains_multiple_readable_fonts():

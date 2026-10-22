@@ -559,6 +559,14 @@ def _build_video_sequence(clip_specs, *, size, theme, total_duration, fit_mode,
                 sources.append(adjusted)
                 fitted = adjusted
             clip_audio = fitted.audio
+            if animation_enabled and animation_preset != "static":
+                moved = _animated_video_clip(
+                    fitted, size=size, preset_id=animation_preset, intensity=animation_intensity,
+                    cycle_duration=animation_duration, speed=animation_speed,
+                    start_time=animation_start_time, VideoClip=VideoClip,
+                )
+                sources.append(moved)
+                fitted = moved
         else:
             with Image.open(path) as opened:
                 still = opened.convert("RGB")
@@ -566,14 +574,11 @@ def _build_video_sequence(clip_specs, *, size, theme, total_duration, fit_mode,
             fitted_image = Image.fromarray(_adjust_background_frame(np.asarray(fitted_image), **(adjustments or {})))
             image_duration = float(spec.get("duration", 4.0))
             if animation_enabled and animation_preset != "static":
-                motion_frames = _motion_frames(fitted_image, animation_preset, animation_intensity)
-
-                def image_frame_at(time, frames=motion_frames, cycle_duration=animation_duration,
-                                   movement_speed=animation_speed, start_time=animation_start_time):
+                def image_frame_at(time, source=fitted_image, cycle_duration=animation_duration,
+                                   movement_speed=animation_speed, start_time=animation_start_time,
+                                   active_preset=animation_preset, amount=animation_intensity):
                     progress = image_animation_phase(time, cycle_duration, movement_speed, start_time)
-                    frame_index = min(len(frames) - 1, int(progress * len(frames)))
-                    return frames[frame_index]
-
+                    return _motion_frame(source, active_preset, progress, amount)
                 fitted = VideoClip(frame_function=image_frame_at, duration=image_duration)
             else:
                 fitted = ImageClip(np.asarray(fitted_image)).with_duration(image_duration)
@@ -729,8 +734,34 @@ def _motion_frames(background, preset_id="static", intensity=1.0, steps=48):
     return frames
 
 
+def _motion_frame(background, preset_id, phase, intensity):
+    """Render one edge-safe camera frame, avoiding full-video frame caching."""
+    width, height = background.size
+    zoom, crop_x, crop_y = image_motion_values(preset_id, phase, intensity)
+    scaled_width = max(width, int(width * zoom))
+    scaled_height = max(height, int(height * zoom))
+    scaled = background.resize((scaled_width, scaled_height), Image.Resampling.BICUBIC)
+    x = min(scaled_width - width, max(0, int((scaled_width - width) * crop_x)))
+    y = min(scaled_height - height, max(0, int((scaled_height - height) * crop_y)))
+    return np.asarray(scaled.crop((x, y, x + width, y + height)))
+
+
+def _animated_video_clip(source, *, size, preset_id, intensity, cycle_duration,
+                         speed, start_time, VideoClip):
+    """Apply a subtle crop move per decoded video frame without reversing playback."""
+    def frame_at(time):
+        phase = image_animation_phase(time, cycle_duration, speed, start_time)
+        frame = Image.fromarray(np.asarray(source.get_frame(time)).astype(np.uint8)).convert("RGB")
+        if frame.size != size:
+            frame = frame.resize(size, Image.Resampling.BICUBIC)
+        return _motion_frame(frame, preset_id, phase, intensity)
+
+    return VideoClip(frame_function=frame_at, duration=float(source.duration or 0))
+
+
 def render_reel(*, ayahs, output_path, aspect_ratio="9:16", audio_path=None,
                 audio_start=None, audio_end=None, ayah_durations=None,
+                word_timings=None,
                 background_path=None, theme="misty_forest", transition="crossfade",
                 background_clips=None,
                 duration_per_ayah=3.0, fps=30, font_path=None, caption_style="classic", speed=1.0,
@@ -740,7 +771,7 @@ def render_reel(*, ayahs, output_path, aspect_ratio="9:16", audio_path=None,
                 ayah_number_template="gold_medallion", ayah_color=None,
                 surah_scale=None, ayah_number_scale=None,
                 surah_align=None, ayah_number_align=None,
-                caption_position="center", max_lines=5, scene_overrides=None,
+                caption_position="center", max_lines=5, words_per_scene=8, scene_overrides=None,
                 show_quran_text=True, viewer_surah_name="", viewer_surah_number=1, reciter_name="",
                 translation_lines=None, viewer_options=None,
                 background_fit="cover", crop_x=.5, crop_y=.5,
@@ -921,10 +952,24 @@ def render_reel(*, ayahs, output_path, aspect_ratio="9:16", audio_path=None,
         if audio_path:
             audio_source = AudioFileClip(str(audio_path))
             audio_clips.append(audio_source)
+            if (audio_start is None) != (audio_end is None):
+                raise ValueError("Selected recitation audio needs both an absolute start and end time.")
+            source_duration = float(audio_source.duration or 0)
             if audio_start is not None and audio_end is not None:
-                audio_segment = _call(audio_source, "subclip", "subclipped", float(audio_start), float(audio_end))
+                selected_source_start = float(audio_start)
+                selected_source_end = float(audio_end)
+                if (not np.isfinite(selected_source_start) or not np.isfinite(selected_source_end)
+                        or selected_source_start < 0 or selected_source_end <= selected_source_start
+                        or selected_source_start >= source_duration
+                        or selected_source_end > source_duration + .05):
+                    raise ValueError("Selected recitation boundaries fall outside the downloaded audio file.")
+                selected_source_end = min(selected_source_end, source_duration)
+                audio_segment = _call(audio_source, "subclip", "subclipped",
+                                      selected_source_start, selected_source_end)
                 audio_clips.append(audio_segment)
             else:
+                selected_source_start = 0.0
+                selected_source_end = source_duration
                 audio_segment = audio_source
             if float(speed) != 1.0:
                 if hasattr(audio_segment, "with_speed_scaled"):
@@ -944,19 +989,38 @@ def render_reel(*, ayahs, output_path, aspect_ratio="9:16", audio_path=None,
             durations = [float(duration_per_ayah)] * len(ayahs)
         if any(duration <= 0 for duration in durations):
             raise ValueError("Ayah duration must be positive.")
+        scaled_word_timings = None
+        if word_timings is not None:
+            scaled_word_timings = [[
+                {"start": float(row["start"]) / float(speed),
+                 "end": float(row["end"]) / float(speed)}
+                for row in ayah_rows
+            ] for ayah_rows in word_timings]
 
         _, caption_options = caption_render_options(caption_style, caption_color, **custom_options)
         scene_plan = build_scene_plan(
-            ayahs, ayah_start=ayah_start, durations=durations, aspect_ratio=aspect_ratio,
+            ayahs, ayah_start=ayah_start, durations=durations,
+            word_timings=scaled_word_timings, aspect_ratio=aspect_ratio,
             wrap_width=wrap_width, max_lines=max_lines, font_path=font_path,
             show_surah_title=bool(show_surah_title or show_ayah_number),
             padding_y=caption_options.get("padding_y", 24),
             scene_overrides=scene_overrides, default_duration=duration_per_ayah,
+            words_per_scene=words_per_scene,
             output_size=(width, height),
         )
         if progress_callback:
             progress_callback(.05)
-        total_duration = sum(float(scene["duration"]) for scene in scene_plan)
+        # Keep audio selection and visual timing independent. The recitation
+        # remains trimmed to the selected source range; a final caption may
+        # extend the video with silence after that audio ends.
+        audio_timeline_duration = sum(durations)
+        recitation_audio_duration = (
+            min(float(audio_segment.duration), audio_timeline_duration)
+            if audio_segment is not None else None
+        )
+        scene_ends = [float(scene["end_time"]) for scene in scene_plan
+                      if scene.get("end_time") is not None]
+        video_duration = max(audio_timeline_duration, max(scene_ends, default=0.0))
 
         is_video_background = background_path and Path(background_path).suffix.lower() in BACKGROUND_VIDEO_EXTENSIONS
         if background_clips or (background_audio_enabled and is_video_background):
@@ -964,7 +1028,7 @@ def render_reel(*, ayahs, output_path, aspect_ratio="9:16", audio_path=None,
                                                 "speed": background_speed, "transition": "cut"}]
             background_clip, background_audio_layers = _build_video_sequence(
                 video_specs, size=(width, height), theme=theme,
-                total_duration=total_duration, fit_mode=background_fit,
+                total_duration=video_duration, fit_mode=background_fit,
                 crop_x=crop_x, crop_y=crop_y, default_speed=background_speed,
                 loop=background_loop, fps=fps, VideoFileClip=VideoFileClip,
                 ImageClip=ImageClip, CompositeVideoClip=CompositeVideoClip,
@@ -999,75 +1063,81 @@ def render_reel(*, ayahs, output_path, aspect_ratio="9:16", audio_path=None,
             if adjusted_video is not fitted_video:
                 background_sources.append(adjusted_video)
                 fitted_video = adjusted_video
+            if background_animation_enabled and background_animation_preset != "static":
+                moved_video = _animated_video_clip(
+                    fitted_video, size=(width, height), preset_id=background_animation_preset,
+                    intensity=background_animation_intensity,
+                    cycle_duration=background_animation_duration,
+                    speed=background_animation_speed, start_time=background_animation_start,
+                    VideoClip=VideoClip,
+                )
+                background_sources.append(moved_video)
+                fitted_video = moved_video
             base_clip = None
             if alignment == "contain":
                 base_image = (_fit_image(first_frame, (width, height), "blurred") if background_fit == "blurred"
                               else _background(None, (width, height), theme))
-                base_clip = ImageClip(np.asarray(base_image)).with_duration(total_duration)
+                base_clip = ImageClip(np.asarray(base_image)).with_duration(video_duration)
                 background_sources.append(base_clip)
             if background_loop:
-                if float(fitted_video.duration) < total_duration:
-                    fitted_video = fitted_video.with_effects([vfx.Loop(duration=total_duration)])
+                if float(fitted_video.duration) < video_duration:
+                    fitted_video = fitted_video.with_effects([vfx.Loop(duration=video_duration)])
                     background_sources.append(fitted_video)
                 else:
-                    fitted_video = _call(fitted_video, "subclip", "subclipped", 0, total_duration)
+                    fitted_video = _call(fitted_video, "subclip", "subclipped", 0, video_duration)
                     background_sources.append(fitted_video)
                 layers = ([base_clip] if base_clip else []) + [fitted_video.with_position("center")]
             else:
-                moving_duration = min(float(fitted_video.duration), total_duration)
+                moving_duration = min(float(fitted_video.duration), video_duration)
                 fitted_video = _call(fitted_video, "subclip", "subclipped", 0, moving_duration)
                 background_sources.append(fitted_video)
                 layers = ([base_clip] if base_clip else []) + [fitted_video.with_position("center")]
-                if moving_duration < total_duration:
+                if moving_duration < video_duration:
                     still = ImageClip(fitted_video.get_frame(max(0, moving_duration - 1 / fps)))
                     still = _call(still, "set_start", "with_start", moving_duration)
-                    still = _call(still, "set_duration", "with_duration", total_duration - moving_duration)
+                    still = _call(still, "set_duration", "with_duration", video_duration - moving_duration)
                     if alignment == "contain":
                         still = _call(still, "set_position", "with_position", "center")
                     background_sources.append(still)
                     layers.append(still)
-            video_scene = CompositeVideoClip(layers, size=(width, height)).with_duration(total_duration)
+            video_scene = CompositeVideoClip(layers, size=(width, height)).with_duration(video_duration)
             background_sources.append(video_scene)
-            dim_layer = ImageClip(np.asarray(Image.new("RGBA", (width, height), (0, 0, 0, 41)))).with_duration(total_duration)
+            dim_layer = ImageClip(np.asarray(Image.new("RGBA", (width, height), (0, 0, 0, 41)))).with_duration(video_duration)
             background_sources.append(dim_layer)
-            background_clip = CompositeVideoClip([video_scene, dim_layer], size=(width, height)).with_duration(total_duration)
+            background_clip = CompositeVideoClip([video_scene, dim_layer], size=(width, height)).with_duration(video_duration)
         else:
             wallpaper = _background(background_path, (width, height), theme, background_fit, crop_x, crop_y)
             wallpaper = Image.fromarray(_adjust_background_frame(wallpaper, **background_adjustments))
             wallpaper = Image.blend(wallpaper, Image.new("RGB", wallpaper.size, (0, 0, 0)), 0.16)
-            motion_frames = _motion_frames(
-                wallpaper,
-                background_animation_preset if background_animation_enabled else "static",
-                background_animation_intensity,
-            )
-
             def make_background_frame(time):
                 check_cancelled()
-                if len(motion_frames) == 1:
-                    return motion_frames[0]
+                active_preset = (background_animation_preset
+                                 if background_animation_enabled else "static")
+                if active_preset == "static" or background_animation_intensity <= 0:
+                    return np.asarray(wallpaper)
                 position = image_animation_phase(time, background_animation_duration,
                                                  background_animation_speed, background_animation_start)
-                frame_index = min(len(motion_frames) - 1, int(position * len(motion_frames)))
-                return motion_frames[frame_index]
+                return _motion_frame(wallpaper, active_preset, position,
+                                     background_animation_intensity)
 
             try:
-                background_clip = VideoClip(frame_function=make_background_frame, duration=total_duration)
+                background_clip = VideoClip(frame_function=make_background_frame, duration=video_duration)
             except TypeError:
-                background_clip = VideoClip(make_frame=make_background_frame, duration=total_duration)
+                background_clip = VideoClip(make_frame=make_background_frame, duration=video_duration)
 
         if background_overlay_opacity:
             overlay_color = _parse_color(background_overlay_color, (11, 22, 38))
             overlay_image = Image.new("RGBA", (width, height), (*overlay_color, round(255 * background_overlay_opacity)))
-            overlay_clip = ImageClip(np.asarray(overlay_image)).with_duration(total_duration)
+            overlay_clip = ImageClip(np.asarray(overlay_image)).with_duration(video_duration)
             background_sources.append(overlay_clip)
             background_clip = CompositeVideoClip(
                 [background_clip, overlay_clip], size=(width, height)
-            ).with_duration(total_duration)
+            ).with_duration(video_duration)
             background_sources.append(background_clip)
 
         if background_atmosphere_enabled and background_atmosphere_intensity > 0:
             light_layer = _ambient_light_layer(
-                size=(width, height), duration=total_duration,
+                size=(width, height), duration=video_duration,
                 intensity=background_atmosphere_intensity,
                 cycle_duration=background_atmosphere_duration,
                 speed=background_atmosphere_speed,
@@ -1077,7 +1147,7 @@ def render_reel(*, ayahs, output_path, aspect_ratio="9:16", audio_path=None,
             background_sources.append(light_layer)
             background_clip = CompositeVideoClip(
                 [background_clip, light_layer], size=(width, height)
-            ).with_duration(total_duration)
+            ).with_duration(video_duration)
             background_sources.append(background_clip)
 
         timeline = 0.0
@@ -1085,6 +1155,10 @@ def render_reel(*, ayahs, output_path, aspect_ratio="9:16", audio_path=None,
             check_cancelled()
             current_ayah_num = scene["ayah_number"]
             verse_duration = float(scene["duration"])
+            scene_start = (float(scene["start_time"])
+                           if scene.get("start_time") is not None else timeline)
+            if scene_start < timeline - .001:
+                raise ValueError("Scene timing overlaps a previous caption interval.")
             translation = translation_for_ayah(translation_lines, current_ayah_num, ayah_start)
             scene_caption_y = None
             caption_image = None
@@ -1104,7 +1178,7 @@ def render_reel(*, ayahs, output_path, aspect_ratio="9:16", audio_path=None,
                 )
                 caption_clip = ImageClip(np.asarray(caption_image))
                 caption_clip = _call(caption_clip, "set_duration", "with_duration", verse_duration)
-                caption_clip = _call(caption_clip, "set_start", "with_start", timeline)
+                caption_clip = _call(caption_clip, "set_start", "with_start", scene_start)
                 if transition == "crossfade" and index:
                     fade_in = getattr(vfx, "CrossFadeIn", None) or vfx.FadeIn
                     caption_clip = caption_clip.with_effects([fade_in(min(0.2, verse_duration * 0.15))])
@@ -1128,22 +1202,27 @@ def render_reel(*, ayahs, output_path, aspect_ratio="9:16", audio_path=None,
             if static_image.getbbox():
                 static_clip = ImageClip(np.asarray(static_image))
                 static_clip = _call(static_clip, "set_duration", "with_duration", verse_duration)
-                static_clip = _call(static_clip, "set_start", "with_start", timeline)
+                static_clip = _call(static_clip, "set_start", "with_start", scene_start)
                 viewer_clips.append(static_clip)
-            timeline += verse_duration
+            timeline = scene_start + verse_duration
 
         if viewer_options.get("show_waveform") or viewer_options.get("show_progress"):
             playback_layer = VideoClip(
-                lambda time_seconds: render_playback_layer(time_seconds, total_duration,
+                lambda time_seconds: render_playback_layer(time_seconds, video_duration,
                                                            (width, height), viewer_options),
-                duration=total_duration,
+                duration=video_duration,
             )
             viewer_clips.append(playback_layer)
-        output = CompositeVideoClip([background_clip, *caption_clips, *viewer_clips], size=(width, height)).with_duration(total_duration)
+        output = CompositeVideoClip([background_clip, *caption_clips, *viewer_clips], size=(width, height)).with_duration(video_duration)
         if audio_segment is not None:
-            audio_for_video = _call(audio_segment, "subclip", "subclipped", 0, min(audio_segment.duration, total_duration))
+            audio_for_video = _call(audio_segment, "subclip", "subclipped", 0, recitation_audio_duration)
             if background_audio_layers:
-                audio_for_video = CompositeAudioClip([audio_for_video, *background_audio_layers]).with_duration(total_duration)
+                audio_for_video = CompositeAudioClip([audio_for_video, *background_audio_layers]).with_duration(video_duration)
+            elif video_duration > recitation_audio_duration + .001:
+                # Extend the muxed audio stream with silence. This keeps the
+                # caption tail visible without reading beyond the selected
+                # Quran interval or changing its playback rate.
+                audio_for_video = CompositeAudioClip([audio_for_video]).with_duration(video_duration)
             output = _call(output, "set_audio", "with_audio", audio_for_video)
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
         if progress_callback:
@@ -1221,7 +1300,16 @@ def render_reel(*, ayahs, output_path, aspect_ratio="9:16", audio_path=None,
         else:
             write_cpu_video()
         check_cancelled()
-        return {"path": str(output_path), "duration": float(output.duration), "width": width,
+        return {"path": str(output_path), "duration": float(output.duration),
+                "video_duration": float(output.duration),
+                "recitation_audio_duration": recitation_audio_duration,
+                "recitation_source_start": selected_source_start if audio_segment is not None else None,
+                "recitation_source_end": selected_source_end if audio_segment is not None else None,
+                "caption_audio_overrun_seconds": round(max(0.0, video_duration - (recitation_audio_duration or 0.0)), 3)
+                if audio_segment is not None else 0.0,
+                "caption_timing_warnings": [scene["timing_warning"] for scene in scene_plan
+                                            if scene.get("timing_warning")],
+                "width": width,
                 "height": height, "fps": int(fps), "has_audio": audio_segment is not None or bool(background_audio_layers),
                 "quality": quality, "encoder": selected_encoder,
                 "requested_encoder": requested_encoder,
@@ -1239,7 +1327,16 @@ def render_reel(*, ayahs, output_path, aspect_ratio="9:16", audio_path=None,
                 "background_atmosphere_intensity": background_atmosphere_intensity if background_atmosphere_enabled else 0,
                 "scene_count": len(scene_plan),
                 "split_ayah_count": len({scene["ayah_number"] for scene in scene_plan if scene["segment_count"] > 1}),
-                "phrase_timing_approximate": any(scene["segment_count"] > 1 for scene in scene_plan)}
+                "phrase_timing_approximate": any(
+                    scene.get("timing_mode") == "weighted_estimate" for scene in scene_plan
+                ),
+                "phrase_timing_mode": (
+                    "mixed" if any(scene.get("timing_mode") == "word_timestamp" for scene in scene_plan)
+                    and any(scene.get("timing_mode") == "weighted_estimate" for scene in scene_plan)
+                    else "word_timestamp" if any(scene.get("timing_mode") == "word_timestamp" for scene in scene_plan)
+                    else "weighted_estimate" if any(scene.get("timing_mode") == "weighted_estimate" for scene in scene_plan)
+                    else "ayah_boundary_fallback"
+                )}
     finally:
         if output is not None:
             output.close()

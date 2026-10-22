@@ -1,8 +1,11 @@
 from flask import Flask
 from config import Config
 from .render_jobs import RenderJobManager
+from .version import APP_VERSION
 from pathlib import Path
 import tempfile
+
+__version__ = APP_VERSION
 
 
 def _prepare_output_folder(configured_path):

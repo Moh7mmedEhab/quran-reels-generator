@@ -160,6 +160,36 @@ def build_qsv_command(ffmpeg: str, *, width: int, height: int, fps: int,
     return command
 
 
+def _stop_encoder_process(process) -> None:
+    """Stop a failed or cancelled FFmpeg process without masking its cause."""
+    if process.poll() is None:
+        try:
+            process.terminate()
+        except OSError:
+            pass
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            try:
+                process.kill()
+            except OSError:
+                pass
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                pass
+
+
+def _close_encoder_stdin(process) -> None:
+    """Close the frame pipe, ignoring a broken pipe during error cleanup."""
+    stream = getattr(process, "stdin", None)
+    if stream is not None and not stream.closed:
+        try:
+            stream.close()
+        except (BrokenPipeError, OSError):
+            pass
+
+
 def write_hardware_video(clip, output_path: str | Path, *, fps: int, ffmpeg: str,
                          encoder: str, crf: int, audio_bitrate: str, audio_fps: int,
                          progress_callback=None, cancel_event=None,
@@ -205,8 +235,6 @@ def write_hardware_video(clip, output_path: str | Path, *, fps: int, ffmpeg: str
         started = time.monotonic()
         for index, frame in enumerate(clip.iter_frames(fps=fps, dtype="uint8", logger=None)):
             if cancel_event is not None and cancel_event.is_set():
-                process.terminate()
-                process.wait(timeout=5)
                 raise JobCancelled()
             process.stdin.write(frame.tobytes())
             if progress_callback and (index == 0 or (index + 1) % max(1, fps // 2) == 0):
@@ -230,15 +258,15 @@ def write_hardware_video(clip, output_path: str | Path, *, fps: int, ffmpeg: str
             progress_callback(1.0)
     except BrokenPipeError as exc:
         if process is not None:
-            process.wait(timeout=5)
+            _stop_encoder_process(process)
+        if reader is not None:
+            reader.join(timeout=2)
         detail = "\n".join(stderr_lines[-8:]) or "FFmpeg closed its video input unexpectedly."
         raise RuntimeError(f"{encoder_name} video encoding failed: {detail}") from exc
     finally:
-        if process is not None and process.poll() is None:
-            process.terminate()
-            process.wait(timeout=5)
-        if process is not None and process.stdin and not process.stdin.closed:
-            process.stdin.close()
+        if process is not None:
+            _stop_encoder_process(process)
+            _close_encoder_stdin(process)
         if reader is not None:
             reader.join(timeout=2)
         if audio_path:

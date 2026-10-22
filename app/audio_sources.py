@@ -25,6 +25,9 @@ class AudioTrack:
     start: float
     end: float
     ayah_durations: list[float]
+    word_timings: list[list[dict]] | None = None
+    timing_source: str = "mp3quran_ayah"
+    timing_note: str = "Ayah-level timing; phrase-level word timestamps are unavailable."
 
 
 @lru_cache(maxsize=512)
@@ -57,12 +60,68 @@ def get_recitation_timings(reciter: dict, surah_number: int, ayah_start: int, ay
     return selected
 
 
+def _validated_relative_word_timings(selected, expected_ayahs, durations):
+    """Convert chapter timestamps to offsets inside each effective ayah interval.
+
+    The interval ends at the next ayah's start (or the final selected ayah's
+    end), matching ``ayah_durations``. This prevents a word from being shown
+    during a pause assigned to the previous ayah or outside the selected audio.
+    """
+    if len(selected) != len(expected_ayahs) or len(selected) != len(durations):
+        raise ValueError("Word timestamp data does not cover the complete ayah range.")
+    result = []
+    for index, row in enumerate(selected):
+        ayah_start_ms = int(row["start_time"])
+        effective_end_ms = ayah_start_ms + round(float(durations[index]) * 1000)
+        current = []
+        previous_end_ms = 0
+        for segment in row["segments"]:
+            start_ms = int(segment["start_ms"]) - ayah_start_ms
+            end_ms = int(segment["end_ms"]) - ayah_start_ms
+            if (start_ms < previous_end_ms or end_ms <= start_ms
+                    or end_ms > effective_end_ms - ayah_start_ms):
+                raise ValueError("Word timestamps overlap or fall outside their effective ayah interval.")
+            current.append({"start": start_ms / 1000, "end": end_ms / 1000})
+            previous_end_ms = end_ms
+        if len(current) != len(str(expected_ayahs[index]).split()):
+            raise ValueError("Word timestamp count differs from the selected ayah text.")
+        result.append(current)
+    return result
+
+
 def download_recitation(reciter: dict, surah_number: int, ayah_start: int, ayah_end: int,
-                        destination_dir: Path, *, cancel_event=None, on_progress=None) -> AudioTrack:
-    """Download the chapter file and return its exact selected ayah time span."""
+                        destination_dir: Path, *, expected_ayahs=None,
+                        cancel_event=None, on_progress=None) -> AudioTrack:
+    """Download a chapter recording with timestamps from its matching audio.
+
+    Quran Foundation word timestamps are used only when credentials, a
+    chapter-reciter mapping, complete segment data, and local word counts all
+    validate. Otherwise the MP3Quran ayah timing path remains authoritative.
+    """
     if cancel_event is not None and cancel_event.is_set():
         raise JobCancelled()
-    selected = get_recitation_timings(reciter, surah_number, ayah_start, ayah_end)
+    from .word_alignment import get_chapter_word_timing
+
+    word_timing_data = None
+    fallback_note = "Word timing is not configured for this reciter; full ayahs use ayah-level timing."
+    if expected_ayahs is not None:
+        try:
+            word_timing_data = get_chapter_word_timing(
+                reciter["id"], surah_number, ayah_start, ayah_end, expected_ayahs,
+            )
+        except RuntimeError as exc:
+            fallback_note = f"Word-level alignment unavailable ({exc}); full ayahs use ayah-level timing."
+
+    if word_timing_data:
+        selected = word_timing_data["ayahs"]
+        audio_url = word_timing_data["audio_url"]
+        timing_source = "quran_foundation_word"
+        timing_note = "Word timestamps from Quran Foundation chapter audio; checked against local ayah word counts."
+    else:
+        selected = get_recitation_timings(reciter, surah_number, ayah_start, ayah_end)
+        audio_url = get_audio_url(reciter, surah_number)
+        timing_source = "mp3quran_ayah"
+        timing_note = fallback_note
     if cancel_event is not None and cancel_event.is_set():
         raise JobCancelled()
     start_ms = int(selected[0]["start_time"])
@@ -79,7 +138,26 @@ def download_recitation(reciter: dict, surah_number: int, ayah_start: int, ayah_
     if any(duration <= 0 for duration in durations):
         raise AudioSourceError("The recitation service returned invalid verse timings.")
 
-    audio_url = get_audio_url(reciter, surah_number)
+    word_timings = None
+    if word_timing_data:
+        try:
+            word_timings = _validated_relative_word_timings(selected, expected_ayahs, durations)
+        except (KeyError, TypeError, ValueError) as exc:
+            # Never pair uncertain word timing with the user's captions/audio.
+            word_timing_data = None
+            word_timings = None
+            selected = get_recitation_timings(reciter, surah_number, ayah_start, ayah_end)
+            audio_url = get_audio_url(reciter, surah_number)
+            timing_source = "mp3quran_ayah"
+            timing_note = f"Word-level alignment did not validate ({exc}); full ayahs use ayah-level timing."
+            start_ms = int(selected[0]["start_time"])
+            end_ms = int(selected[-1]["end_time"])
+            starts = [int(row["start_time"]) for row in selected]
+            durations = [((starts[i + 1] if i + 1 < len(starts) else end_ms) - starts[i]) / 1000
+                         for i in range(len(starts))]
+            if any(duration <= 0 for duration in durations):
+                raise AudioSourceError("The recitation service returned invalid verse timings.")
+
     destination_dir.mkdir(parents=True, exist_ok=True)
     audio_path = destination_dir / f"qari-{reciter['id']}-{surah_number:03d}-{uuid4().hex}.mp3"
     request = Request(audio_url, headers={"User-Agent": "QuranReelsGenerator/1.0"})
@@ -118,4 +196,18 @@ def download_recitation(reciter: dict, surah_number: int, ayah_start: int, ayah_
         audio_path.unlink(missing_ok=True)
         raise AudioSourceError("The recitation service returned an empty audio file.")
 
-    return AudioTrack(audio_path, audio_url, start_ms / 1000, end_ms / 1000, durations)
+    if word_timings is None and expected_ayahs is not None:
+        from .forced_alignment import forced_align_arabic_audio
+
+        aligned_timings, alignment_note = forced_align_arabic_audio(
+            audio_path, expected_ayahs, selected,
+        )
+        if aligned_timings is not None:
+            word_timings = aligned_timings
+            timing_source = "whisperx_forced_alignment"
+            timing_note = alignment_note
+        elif alignment_note != "Local forced alignment is disabled.":
+            timing_note = f"{timing_note} {alignment_note} Full ayahs remain synchronized at ayah boundaries."
+
+    return AudioTrack(audio_path, audio_url, start_ms / 1000, end_ms / 1000, durations,
+                      word_timings, timing_source, timing_note)

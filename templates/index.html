@@ -4,9 +4,9 @@
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <meta content="web_standard" name="shell-type"/>
-<title>Quran Reels Generator - Studio</title>
+<title>Quran Reels Generator {{ display_version }} · Studio</title>
 <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='assets/favicon.svg') }}">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/app.css', v='studio-2026-10-22') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app.css', v='studio-2026-10-22-scene-timing-1') }}">
 <link href="https://fonts.googleapis.com" rel="preconnect"/>
 <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Amiri:ital,wght@0,400;0,700;1,400&amp;family=Noto+Naskh+Arabic:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
@@ -38,7 +38,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
 </div>
 <div class="flex items-center gap-2.5">
 <span class="text-base font-bold text-gray-900 tracking-tight">Quran Reels <span class="text-brand-600 font-medium">Generator</span></span>
-<span class="hidden sm:inline-flex items-center px-2 py-0.5 rounded-md bg-brand-50 text-brand-700 border border-brand-200 text-xs font-semibold tracking-wide">Studio v1.0</span>
+<span class="hidden sm:inline-flex items-center px-2 py-0.5 rounded-md bg-brand-50 text-brand-700 border border-brand-200 text-xs font-semibold tracking-wide">Studio {{ display_version }}</span>
 </div>
 </div>
 </div>
@@ -76,6 +76,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
 </summary>
 <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-5">
 <label class="flex min-w-0 flex-col gap-1 text-[10px] font-semibold text-gray-600">Project name<input id="project-name" maxlength="64" value="Untitled Reel" class="min-w-0 rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-xs font-normal text-gray-800"></label>
+<label class="flex min-w-0 flex-col gap-1 text-[10px] font-semibold text-gray-600">Video title · download filename<input id="video-title" maxlength="100" placeholder="Generated from the selected Surah and ayah range" dir="auto" class="min-w-0 rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-xs font-normal text-gray-800"></label>
 <button id="save-project-btn" type="button" class="self-end rounded-lg bg-brand-600 px-3 py-2 text-xs font-semibold text-white hover:bg-brand-700">Save project</button>
 <label class="flex min-w-0 flex-col gap-1 text-[10px] font-semibold text-gray-600">Saved projects<select id="saved-projects" class="min-w-0 rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-xs font-normal text-gray-800"><option value="">Choose a saved project…</option></select></label>
 <button id="open-project-btn" type="button" class="self-end rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:border-brand-300" disabled>Open project</button>
@@ -99,7 +100,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
 <p class="text-xs text-gray-500">Synchronized micro-content &amp; Ayah typography</p>
 </div>
 </div>
-<span class="px-2.5 py-1 rounded-full bg-brand-50 text-brand-700 border border-brand-200 text-xs font-bold tracking-wide">v3.2 PRO</span>
+<span class="px-2.5 py-1 rounded-full bg-brand-50 text-brand-700 border border-brand-200 text-xs font-bold tracking-wide">{{ display_version }}</span>
 </div>
 <!-- 1. Qari (Reciter) Selector -->
 <div class="flex flex-col gap-2">
@@ -165,32 +166,33 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
 </div>
 </div>
 <!-- Ayah Range Steppers -->
-<div class="grid grid-cols-2 gap-3">
+<div class="grid grid-cols-2 gap-3" id="ayah-range-grid">
 <div class="flex flex-col gap-1.5">
-<label class="text-xs font-semibold text-gray-600" for="start-ayah">Start Ayah</label>
-<div class="flex items-center border border-gray-200 rounded-xl bg-white px-2 py-1 shadow-sm focus-within:border-brand-500 focus-within:ring-1 focus-within:ring-brand-500">
-<button class="p-1.5 text-gray-500 hover:text-brand-600 hover:bg-gray-100 rounded-lg transition-colors" id="start-dec" type="button">
+<label class="text-xs font-semibold text-gray-600" for="start-ayah">Start Ayah · <span lang="ar" dir="rtl">بداية الآية</span></label>
+<div class="ayah-range-control">
+<button class="ayah-range-step" id="start-dec" type="button" aria-label="Decrease starting ayah" title="Decrease starting ayah">
 <span class="material-symbols-outlined text-[18px]">remove</span>
 </button>
-<input class="w-full text-center bg-transparent text-gray-900 font-bold text-base focus:outline-none" id="start-ayah" max="78" min="1" type="number" value="13"/>
-<button class="p-1.5 text-gray-500 hover:text-brand-600 hover:bg-gray-100 rounded-lg transition-colors" id="start-inc" type="button">
+<input class="ayah-range-value" id="start-ayah" data-max="78" data-min="1" maxlength="3" pattern="[0-9]*" inputmode="numeric" enterkeyhint="done" autocomplete="off" aria-label="Starting ayah number" aria-describedby="ayah-range-validation" aria-invalid="false" dir="ltr" type="text" value="13">
+<button class="ayah-range-step" id="start-inc" type="button" aria-label="Increase starting ayah" title="Increase starting ayah">
 <span class="material-symbols-outlined text-[18px]">add</span>
 </button>
 </div>
 </div>
 <div class="flex flex-col gap-1.5">
-<label class="text-xs font-semibold text-gray-600" for="end-ayah">End Ayah</label>
-<div class="flex items-center border border-gray-200 rounded-xl bg-white px-2 py-1 shadow-sm focus-within:border-brand-500 focus-within:ring-1 focus-within:ring-brand-500">
-<button class="p-1.5 text-gray-500 hover:text-brand-600 hover:bg-gray-100 rounded-lg transition-colors" id="end-dec" type="button">
+<label class="text-xs font-semibold text-gray-600" for="end-ayah">End Ayah · <span lang="ar" dir="rtl">نهاية الآية</span></label>
+<div class="ayah-range-control">
+<button class="ayah-range-step" id="end-dec" type="button" aria-label="Decrease ending ayah" title="Decrease ending ayah">
 <span class="material-symbols-outlined text-[18px]">remove</span>
 </button>
-<input class="w-full text-center bg-transparent text-gray-900 font-bold text-base focus:outline-none" id="end-ayah" max="78" min="1" type="number" value="13"/>
-<button class="p-1.5 text-gray-500 hover:text-brand-600 hover:bg-gray-100 rounded-lg transition-colors" id="end-inc" type="button">
+<input class="ayah-range-value" id="end-ayah" data-max="78" data-min="1" maxlength="3" pattern="[0-9]*" inputmode="numeric" enterkeyhint="done" autocomplete="off" aria-label="Ending ayah number" aria-describedby="ayah-range-validation" aria-invalid="false" dir="ltr" type="text" value="13">
+<button class="ayah-range-step" id="end-inc" type="button" aria-label="Increase ending ayah" title="Increase ending ayah">
 <span class="material-symbols-outlined text-[18px]">add</span>
 </button>
 </div>
 </div>
 </div>
+<p id="ayah-range-validation" class="hidden text-[10px] font-medium text-red-600" role="status" aria-live="polite"></p>
 <!-- Ayah Range Stats Pill -->
 <div class="flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-brand-50/80 border border-brand-100 text-brand-900">
 <div class="flex items-center gap-1.5 text-xs font-medium">
@@ -204,9 +206,13 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
 <textarea id="ayah-text" rows="3" dir="rtl" class="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-right font-quran text-lg text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20">{{ initial_ayah }}</textarea>
 <p id="ayah-text-status" class="text-[11px] text-gray-500" role="status" aria-live="polite">Uthmani text loads automatically for the selected surah and ayah range. You may edit the captions.</p>
 <section class="scene-timeline rounded-lg border border-gray-200 bg-white p-3" aria-labelledby="scene-timeline-title">
-<div class="mb-2 flex items-center justify-between gap-2"><strong class="text-[11px] text-gray-700" id="scene-timeline-title">Caption scenes</strong><span class="text-[10px] text-gray-500" id="scene-summary">Loading scene plan…</span></div>
+<div class="scene-heading"><strong class="flex items-center gap-1.5 text-[11px] text-gray-700" id="scene-timeline-title"><span class="material-symbols-outlined text-[16px] text-brand-600" aria-hidden="true">subtitles</span>Timed caption scenes</strong><span class="text-[10px] text-gray-500" id="scene-summary">Loading scene plan…</span><button class="scene-reset" id="reset-scenes" type="button" title="Restore the default scenes for only the selected ayah range" aria-label="Reset scenes in the selected ayah range"><span class="material-symbols-outlined" aria-hidden="true">restart_alt</span><span>Reset Scenes</span></button></div>
+<div class="scene-settings">
+<label class="scene-setting-field" for="words-per-scene"><span>Default words per scene</span><span class="scene-setting-input-row"><input class="scene-setting-input" id="words-per-scene" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" value="8" aria-describedby="words-per-scene-help words-per-scene-status"><button class="scene-setting-apply" id="apply-words-per-scene" type="button">Apply</button></span><small id="words-per-scene-help">Regroup ayahs into scenes with this many whole words.</small><small id="words-per-scene-status" role="status" aria-live="polite">Using 8 words per scene.</small></label>
+<label class="scene-setting-field" for="wrap-width"><span>Long ayah wrapping</span><select class="scene-setting-input" id="wrap-width"><option value="65">Compact · 65%</option><option value="75">Narrow · 75%</option><option value="85" selected>Balanced · 85%</option><option value="95">Wide · 95%</option></select></label>
+</div>
 <div class="scene-timeline-list" id="scene-timeline" aria-live="polite"></div>
-<p class="mt-2 text-[10px] text-gray-500" id="scene-timing-note">Long-ayah scene timing is estimated by text length when word-level timestamps are unavailable.</p>
+<p class="mt-2 text-[10px] text-gray-500" id="scene-timing-note">Scenes split at the selected word count. Audio boundaries use validated recitation word timestamps; without them, the full ayah stays visible.</p>
 </section>
 <div class="grid grid-cols-1 gap-2">
 <div class="wallpaper-upload-wrap">
@@ -255,6 +261,10 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
 <p class="mt-2 text-[10px] text-gray-500">Uploaded images stay still unless a camera move is enabled. Presets use the same crop motion in the rendered video.</p>
 <div class="mt-3 grid grid-cols-2 gap-3">
 <label class="col-span-2 flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-[11px] font-semibold text-gray-700"><input id="background-animation-enabled" type="checkbox"> Enable Background Animation</label>
+<label class="col-span-2 flex flex-col gap-1 text-[10px] text-gray-600">Movement direction
+<select id="background-motion-direction" class="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs">
+<option value="preset" selected>Use selected motion preset</option><option value="left_to_right">Left to right</option><option value="right_to_left">Right to left</option><option value="top_to_bottom">Top to bottom</option><option value="bottom_to_top">Bottom to top</option><option value="static">Static · no movement</option>
+</select></label>
 <label class="col-span-2 flex flex-col gap-1 text-[10px] text-gray-600">Animation preset<select id="background-animation-preset" class="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs">{% for preset_id, preset in image_animation_presets.items() %}<option value="{{ preset_id }}">{{ preset.name }} · {{ preset.description }}</option>{% endfor %}</select></label>
 <label class="flex flex-col gap-1 text-[10px] text-gray-600">Intensity <span id="background-animation-intensity-label">60%</span><input id="background-animation-intensity" type="range" min="0" max="1" step="0.05" value="0.6" class="preview-range"></label>
 <label class="flex flex-col gap-1 text-[10px] text-gray-600">Cycle duration · seconds <input id="background-animation-duration" type="number" min="1" max="120" step="1" value="12" class="rounded-lg border border-gray-200 px-2 py-1.5 text-xs"></label>
@@ -399,6 +409,11 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
 <p class="mt-2 text-[10px] text-gray-500">Save a copy of the current visual settings. Saving another design with the same name updates it; use a new name to duplicate. Imported files are validated before they are applied.</p>
 </details>
 <!-- Renderable background presets -->
+<div class="grid grid-cols-2 gap-2.5" role="tablist" aria-label="Background media type">
+<button id="background-image-tab" class="background-media-tab selected" role="tab" aria-selected="true" type="button"><span class="material-symbols-outlined" aria-hidden="true">image</span>Image</button>
+<button id="background-video-tab" class="background-media-tab" role="tab" aria-selected="false" type="button"><span class="material-symbols-outlined" aria-hidden="true">movie</span>Video</button>
+</div>
+<div id="background-image-gallery">
 <div class="grid grid-cols-2 gap-2.5">
 <input id="background-search" type="search" placeholder="Search backgrounds…" aria-label="Search backgrounds" class="min-w-0 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs">
 <select id="background-category" aria-label="Filter backgrounds by category" class="min-w-0 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs"><option value="all">All backgrounds</option>{% for category in theme_categories.values()|unique|sort %}<option value="{{ category }}">{{ category }}</option>{% endfor %}</select>
@@ -407,6 +422,22 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
 {% for theme_id, wallpaper in themes.items() %}
 <button class="background-choice{% if loop.first %} selected-background{% endif %}" data-theme="{{ theme_id }}" data-category="{{ theme_categories.get(theme_id, 'Other') }}" data-top="{{ wallpaper.top|join(',') }}" data-bottom="{{ wallpaper.bottom|join(',') }}" type="button"><img class="background-swatch" loading="lazy" alt="" src="/api/backgrounds/{{ theme_id }}/preview?ratio=9:16&amp;v=cinematic-1"><span><strong>{{ wallpaper.name }}</strong><small>{{ theme_categories.get(theme_id, 'Other') }}</small></span></button>
 {% endfor %}
+</div>
+</div>
+<div id="background-video-gallery" class="hidden rounded-xl border border-gray-200 bg-white p-3" role="tabpanel" aria-labelledby="background-video-tab">
+<input id="background-video-template" type="hidden" value="">
+<div class="mb-2 flex items-start justify-between gap-2"><div><strong class="text-xs text-gray-800">Animated video backgrounds</strong><p class="mt-1 text-[10px] leading-relaxed text-gray-500">Silent seamless loops made from bundled, credited artwork. The selected clip fills the recitation and its source audio stays muted.</p></div><span class="material-symbols-outlined rounded-lg bg-brand-50 p-2 text-brand-700" aria-hidden="true">video_library</span></div>
+<div class="background-video-grid" id="background-video-options">
+{% for template_id, preset in background_video_templates.items() %}
+<button type="button" class="background-video-choice" data-video-template="{{ template_id }}" data-video-src="{{ url_for('static', filename='assets/background-videos/' ~ preset.filename) }}" aria-pressed="false">
+<video muted autoplay loop playsinline preload="metadata" poster="{{ url_for('main.background_preview', theme=preset.theme, ratio='9:16') }}"><source src="{{ url_for('static', filename='assets/background-videos/' ~ preset.filename) }}" type="video/mp4"></video>
+<span class="background-video-choice-shade"></span><span class="background-video-choice-copy"><strong>{{ preset.name }}</strong><small>{{ preset.description }}</small></span><span class="background-video-choice-check material-symbols-outlined" aria-hidden="true">check_circle</span>
+</button>
+{% else %}<p class="col-span-2 rounded-lg border border-dashed border-gray-300 bg-slate-50 p-3 text-[10px] text-gray-500">Bundled video templates are not installed. You can still choose your own licensed video below.</p>{% endfor %}
+</div>
+<div class="mt-3 rounded-lg border border-dashed border-gray-300 bg-slate-50 p-3"><strong class="text-[11px] text-gray-700">Use your own video</strong><p class="mt-1 text-[10px] leading-relaxed text-gray-600">Choose a licensed MP4, MOV, WEBM, or M4V. It will loop or hold its last frame to cover the recitation. Source audio is muted unless you explicitly enable it.</p>
+<button id="choose-video-background" type="button" class="mt-2 rounded-lg bg-brand-600 px-3 py-2 text-[11px] font-semibold text-white hover:bg-brand-700">Choose a video file</button>
+<p id="background-video-selection" class="mt-2 text-[10px] text-gray-500" aria-live="polite">No video selected yet.</p></div>
 </div>
 <!-- Fine visual dropdown selectors -->
 <div class="grid grid-cols-2 gap-3">
@@ -436,12 +467,6 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
 </div>
 </div>
 <div class="grid grid-cols-2 gap-3">
-<div class="flex flex-col gap-1">
-<label class="text-[11px] font-semibold text-gray-600" for="wrap-width">Long ayah wrapping</label>
-<select class="w-full rounded-xl border border-gray-200 bg-white text-gray-900 px-3 py-2 text-xs focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none" id="wrap-width">
-<option value="65">Compact · 65%</option><option value="75">Narrow · 75%</option><option value="85" selected>Balanced · 85%</option><option value="95">Wide · 95%</option>
-</select>
-</div>
 <div class="flex flex-col gap-1">
 <label class="text-[11px] font-semibold text-gray-600" for="arabic-font">Arabic font</label>
 <select class="w-full rounded-xl border border-gray-200 bg-white text-gray-900 px-3 py-2 text-xs focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none" id="arabic-font">
@@ -584,6 +609,34 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
 </div>
 <button id="render-cancel-btn" class="hidden mt-2 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:border-red-300 hover:text-red-700" type="button">Cancel render</button>
 </div>
+<details id="youtube-metadata-panel" class="hidden rounded-xl border border-gray-200 bg-white p-3">
+<summary class="cursor-pointer text-xs font-semibold text-gray-800">YouTube metadata · Arabic and English</summary>
+<div class="mt-3 flex flex-wrap items-center justify-between gap-2">
+<p class="text-[10px] text-gray-500">Editable local metadata from this Surah, ayah range, and selected reciter. No translation is generated.</p>
+<button id="refresh-youtube-metadata" type="button" class="rounded-lg border border-brand-200 bg-brand-50 px-3 py-1.5 text-[10px] font-semibold text-brand-700">Generate / refresh</button>
+</div>
+<div class="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
+<section class="flex flex-col gap-2" aria-label="Arabic YouTube metadata">
+<strong class="text-xs text-gray-700" lang="ar" dir="rtl">العربية</strong>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Title<textarea id="metadata-ar-title" rows="2" maxlength="100" dir="rtl" class="rounded-lg border border-gray-200 px-2 py-1.5 text-xs"></textarea></label>
+<button type="button" class="metadata-copy" data-copy-target="metadata-ar-title">Copy Arabic title</button>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Description<textarea id="metadata-ar-description" rows="4" maxlength="5000" dir="rtl" class="rounded-lg border border-gray-200 px-2 py-1.5 text-xs"></textarea></label>
+<button type="button" class="metadata-copy" data-copy-target="metadata-ar-description">Copy Arabic description</button>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Tags<textarea id="metadata-ar-tags" rows="2" dir="auto" class="rounded-lg border border-gray-200 px-2 py-1.5 text-xs"></textarea></label>
+<button type="button" class="metadata-copy" data-copy-target="metadata-ar-tags">Copy Arabic tags</button>
+</section>
+<section class="flex flex-col gap-2" aria-label="English YouTube metadata">
+<strong class="text-xs text-gray-700">English</strong>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Title<textarea id="metadata-en-title" rows="2" maxlength="100" dir="ltr" class="rounded-lg border border-gray-200 px-2 py-1.5 text-xs"></textarea></label>
+<button type="button" class="metadata-copy" data-copy-target="metadata-en-title">Copy English title</button>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Description<textarea id="metadata-en-description" rows="4" maxlength="5000" dir="ltr" class="rounded-lg border border-gray-200 px-2 py-1.5 text-xs"></textarea></label>
+<button type="button" class="metadata-copy" data-copy-target="metadata-en-description">Copy English description</button>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Tags<textarea id="metadata-en-tags" rows="2" dir="ltr" class="rounded-lg border border-gray-200 px-2 py-1.5 text-xs"></textarea></label>
+<button type="button" class="metadata-copy" data-copy-target="metadata-en-tags">Copy English tags</button>
+</section>
+</div>
+<p id="metadata-copy-status" class="mt-2 text-[10px] text-gray-500" role="status" aria-live="polite"></p>
+</details>
 <div class="flex items-center justify-between px-1 text-xs text-gray-500">
 <span class="flex items-center gap-1">
 <span class="material-symbols-outlined text-[15px] text-emerald-600">bolt</span>
@@ -694,11 +747,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
 <span id="copy-status">Copy cURL</span>
 </button>
 </div>
-<pre class="bg-gray-50 border border-gray-200 p-3 rounded-xl overflow-x-auto text-[11px] font-mono text-gray-800 leading-relaxed"><code>curl -X POST http://127.0.0.1:5000/api/generate \
-  -F "surah=55" -F "ayah_start=13" -F "ayah_end=16" \
-  -F "reciter_id=mishary_alafasy" -F "aspect_ratio=9:16" \
-  -F "theme=misty_forest" -F "transition=crossfade" \
-  -F "caption_style=classic" -F "speed=1.0"</code></pre>
+<pre class="bg-gray-50 border border-gray-200 p-3 rounded-xl overflow-x-auto text-[11px] font-mono text-gray-800 leading-relaxed"><code id="api-curl-command">curl -sS -X POST 'http://127.0.0.1:5000/api/generate' -F 'surah=55' -F 'ayah_start=13' -F 'ayah_end=16' -F 'reciter_id=mishary_alafasy' -F 'aspect_ratio=9:16' -F 'encoder=auto'</code></pre>
 </div>
 </div>
 </div>
@@ -722,6 +771,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
   const fontCatalog = {{ font_catalog|tojson }};
   const imageAnimationPresets = {{ image_animation_presets|tojson }};
   const backgroundSequenceTemplates = {{ background_sequence_templates|tojson }};
+  const backgroundVideoTemplates = {{ background_video_templates|tojson }};
   let selectedTemplateId = videoTemplates.cinematic_nature ? 'cinematic_nature' : Object.keys(videoTemplates)[0];
   const initialTemplate = videoTemplates[selectedTemplateId];
   let selectedReciter = 'mishary_alafasy';
@@ -734,16 +784,29 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
   let verseLoadTimer;
   let verseLoadRequest = 0;
   let activeRenderJobId = null;
+  let lastDownloadUrl = null;
   let previewAyahs = [];
   let previewScenes = [];
   let previewTimings = [];
+  let previewAyahTimingRows = [];
+  let previewAudioStart = null;
+  let previewAudioEnd = null;
+  let previewAudioDuration = null;
   let previewIndex = 0;
+  let appliedWordsPerScene = 8;
+  let sceneWordEditRequest = 0;
+  let sceneWordEditTimer = null;
+  let sceneTextDraft = null;
+  const sceneDurationDrafts = new Map();
+  let playbackSceneText = null;
   let previewObjectUrls = [];
   let selectedBackgroundFiles = [];
   let backgroundClipRows = [];
   let previewClipIndex = 0;
   let previewClipAdvancing = false;
   let currentBackgroundKind = null;
+  let backgroundMediaCategory = 'image';
+  let selectedBackgroundVideoTemplate = '';
   let backgroundPreviewTimer;
   let sequencePreviewTimer = null;
   let sequencePreviewFadeTimer = null;
@@ -755,17 +818,29 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
   let loadedVerseSelection = '';
   let scenePlanRequest = 0;
   let scenePlanManual = false;
+  let defaultScenesByAyah = {};
+  let sceneEditsByAyah = {};
+  let previewSceneSourceByAyah = {};
+  let previewSceneSelectionKey = '';
+  let previewSceneSurah = null;
+  let previewSceneSignature = '';
+  let previewTimingSource = '';
+  let previewTimingRequest = 0;
+  let previewTimingSelectionKey = '';
+  let previewTimingReciter = '';
+  const recitationTimingCache = new Map();
   let scenePlanTimer;
   const surahSelect = $('surah-select');
   const startInput = $('start-ayah');
   const endInput = $('end-ayah');
   const ayahText = $('ayah-text');
+  let acceptedAyahText = ayahText.value;
   const reciterList = $('reciters-list');
   const PROJECT_DRAFT_KEY = 'quran-reels-studio-draft-v1';
   const SAVED_PROJECTS_KEY = 'quran-reels-studio-projects-v1';
   const CUSTOM_DESIGNS_KEY = 'quran-reels-studio-custom-designs-v1';
   const PROJECT_TEMPLATE_FIELDS = [
-    'caption-style','arabic-font','max-lines','show-surah-title','show-ayah-number',
+    'caption-style','arabic-font','max-lines','words-per-scene','show-surah-title','show-ayah-number',
     'show-quran-text','viewer-title-enabled','viewer-title-icon-enabled','viewer-header-surah-enabled','viewer-header-surah-language','viewer-header-range-enabled','viewer-header-range-language','viewer-header-range-format','viewer-header-qari-enabled','viewer-title-text','viewer-title-template','viewer-title-color','viewer-title-opacity','viewer-title-size','viewer-title-position',
     'show-translation','translation-text','translation-color','translation-size','translation-bg-enabled','translation-bg-color','translation-bg-opacity','show-waveform','waveform-style','waveform-color','waveform-count','waveform-speed',
     'show-reciter-badge','reciter-label','reciter-color','reciter-background','reciter-opacity','show-progress','progress-color','progress-track-color','progress-height',
@@ -774,11 +849,12 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     'surah-opacity','ayah-number-opacity','surah-placement','ayah-number-placement','caption-position','text-bg-enabled',
     'text-bg-color','text-bg-opacity','glow-type','glow-radius','quran-text-template','wrap-width',
     'transition-style','background-fit','background-crop-x','background-crop-y','background-speed',
-    'background-animation-enabled','background-animation-preset','background-animation-intensity',
+    'background-animation-enabled','background-motion-direction','background-animation-preset','background-animation-intensity',
     'background-animation-duration','background-animation-speed','background-animation-start',
     'background-atmosphere-enabled','background-atmosphere-intensity','background-atmosphere-duration',
     'background-atmosphere-speed','background-atmosphere-start','transitions-enabled',
     'background-sequence-template','sequence-enabled','transitions-enabled',
+    'background-video-template',
     'default-background-transition','background-transition-color','background-transition-duration',
     'background-loop','background-brightness','background-contrast','background-saturation',
     'background-overlay-color','background-overlay-opacity','background-audio-enabled',
@@ -786,7 +862,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     'export-quality','export-encoder','export-crf','audio-bitrate','audio-sample-rate',
     'sequence-enabled','transitions-enabled','default-background-transition','background-transition-color',
     'background-transition-duration','sequence-loop','background-animation-enabled',
-    'background-animation-preset','background-animation-intensity','background-animation-duration',
+    'background-motion-direction','background-animation-preset','background-animation-intensity','background-animation-duration',
     'background-animation-speed',
   ];
   const EXCLUDED_PROJECT_FIELDS = new Set([
@@ -804,19 +880,22 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
   let lastPersistedSignature = '';
 
   function makeEditorSnapshot() {
+    saveVisibleSceneEdits();
     const fields = {};
     document.querySelectorAll('input[id],select[id],textarea[id]').forEach(element => {
       if (element.type === 'file' || EXCLUDED_PROJECT_FIELDS.has(element.id)) return;
       fields[element.id] = element.type === 'checkbox' ? element.checked : element.value;
     });
     return {
-      version: 2, fields, projectName: $('project-name').value.trim() || 'Untitled Reel',
+      version: 3, fields, projectName: $('project-name').value.trim() || 'Untitled Reel',
       videoTemplate: selectedTemplateId, reciter: selectedReciter, ratio, theme,
       captionColor, wrapWidth, speed, scenePlanManual,
-      scenes: scenePlanManual ? previewScenes.map(scene => ({
-        ayah_number:scene.ayah_number, text:scene.text,
-        ...(scene.manual_duration_fraction ? {duration_fraction:scene.duration_fraction} : {}),
-      })) : [],
+      scenes: previewScenes.map(scene => ({
+        scene_id:scene.scene_id, ayah_number:scene.ayah_number,
+        text:scene.text, locked:Boolean(scene.locked), manual_duration:scene.manual_duration ?? null,
+      })),
+      defaultScenesByAyah, sceneEditsByAyah,
+      sceneTextDraft:sceneTextDraft ? {...sceneTextDraft} : null,
       mediaClips: backgroundClipRows.map(row => ({
         file:row.file, name:row.file?.name || '', size:row.file?.size || 0,
         type:row.file?.type || '', lastModified:row.file?.lastModified || 0,
@@ -1107,7 +1186,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
   }
 
   async function applyProjectSnapshot(snapshot, projectId = 'draft') {
-    if (!snapshot || ![1, 2].includes(snapshot.version)) throw new Error('This saved project uses an unsupported format.');
+    if (!snapshot || ![1, 2, 3].includes(snapshot.version)) throw new Error('This saved project uses an unsupported format.');
     historyApplying = true;
     try {
       const fields = {...(snapshot.fields || {})};
@@ -1119,6 +1198,11 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
         if (element.type === 'checkbox' || element.type === 'radio') element.checked = Boolean(value);
         else element.value = value;
       }
+      const savedWordLimit = String($('words-per-scene').value || '8');
+      appliedWordsPerScene = /^[1-9]\d?$/.test(savedWordLimit) && Number(savedWordLimit) <= 30
+        ? Number(savedWordLimit) : 8;
+      $('words-per-scene').value = String(appliedWordsPerScene);
+      $('words-per-scene-status').textContent = `Using ${appliedWordsPerScene} words per scene.`;
       selectedTemplateId = videoTemplates[snapshot.videoTemplate] ? snapshot.videoTemplate : selectedTemplateId;
       selectedReciter = snapshot.reciter || selectedReciter;
       ratio = ['9:16','16:9','1:1'].includes(snapshot.ratio) ? snapshot.ratio : ratio;
@@ -1126,8 +1210,14 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
       captionColor = snapshot.captionColor || captionColor;
       wrapWidth = Number(snapshot.wrapWidth || 85);
       speed = Number(snapshot.speed || 1);
-      scenePlanManual = Boolean(snapshot.scenePlanManual);
-      previewScenes = scenePlanManual ? (snapshot.scenes || []).map((scene,index) => ({...scene,scene_index:index})) : [];
+      scenePlanManual = Boolean(snapshot.scenePlanManual || snapshot.sceneTextDraft);
+      defaultScenesByAyah = snapshot.defaultScenesByAyah && typeof snapshot.defaultScenesByAyah === 'object'
+        ? snapshot.defaultScenesByAyah : {};
+      sceneEditsByAyah = snapshot.sceneEditsByAyah && typeof snapshot.sceneEditsByAyah === 'object'
+        ? snapshot.sceneEditsByAyah : {};
+      previewScenes = [];
+      const savedSceneDraft = snapshot.sceneTextDraft || null;
+      sceneTextDraft = null;
       $('project-name').value = snapshot.projectName || fields['project-name'] || 'Untitled Reel';
       document.querySelectorAll('.aspect-ratio-btn').forEach(button => button.classList.toggle('selected-ratio', button.dataset.ratio === ratio));
       syncPreviewAspectRatio();
@@ -1159,6 +1249,9 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
           $('background-file-name').textContent = 'Re-select the custom background used by this project';
           setProjectStatus('Settings restored; saved background media is unavailable', true);
         }
+      } else if (snapshot.fields?.['background-video-template'] &&
+                 selectBackgroundVideoTemplate(snapshot.fields['background-video-template'], {save:false})) {
+        updateBackgroundSequenceSelection();
       } else {
         clearCustomBackgroundPreview();
         $('background-file-name').textContent = 'PNG, JPG, WEBP, MP4, MOV or WEBM';
@@ -1167,9 +1260,29 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
       }
       await loadVerses(false);
       if (fields['ayah-text'] != null) ayahText.value = fields['ayah-text'];
-      scenePlanManual = Boolean(snapshot.scenePlanManual);
-      previewScenes = scenePlanManual ? (snapshot.scenes || []).map((scene,index) => ({...scene,scene_index:index})) : [];
+      acceptedAyahText = ayahText.value;
+      if (!Object.keys(sceneEditsByAyah).length && snapshot.scenePlanManual && Array.isArray(snapshot.scenes)) {
+        const lines = ayahText.value.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+        const start = Number(startInput.value || 1);
+        const surah = Number(surahSelect.value);
+        const grouped = new Map();
+        snapshot.scenes.forEach(scene => {
+          const number = Number(scene.ayah_number);
+          if (!Number.isInteger(number) || number < start || number >= start + lines.length) return;
+          if (!grouped.has(number)) grouped.set(number, []);
+          grouped.get(number).push(scene);
+        });
+        for (const [number, rows] of grouped) {
+          sceneEditsByAyah[sceneAyahKey(surah, number)] = {
+            source_text:lines[number - start], scenes:rows.map(cleanSceneRow),
+          };
+        }
+      }
+      previewScenes = [];
+      scenePlanManual = Boolean(Object.keys(sceneEditsByAyah).length);
       await updateScenePlan();
+      sceneTextDraft = savedSceneDraft;
+      if (sceneTextDraft) renderSceneTimeline();
       await updateCaptionPreview();
       hideRenderedVideo();
     } finally { historyApplying = false; }
@@ -1250,6 +1363,11 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
       if (element.type === 'checkbox' || element.type === 'radio') element.checked = Boolean(value);
       else element.value = value;
     }
+    const designWordLimit = String($('words-per-scene').value || '8');
+    appliedWordsPerScene = /^[1-9]\d?$/.test(designWordLimit) && Number(designWordLimit) <= 30
+      ? Number(designWordLimit) : 8;
+    $('words-per-scene').value = String(appliedWordsPerScene);
+    $('words-per-scene-status').textContent = `Using ${appliedWordsPerScene} words per scene.`;
     document.querySelectorAll('.aspect-ratio-btn').forEach(button => button.classList.toggle('selected-ratio', button.dataset.ratio === ratio));
     syncPreviewAspectRatio();
     document.querySelectorAll('.background-choice').forEach(button => button.classList.toggle('selected-background', button.dataset.theme === theme));
@@ -1294,6 +1412,10 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
       if (!element) throw new Error(`The template refers to a missing editor control: ${id}.`);
       if (element.type === 'checkbox') {
         if (typeof value !== 'boolean') throw new Error(`The ${id} setting must be true or false.`);
+      } else if (id === 'background-video-template') {
+        if (value !== '' && !backgroundVideoTemplates[value]) throw new Error('The template uses an unavailable bundled video background.');
+      } else if (id === 'words-per-scene') {
+        if (!/^[1-9]\d?$/.test(String(value)) || Number(value) > 30) throw new Error('Words per scene must be a whole number from 1 to 30.');
       } else if (element.type === 'color') {
         if (typeof value !== 'string' || !/^#[\da-f]{6}$/i.test(value)) throw new Error(`The ${id} setting must be a hex color.`);
       } else if (element.type === 'range' || element.type === 'number') {
@@ -1484,6 +1606,13 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     $('playback-toggle').setAttribute('aria-label', isPlaying ? 'Pause preview' : 'Play preview');
     $('viewer-waveform').classList.toggle('is-playing', isPlaying);
   }
+  function stopRecitationPreview() {
+    const player = $('voice-preview-audio');
+    player.ontimeupdate = null;
+    player.onpause = null;
+    player.pause();
+    setPlaybackIcon(false);
+  }
   const reciterById = new Map();
 
   function hideRenderedVideo() {
@@ -1504,8 +1633,11 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     if (!player || !Number.isFinite(player.duration)) return;
     const scrubber = $('preview-scrubber');
     const isRecitation = player === $('voice-preview-audio') && previewTimings.length;
-    const start = isRecitation ? previewTimings[0].start : 0;
-    const end = isRecitation ? previewTimings[previewTimings.length - 1].end : player.duration;
+    const start = 0;
+    const end = isRecitation
+      ? (previewAudioDuration ?? ((previewAudioEnd ?? previewTimings.at(-1).audio_end)
+        - (previewAudioStart ?? previewTimings[0].audio_start)))
+      : player.duration;
     scrubber.min = start; scrubber.max = end;
     scrubber.value = Math.min(end, Math.max(start, player.currentTime));
     $('preview-time').textContent = `${formatTime(Math.max(0, player.currentTime - start))} / ${formatTime(end - start)}`;
@@ -1600,9 +1732,13 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
   }
 
   function updateBackgroundAnimationPreview() {
-    const enabled = $('background-animation-enabled').checked && currentBackgroundKind !== 'video';
+    const direction = $('background-motion-direction').value;
+    const directionPresets = {left_to_right:'slow_pan_left',right_to_left:'slow_pan_right',
+      top_to_bottom:'slow_pan_top_to_bottom',bottom_to_top:'slow_pan_bottom_to_top'};
+    const enabled = direction === 'static' ? false
+      : direction !== 'preset' ? true : $('background-animation-enabled').checked;
     const atmosphereEnabled = $('background-atmosphere-enabled').checked;
-    const presetId = $('background-animation-preset').value;
+    const presetId = directionPresets[direction] || (direction === 'static' ? 'static' : $('background-animation-preset').value);
     const preset = imageAnimationPresets[presetId] || imageAnimationPresets.static;
     const intensity = Number($('background-animation-intensity').value);
     const duration = Math.max(1, Number($('background-animation-duration').value) || 12);
@@ -1618,7 +1754,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     $('background-atmosphere-intensity-label').textContent = `${Math.round(atmosphereIntensity * 100)}%`;
     $('background-atmosphere-speed-label').textContent = `${atmosphereSpeed.toFixed(2)}×`;
     atmosphereOverlay.style.opacity = atmosphereEnabled ? String(Math.min(.9, atmosphereIntensity)) : '0';
-    for (const id of ['preview-wallpaper','preview-background-image']) $(id).style.transform = 'none';
+    for (const id of ['preview-wallpaper','preview-background-image','preview-background-video']) $(id).style.transform = 'none';
     if (animationPreviewFrame) cancelAnimationFrame(animationPreviewFrame);
     if ((!enabled || presetId === 'static' || intensity <= 0) && !atmosphereEnabled) return;
     animationPreviewStartedAt = performance.now();
@@ -1631,7 +1767,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
         const cropX = preset.pan_x[0] + (preset.pan_x[1] - preset.pan_x[0]) * phase;
         const cropY = preset.pan_y[0] + (preset.pan_y[1] - preset.pan_y[0]) * phase;
         const transform = `translate3d(${((.5 - cropX) * (zoom - 1) * 100).toFixed(3)}%,${((.5 - cropY) * (zoom - 1) * 100).toFixed(3)}%,0) scale(${zoom.toFixed(4)})`;
-        for (const id of ['preview-wallpaper','preview-background-image']) $(id).style.transform = transform;
+        for (const id of ['preview-wallpaper','preview-background-image','preview-background-video']) $(id).style.transform = transform;
       }
       if (atmosphereEnabled && atmosphereIntensity > 0) {
         const cycle = elapsed < atmosphereStart ? 0 : ((elapsed - atmosphereStart) * atmosphereSpeed / atmosphereDuration) % 1;
@@ -1661,11 +1797,12 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     $('preview-background-blur').style.backgroundImage = currentBackgroundKind === 'image' && previewObjectUrls[0]
       ? `url("${previewObjectUrls[0]}")` : 'none';
     const video = $('preview-background-video'), blurVideo = $('preview-background-video-blur');
-    const showVideo = currentBackgroundKind === 'video' && Boolean(previewObjectUrls.length);
+    const showVideo = currentBackgroundKind === 'video' &&
+      (Boolean(previewObjectUrls.length) || Boolean(selectedBackgroundVideoTemplate));
     video.classList.toggle('hidden', !showVideo);
     blurVideo.classList.toggle('hidden', !showVideo || fit !== 'blurred');
     if (showVideo) {
-      video.loop = !$('sequence-enabled').checked && $('background-loop').checked;
+      video.loop = Boolean(selectedBackgroundVideoTemplate) || (!$('sequence-enabled').checked && $('background-loop').checked);
       video.playbackRate = Number(backgroundClipRows[previewClipIndex]?.speed || $('background-speed').value);
       blurVideo.loop = true; blurVideo.playbackRate = video.playbackRate;
       video.play().catch(() => {}); if (fit === 'blurred') blurVideo.play().catch(() => {});
@@ -1678,6 +1815,12 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     if (clearSelection) {
       selectedBackgroundFiles = [];
       backgroundClipRows = [];
+      selectedBackgroundVideoTemplate = '';
+      $('background-video-template').value = '';
+      document.querySelectorAll('.background-video-choice').forEach(button => {
+        button.classList.remove('selected-background-video');
+        button.setAttribute('aria-pressed', 'false');
+      });
       renderBackgroundClipList();
     }
     const image = $('preview-background-image'); image.removeAttribute('src'); image.classList.add('hidden');
@@ -1697,6 +1840,12 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
   }
 
   function renderUploadedBackgroundPreview(files) {
+    selectedBackgroundVideoTemplate = '';
+    $('background-video-template').value = '';
+    document.querySelectorAll('.background-video-choice').forEach(button => {
+      button.classList.remove('selected-background-video');
+      button.setAttribute('aria-pressed', 'false');
+    });
     $('background-sequence-template').value = '';
     updateBackgroundSequenceSelection();
     clearTimeout(builtinSequencePreviewTimer);
@@ -1726,6 +1875,42 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
         probe.removeAttribute('src'); probe.load();
       };
     });
+  }
+
+  function selectBackgroundVideoTemplate(templateId, {save = true} = {}) {
+    const button = document.querySelector(`.background-video-choice[data-video-template="${templateId}"]`);
+    const preset = backgroundVideoTemplates[templateId];
+    if (!button || !preset) return false;
+    clearCustomBackgroundPreview();
+    selectedBackgroundVideoTemplate = templateId;
+    $('background-video-template').value = templateId;
+    $('background-sequence-template').value = '';
+    $('sequence-enabled').checked = false;
+    updateBackgroundSequenceSelection();
+    $('background-file').value = '';
+    $('background-file-name').textContent = `${preset.name} · silent looping video`;
+    $('background-video-selection').textContent = `${preset.name} selected · source audio muted`;
+    document.querySelectorAll('.background-video-choice').forEach(item => {
+      const selected = item.dataset.videoTemplate === templateId;
+      item.classList.toggle('selected-background-video', selected);
+      item.setAttribute('aria-pressed', String(selected));
+    });
+    currentBackgroundKind = 'video';
+    $('preview-background').classList.add('has-custom-background');
+    const src = button.dataset.videoSrc;
+    for (const id of ['preview-background-video','preview-background-video-blur']) {
+      const video = $(id);
+      video.muted = true; video.loop = true; video.playsInline = true;
+      video.src = src; video.classList.remove('hidden'); video.style.opacity = '1';
+      video.load(); video.play().catch(() => {});
+    }
+    $('preview-background-image').classList.add('hidden');
+    configureBackgroundFit();
+    updateBackgroundAdjustments();
+    updateBackgroundAnimationPreview();
+    hideRenderedVideo();
+    if (save) scheduleProjectAutosave();
+    return true;
   }
 
   function playPreviewClip(index) {
@@ -1979,17 +2164,24 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
   }
 
   let captionPreviewRequest = 0, captionPreviewObjectUrl = null;
+  function hideCaptionPreview() {
+    captionPreviewRequest++;
+    $('preview-ayah-text').style.display = 'none';
+    updateViewerLayerPreview();
+  }
   async function updateCaptionPreview() {
     const caption = $('preview-ayah-text');
     if (!$('show-quran-text').checked) {
-      caption.style.display = 'none';
-      updateViewerLayerPreview();
+      hideCaptionPreview();
       return;
     }
     const lines = ayahText.value.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
     const activeScene = previewScenes[previewIndex];
-    const text = activeScene?.text || lines[0] || previewAyahs[0] || '';
-    if (!text) return;
+    const text = playbackSceneText !== null ? playbackSceneText : activeScene?.text || lines[0] || previewAyahs[0] || '';
+    if (!text) {
+      hideCaptionPreview();
+      return;
+    }
     const requestId = ++captionPreviewRequest;
     const response = await fetch('/api/caption-preview', {
       method: 'POST', headers: {'Content-Type':'application/json'},
@@ -2053,22 +2245,410 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     caption.src = imageUrl;
   }
 
+  function sceneAyahKey(surah, ayah) { return `${Number(surah)}:${Number(ayah)}`; }
+
+  function cleanSceneRow(scene) {
+    const row = {
+      scene_id:String(scene.scene_id || ''), ayah_number:Number(scene.ayah_number),
+      text:String(scene.text || '').trim(), locked:Boolean(scene.locked),
+    };
+    if (scene.manual_duration != null && Number.isFinite(Number(scene.manual_duration))) {
+      row.manual_duration = Number(scene.manual_duration);
+    }
+    return row;
+  }
+
+  function sceneLayoutSignature() {
+    return JSON.stringify({
+      ratio, size:currentOutputSize(), wrapWidth:Number(wrapWidth),
+      maxLines:Number($('max-lines').value), wordsPerScene:Number(appliedWordsPerScene),
+      font:$('arabic-font').value, showTitle:$('show-surah-title').checked,
+      showNumber:$('show-ayah-number').checked,
+    });
+  }
+
+  function groupSceneRows(scenes) {
+    const groups = new Map();
+    scenes.forEach(scene => {
+      const number = Number(scene.ayah_number);
+      if (!groups.has(number)) groups.set(number, []);
+      groups.get(number).push(cleanSceneRow(scene));
+    });
+    return groups;
+  }
+
+  function saveVisibleSceneEdits() {
+    if (!previewScenes.length || previewSceneSurah == null || !Number.isInteger(Number(previewSceneSurah))) return;
+    const groups = groupSceneRows(previewScenes);
+    for (const [number, rows] of groups) {
+      const source = String(previewSceneSourceByAyah[number] || '').trim();
+      if (!source) continue;
+      const key = sceneAyahKey(previewSceneSurah, number);
+      const defaults = defaultScenesByAyah[key];
+      const baseline = defaults?.source_text === source
+        ? defaults.plans?.[previewSceneSignature] : null;
+      if (baseline && JSON.stringify(rows) === JSON.stringify(baseline)) {
+        delete sceneEditsByAyah[key];
+      } else {
+        sceneEditsByAyah[key] = {source_text:source, scenes:rows};
+      }
+    }
+  }
+
+  function rememberDefaultScenes(scenes, sourceTexts, surah, signature) {
+    const groups = groupSceneRows(scenes);
+    for (const [number, rows] of groups) {
+      const source = String(sourceTexts[number] || '').trim();
+      if (!source) continue;
+      const key = sceneAyahKey(surah, number);
+      let record = defaultScenesByAyah[key];
+      if (!record || record.source_text !== source) record = {source_text:source, plans:{}};
+      record.plans ||= {};
+      // A saved default is the reset baseline and must never be replaced by
+      // the current edited scene arrangement.
+      if (!record.plans[signature]) record.plans[signature] = rows;
+      defaultScenesByAyah[key] = record;
+    }
+  }
+
+  function sceneCacheRecords(ayahs, start, surah, signature) {
+    const defaults = [], edits = [];
+    ayahs.forEach((text, index) => {
+      const number = Number(start) + index;
+      const source = String(text || '').trim();
+      const key = sceneAyahKey(surah, number);
+      const baseline = defaultScenesByAyah[key];
+      if (baseline?.source_text === source && Array.isArray(baseline.plans?.[signature])) {
+        defaults.push({ayah_number:number, source_text:source, scenes:baseline.plans[signature]});
+      }
+      const saved = sceneEditsByAyah[key];
+      if (saved?.source_text === source && Array.isArray(saved.scenes) && saved.scenes.length) {
+        edits.push({ayah_number:number, source_text:source, scenes:saved.scenes.map(cleanSceneRow)});
+      }
+    });
+    return {defaults, edits};
+  }
+
   function scenePayload() {
+    const ayahs = ayahText.value.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+    const ayahStart = Number(startInput.value || 1);
+    const surah = Number(surahSelect.value);
+    const signature = sceneLayoutSignature();
+    const cache = sceneCacheRecords(ayahs, ayahStart, surah, signature);
     return {
-      ayahs: ayahText.value.split(/\r?\n/).map(line => line.trim()).filter(Boolean),
-      ayah_start: Number(startInput.value || 1), aspect_ratio: ratio, wrap_width: wrapWidth,
+      ayahs, ayah_start:ayahStart, scene_defaults:cache.defaults, scene_edits:cache.edits,
+      aspect_ratio: ratio, wrap_width: wrapWidth,
       resolution: $('export-resolution').value,
       custom_width: $('custom-width').value, custom_height: $('custom-height').value,
-      max_lines: Number($('max-lines').value), font_id: $('arabic-font').value,
+      max_lines: Number($('max-lines').value), words_per_scene:appliedWordsPerScene,
+      font_id: $('arabic-font').value,
       template_id: selectedTemplateId,
       show_surah_title: $('show-surah-title').checked,
       show_ayah_number: $('show-ayah-number').checked,
     };
   }
 
+  async function resetSelectedSceneRange() {
+    if (guardPendingSceneTextDraft() || guardPendingSceneDurationDraft()) return;
+    saveVisibleSceneEdits();
+    const surah = Number(surahSelect.value);
+    const start = Number(startInput.value || 1);
+    const end = Number(endInput.value || start);
+    for (let number = start; number <= end; number++) {
+      delete sceneEditsByAyah[sceneAyahKey(surah, number)];
+    }
+    sceneTextDraft = null;
+    scenePlanManual = false;
+    previewScenes = [];
+    previewSceneSurah = null;
+    previewSceneSourceByAyah = {};
+    scenePlanRequest++;
+    hideRenderedVideo();
+    await updateScenePlan();
+    if (previewAyahTimingRows.length && previewTimingSelectionKey === verseSelectionKey()
+        && previewTimingReciter === selectedReciter) previewTimings = expandSceneTimings(previewAyahTimingRows);
+    previewIndex = 0;
+    paintPreviewAyah(0);
+    scheduleProjectAutosave();
+  }
+
+  $('reset-scenes').addEventListener('click', () => resetSelectedSceneRange().catch(showError));
+
+  function applyWordsPerScene() {
+    if (guardPendingSceneTextDraft() || guardPendingSceneDurationDraft()) return false;
+    const field = $('words-per-scene');
+    const status = $('words-per-scene-status');
+    const raw = field.value.trim();
+    if (!/^[1-9]\d?$/.test(raw) || Number(raw) > 30) {
+      field.setAttribute('aria-invalid', 'true');
+      field.setCustomValidity('Enter a whole number from 1 to 30.');
+      status.textContent = 'Enter a whole number from 1 to 30, then apply.';
+      status.classList.add('text-red-600');
+      field.focus();
+      return false;
+    }
+    field.setAttribute('aria-invalid', 'false');
+    field.setCustomValidity('');
+    const requested = Number(raw);
+    if (requested === appliedWordsPerScene) {
+      status.textContent = `Using ${appliedWordsPerScene} words per scene.`;
+      status.classList.remove('text-red-600');
+      return true;
+    }
+    appliedWordsPerScene = requested;
+    status.textContent = `Regrouping captions into ${requested}-word scenes…`;
+    status.classList.remove('text-red-600');
+    hideRenderedVideo();
+    scenePlanManual = false;
+    updateScenePlan().then(updateCaptionPreview).then(() => {
+      status.textContent = `Using ${requested} words per scene.`;
+      scheduleProjectAutosave();
+    }).catch(showError);
+    return true;
+  }
+
+  $('apply-words-per-scene').addEventListener('click', applyWordsPerScene);
+  $('words-per-scene').addEventListener('keydown', event => {
+    if (event.key === 'Enter') { event.preventDefault(); applyWordsPerScene(); }
+  });
+
+  function sceneWordCountBounds(sceneIndex) {
+    const scene = previewScenes[sceneIndex];
+    if (!scene) return {min:1,max:1,disabled:true};
+    const currentCount = String(scene.text || '').trim().split(/\s+/).filter(Boolean).length;
+    let ayahStartIndex = sceneIndex;
+    while (ayahStartIndex > 0 && previewScenes[ayahStartIndex - 1].ayah_number === scene.ayah_number) ayahStartIndex--;
+    let ayahEndIndex = sceneIndex + 1;
+    while (ayahEndIndex < previewScenes.length && previewScenes[ayahEndIndex].ayah_number === scene.ayah_number) ayahEndIndex++;
+    let followingCount = 0;
+    for (const following of previewScenes.slice(sceneIndex + 1, ayahEndIndex)) {
+      if (following.locked) break;
+      followingCount += String(following.text || '').trim().split(/\s+/).filter(Boolean).length;
+    }
+    const locked = Boolean(scene.locked);
+    return {min:1,max:currentCount + followingCount,disabled:locked};
+  }
+
+  function hasPendingSceneTextDraft() {
+    if (!sceneTextDraft) return false;
+    const scene = previewScenes.find(item => item.scene_id === sceneTextDraft.sceneId);
+    return Boolean(scene && scene.text !== sceneTextDraft.text);
+  }
+
+  function guardPendingSceneTextDraft() {
+    if (!hasPendingSceneTextDraft()) return false;
+    const message = 'Apply or reset the pending scene text before changing its scene structure or exporting.';
+    const feedback = $('scene-text-feedback');
+    if (feedback) { feedback.textContent = message; feedback.classList.add('text-red-600'); }
+    showError(message);
+    $('scene-text-input')?.focus();
+    return true;
+  }
+
+  function sceneRowsForRequest() {
+    return previewScenes.map(scene => ({
+      ...cleanSceneRow(scene),
+      // duration is this scene's individual length. Absolute positions are
+      // carried separately; the renderer re-derives them from source audio.
+      duration:scene.duration == null ? null : Number(scene.duration),
+      start_time:scene.start_time == null ? null : Number(scene.start_time),
+      end_time:scene.end_time == null ? null : Number(scene.end_time),
+      automatic_duration:scene.automatic_duration == null ? null : Number(scene.automatic_duration),
+    }));
+  }
+
+  async function updateSceneWordCount(sceneIndex, requestedCount) {
+    if (guardPendingSceneTextDraft() || guardPendingSceneDurationDraft()) return;
+    const raw = String(requestedCount).trim();
+    const bounds = sceneWordCountBounds(sceneIndex);
+    if (!/^[1-9]\d{0,2}$/.test(raw)) throw new Error('Enter a positive whole number of words.');
+    const count = Number(raw);
+    if (count < bounds.min || count > bounds.max) {
+      throw new Error(`This scene can contain ${bounds.min === bounds.max ? bounds.min : `${bounds.min}–${bounds.max}`} words. Its count cannot cross an ayah boundary.`);
+    }
+    const requestId = ++sceneWordEditRequest;
+    document.querySelectorAll('.scene-word-count, .scene-word-apply').forEach(input => { input.disabled = true; });
+    document.querySelectorAll('.scene-actions button').forEach(button => { button.disabled = true; });
+    let payload;
+    try {
+      const response = await fetch('/api/scenes/redistribute', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          ayahs:ayahText.value.split(/\r?\n/).map(line => line.trim()).filter(Boolean),
+          ayah_start:Number(startInput.value || 1),
+          scenes:sceneRowsForRequest(),
+          scene_index:sceneIndex, word_count:count,
+        }),
+      });
+      payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Could not redistribute words between caption scenes.');
+    } catch (error) {
+      if (requestId === sceneWordEditRequest) renderSceneTimeline();
+      throw error;
+    }
+    if (requestId !== sceneWordEditRequest) return;
+    previewScenes = payload.scenes;
+    previewIndex = payload.selected_scene_index;
+    scenePlanManual = true;
+    playbackSceneText = null;
+    refreshSceneLabels();
+    previewTimings = previewAyahTimingRows.length ? expandSceneTimings(previewAyahTimingRows) : [];
+    renderSceneTimeline();
+    updateCaptionPreview().catch(showError);
+    hideRenderedVideo();
+    scheduleProjectAutosave();
+  }
+
+  async function applySceneText(sceneIndex, requestedText) {
+    if (guardPendingSceneDurationDraft()) return;
+    const scene = previewScenes[sceneIndex];
+    if (!scene) throw new Error('The selected scene no longer exists.');
+    if (hasPendingSceneTextDraft() && sceneTextDraft.sceneId !== scene.scene_id) {
+      guardPendingSceneTextDraft(); return;
+    }
+    const feedback = $('scene-text-feedback');
+    const text = String(requestedText || '').trim();
+    if (!text) {
+      if (feedback) { feedback.textContent = 'Enter at least one whole word.'; feedback.classList.add('text-red-600'); }
+      $('scene-text-input')?.setAttribute('aria-invalid', 'true');
+      return;
+    }
+    const requestId = ++sceneWordEditRequest;
+    document.querySelectorAll('.scene-actions button, .scene-word-count, .scene-text-input').forEach(input => { input.disabled = true; });
+    try {
+      const response = await fetch('/api/scenes/redistribute', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          action:'edit_text', ayahs:ayahText.value.split(/\r?\n/).map(line => line.trim()).filter(Boolean),
+          ayah_start:Number(startInput.value || 1), scenes:sceneRowsForRequest(),
+          scene_index:sceneIndex, text,
+        }),
+      });
+      const payload = await response.json();
+      if (requestId !== sceneWordEditRequest) return;
+      if (!response.ok) throw new Error(payload.error || 'Scene text must match whole words from the selected ayah.');
+      previewScenes = payload.scenes;
+      previewIndex = payload.selected_scene_index;
+      sceneTextDraft = null;
+      scenePlanManual = true;
+      playbackSceneText = null;
+      refreshSceneLabels();
+      previewTimings = previewAyahTimingRows.length ? expandSceneTimings(previewAyahTimingRows) : [];
+      renderSceneTimeline();
+      updateCaptionPreview().catch(showError);
+      hideRenderedVideo();
+      scheduleProjectAutosave();
+    } catch (error) {
+      if (requestId === sceneWordEditRequest) {
+        if (feedback) { feedback.textContent = error.message; feedback.classList.add('text-red-600'); }
+        if (error.message.includes('exact next words')) $('scene-text-input')?.setAttribute('aria-invalid', 'true');
+        document.querySelectorAll('.scene-actions button, .scene-word-count, .scene-text-input').forEach(input => { input.disabled = false; });
+      }
+      throw error;
+    }
+  }
+
+  async function toggleSceneLock(sceneIndex, locked) {
+    if (guardPendingSceneTextDraft() || guardPendingSceneDurationDraft()) return;
+    const requestId = ++sceneWordEditRequest;
+    document.querySelectorAll('.scene-actions button, .scene-word-count, .scene-text-input').forEach(input => { input.disabled = true; });
+    try {
+      const response = await fetch('/api/scenes/redistribute', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          action:'set_lock', ayahs:ayahText.value.split(/\r?\n/).map(line => line.trim()).filter(Boolean),
+          ayah_start:Number(startInput.value || 1), scenes:sceneRowsForRequest(),
+          scene_index:sceneIndex, locked,
+        }),
+      });
+      const payload = await response.json();
+      if (requestId !== sceneWordEditRequest) return;
+      if (!response.ok) throw new Error(payload.error || 'Could not update this scene lock.');
+      previewScenes = payload.scenes;
+      previewIndex = payload.selected_scene_index;
+      scenePlanManual = true;
+      refreshSceneLabels();
+      previewTimings = previewAyahTimingRows.length
+        && previewTimingSelectionKey === verseSelectionKey()
+        && previewTimingReciter === selectedReciter
+        ? expandSceneTimings(previewAyahTimingRows) : [];
+      renderSceneTimeline();
+      scheduleProjectAutosave();
+    } catch (error) {
+      if (requestId === sceneWordEditRequest) renderSceneTimeline();
+      throw error;
+    }
+  }
+
+  async function splitSceneByWordCount(sceneIndex) {
+    if (guardPendingSceneTextDraft() || guardPendingSceneDurationDraft()) return;
+    const requestId = ++sceneWordEditRequest;
+    document.querySelectorAll('.scene-word-count, .scene-word-apply').forEach(input => { input.disabled = true; });
+    document.querySelectorAll('.scene-actions button').forEach(button => { button.disabled = true; });
+    try {
+      const response = await fetch('/api/scenes/redistribute', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          action:'split_by_word_count',
+          ayahs:ayahText.value.split(/\r?\n/).map(line => line.trim()).filter(Boolean),
+          ayah_start:Number(startInput.value || 1),
+          scenes:sceneRowsForRequest(),
+          scene_index:sceneIndex, words_per_scene:appliedWordsPerScene,
+        }),
+      });
+      const payload = await response.json();
+      if (requestId !== sceneWordEditRequest) return;
+      if (!response.ok) throw new Error(payload.error || 'Could not split this caption scene.');
+      previewScenes = payload.scenes;
+      finishSceneStructureEdit(payload.selected_scene_index);
+    } catch (error) {
+      if (requestId === sceneWordEditRequest) renderSceneTimeline();
+      throw error;
+    }
+  }
+
+  function finishSceneStructureEdit(selectedIndex) {
+    scenePlanRequest++;
+    scenePlanManual = true;
+    playbackSceneText = null;
+    refreshSceneLabels();
+    previewTimings = previewAyahTimingRows.length ? expandSceneTimings(previewAyahTimingRows) : [];
+    previewIndex = Math.max(0, Math.min(selectedIndex, previewScenes.length - 1));
+    renderSceneTimeline();
+    updateCaptionPreview().catch(showError);
+    hideRenderedVideo();
+    scheduleProjectAutosave();
+  }
+
+  async function mergeSceneWithPrevious(sceneIndex) {
+    if (guardPendingSceneTextDraft() || guardPendingSceneDurationDraft()) return;
+    const requestId = ++sceneWordEditRequest;
+    document.querySelectorAll('.scene-word-count').forEach(input => { input.disabled = true; });
+    document.querySelectorAll('.scene-actions button').forEach(button => { button.disabled = true; });
+    try {
+      const response = await fetch('/api/scenes/redistribute', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          action:'merge_previous',
+          ayahs:ayahText.value.split(/\r?\n/).map(line => line.trim()).filter(Boolean),
+          ayah_start:Number(startInput.value || 1),
+          scenes:sceneRowsForRequest(),
+          scene_index:sceneIndex,
+        }),
+      });
+      const payload = await response.json();
+      if (requestId !== sceneWordEditRequest) return;
+      if (!response.ok) throw new Error(payload.error || 'Could not merge these caption scenes.');
+      previewScenes = payload.scenes;
+      finishSceneStructureEdit(payload.selected_scene_index);
+    } catch (error) {
+      if (requestId === sceneWordEditRequest) renderSceneTimeline();
+      throw error;
+    }
+  }
+
   function refreshSceneLabels() {
     const totals = new Map();
-    const groups = new Map();
     previewScenes.forEach(scene => totals.set(scene.ayah_number, (totals.get(scene.ayah_number) || 0) + 1));
     const seen = new Map();
     previewScenes.forEach((scene, index) => {
@@ -2076,29 +2656,134 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
       scene.segment_index = (seen.get(scene.ayah_number) || 0) + 1;
       seen.set(scene.ayah_number, scene.segment_index);
       scene.segment_count = totals.get(scene.ayah_number);
+      scene.scene_id = scene.scene_id || `ayah-${scene.ayah_number}-segment-${scene.segment_index}`;
+      scene.locked = Boolean(scene.locked);
+      scene.word_count = String(scene.text || '').trim().split(/\s+/).filter(Boolean).length;
       scene.weight = Math.max(1, [...scene.text].filter(char => !/\s/.test(char) && !/[\u0300-\u036f\u064b-\u065f\u0670\u06d6-\u06ed]/u.test(char)).length);
-      if (!groups.has(scene.ayah_number)) groups.set(scene.ayah_number, []);
-      groups.get(scene.ayah_number).push(scene);
+    });
+  }
+
+  function sceneSeconds(value) {
+    if (value == null || value === '') return '—';
+    const number = Number(value);
+    if (!Number.isFinite(number)) return '—';
+    let formatted = number.toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
+    if (!formatted.includes('.')) formatted += '.0';
+    return `${formatted}s`;
+  }
+
+  function applySceneTimingModel(scenes, totalDuration = null) {
+    const groups = new Map();
+    scenes.forEach(scene => {
+      const ayah = Number(scene.ayah_number);
+      if (!groups.has(ayah)) groups.set(ayah, []);
+      groups.get(ayah).push(scene);
+      scene.timing_warning = '';
+      const automatic = scene.automatic_duration;
+      scene.duration = scene.manual_duration != null ? Number(scene.manual_duration)
+        : automatic != null && Number.isFinite(Number(automatic)) ? Number(automatic) : null;
     });
     for (const group of groups.values()) {
-      const fractionsTotal = group.reduce((sum, scene) => sum + Number(scene.duration_fraction || 0), 0);
-      const hasValidFractions = group.every(scene => Number(scene.duration_fraction) > 0) && Math.abs(fractionsTotal - 1) < .005;
-      if (!hasValidFractions) {
-        const weightTotal = group.reduce((sum, scene) => sum + scene.weight, 0);
-        group.forEach(scene => { scene.duration_fraction = scene.weight / weightTotal; scene.manual_duration_fraction = false; });
+      const wordAnchored = group.every(scene => scene.timing_mode === 'word_timestamp');
+      let cursor = group[0].automatic_start_time ?? group[0].start_time;
+      for (const scene of group) {
+        if (scene.duration == null
+            || (scene.automatic_start_time == null && scene.start_time == null && cursor == null)) {
+          scene.start_time = scene.end_time = null;
+          continue;
+        }
+        const autoStart = scene.automatic_start_time ?? scene.start_time ?? cursor;
+        const start = wordAnchored ? Number(autoStart) : Number(cursor ?? autoStart ?? 0);
+        const end = start + Number(scene.duration);
+        scene.start_time = Number(start.toFixed(3));
+        scene.end_time = Number(end.toFixed(3));
+        if (!wordAnchored) cursor = end;
+        if (scene.manual_duration != null && scene.automatic_end_time != null) {
+          const delta = end - Number(scene.automatic_end_time);
+          if (Math.abs(delta) >= .01) {
+            scene.timing_warning = delta > 0
+              ? `Caption remains visible ${sceneSeconds(delta)} beyond its automatic voice window.`
+              : `Caption ends ${sceneSeconds(-delta)} before its automatic voice window ends.`;
+          }
+        }
       }
-      const verseDuration = Number(group[0].ayah_total_duration) || group.reduce((sum, scene) => sum + Number(scene.duration || 0), 0) || 3;
-      group.forEach(scene => {
-        scene.ayah_total_duration = verseDuration;
-        scene.duration = verseDuration * scene.duration_fraction;
-      });
+      const audioEnd = Number(group[0].ayah_audio_end ?? group.at(-1).automatic_end_time ?? Infinity);
+      const groupEnd = Number(group.at(-1).end_time);
+      if (Number.isFinite(audioEnd) && groupEnd > audioEnd + .01) {
+        group.at(-1).timing_warning = `This ayah's captions extend ${sceneSeconds(groupEnd - audioEnd)} beyond its measured audio interval.`;
+      }
     }
-    let cursor = 0;
-    previewScenes.forEach(scene => {
-      scene.start_time = cursor;
-      cursor += Number(scene.duration || 0);
-      scene.end_time = cursor;
-    });
+    let previous = null;
+    for (const scene of scenes) {
+      if (scene.start_time == null || scene.end_time == null) continue;
+      if (previous && Number(scene.start_time) < Number(previous.end_time) - .01) {
+        scene.timing_warning = 'This caption overlaps the previous scene; shorten one duration to keep the words readable.';
+      }
+      if (totalDuration != null && Number(scene.end_time) > totalDuration + .01) {
+        scene.timing_warning = `Caption continues ${sceneSeconds(Number(scene.end_time) - totalDuration)} after the recitation; Quran audio stays within the selected range.`;
+      }
+      previous = scene;
+    }
+  }
+
+  function hasPendingSceneDurationDraft() { return sceneDurationDrafts.size > 0; }
+
+  function guardPendingSceneDurationDraft() {
+    if (!hasPendingSceneDurationDraft()) return false;
+    showError('Apply or reset the pending scene duration before changing the scene plan or exporting.');
+    return true;
+  }
+
+  function refreshAppliedSceneTimings() {
+    const selectionKey = verseSelectionKey();
+    if (previewAyahTimingRows.length && previewTimingSelectionKey === selectionKey
+        && previewTimingReciter === selectedReciter) {
+      previewTimings = expandSceneTimings(previewAyahTimingRows);
+    } else {
+      applySceneTimingModel(previewScenes);
+    }
+  }
+
+  function applySceneDuration(sceneIndex, rawValue) {
+    const scene = previewScenes[sceneIndex];
+    if (!scene) return;
+    const raw = String(rawValue ?? '').trim();
+    const selector = `[data-scene-duration="${CSS.escape(scene.scene_id)}"]`;
+    const field = document.querySelector(selector);
+    const message = document.querySelector(`[data-scene-duration-message="${CSS.escape(scene.scene_id)}"]`);
+    const validDecimal = /^(?:\d+(?:\.\d{1,3})?|\.\d{1,3})$/.test(raw);
+    const value = validDecimal ? Number(raw) : NaN;
+    const sceneStart = Number(scene.start_time ?? scene.automatic_start_time ?? 0);
+    if (!Number.isFinite(value) || value <= 0 || value > 3600) {
+      if (field) field.setAttribute('aria-invalid', 'true');
+      if (message) { message.textContent = 'Enter a positive duration in seconds (up to 3600).'; message.classList.add('text-red-600'); }
+      return false;
+    }
+    if (!Number.isFinite(sceneStart) || sceneStart < 0) {
+      if (field) field.setAttribute('aria-invalid', 'true');
+      if (message) { message.textContent = 'This scene has an invalid position on the video timeline. Reset its timing and try again.'; message.classList.add('text-red-600'); }
+      return false;
+    }
+    scene.manual_duration = value;
+    sceneDurationDrafts.delete(scene.scene_id);
+    refreshAppliedSceneTimings();
+    hideRenderedVideo();
+    renderSceneTimeline();
+    updateCaptionPreview().catch(showError);
+    scheduleProjectAutosave();
+    return true;
+  }
+
+  function resetSceneDuration(sceneIndex) {
+    const scene = previewScenes[sceneIndex];
+    if (!scene) return;
+    delete scene.manual_duration;
+    sceneDurationDrafts.delete(scene.scene_id);
+    refreshAppliedSceneTimings();
+    hideRenderedVideo();
+    renderSceneTimeline();
+    updateCaptionPreview().catch(showError);
+    scheduleProjectAutosave();
   }
 
   function renderSceneTimeline(approximate = previewScenes.some(scene => scene.segment_count > 1)) {
@@ -2121,79 +2806,307 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
       excerpt.textContent = scene.text;
       const sceneTime = document.createElement('span');
       sceneTime.className = 'scene-time';
-      sceneTime.textContent = `${Number(scene.start_time || 0).toFixed(1)}–${Number(scene.end_time || 0).toFixed(1)} s${scene.segment_count > 1 ? ' · estimated phrase split' : scene.timing_mode === 'ayah_timestamp' ? ' · ayah timing' : ' · estimate'}`;
+      const timingLabel = scene.timing_mode === 'word_timestamp' ? 'voice timed'
+        : scene.timing_mode === 'weighted_estimate' ? 'approximate · weighted by word length'
+        : scene.timing_mode === 'word_timing_pending' ? `${scene.word_count || scene.text.trim().split(/\s+/).length} words · waits for voice timing`
+        : scene.timing_mode === 'ayah_timestamp_fallback' ? 'whole ayah · voice timing unavailable'
+        : scene.timing_mode === 'ayah_timestamp' ? 'ayah timing' : 'duration estimate';
+      sceneTime.textContent = scene.timing_mode === 'word_timing_pending'
+        ? `Duration ${sceneSeconds(scene.duration)} · ${timingLabel}`
+        : `Duration ${sceneSeconds(scene.duration)} · timeline ${sceneSeconds(scene.start_time)}–${sceneSeconds(scene.end_time)} · ${timingLabel}`;
       select.append(heading, excerpt, sceneTime);
-      select.addEventListener('click', () => paintPreviewAyah(index));
+      select.addEventListener('click', () => {
+        if (index !== previewIndex && (guardPendingSceneTextDraft() || guardPendingSceneDurationDraft())) return;
+        paintPreviewAyah(index);
+      });
       row.append(select);
+
+      const timingControl = document.createElement('div');
+      timingControl.className = 'scene-duration-control';
+      const durationLabel = document.createElement('label');
+      durationLabel.textContent = 'Duration (seconds)';
+      durationLabel.htmlFor = `scene-duration-${index}`;
+      const durationInput = document.createElement('input');
+      durationInput.type = 'text'; durationInput.inputMode = 'decimal';
+      durationInput.className = 'scene-duration-input';
+      durationInput.id = `scene-duration-${index}`;
+      durationInput.dataset.sceneDuration = scene.scene_id;
+      durationInput.value = sceneDurationDrafts.get(scene.scene_id)
+        ?? (scene.duration != null ? sceneSeconds(scene.duration).replace(/s$/, '') : '');
+      durationInput.placeholder = scene.duration == null ? 'Waiting for voice timing' : 'e.g. 9.25';
+      durationInput.disabled = scene.duration == null;
+      durationInput.setAttribute('aria-label', `Duration in seconds for Ayah ${scene.ayah_number}, scene ${scene.segment_index}`);
+      durationInput.setAttribute('aria-invalid', 'false');
+      const timingButtons = document.createElement('div');
+      timingButtons.className = 'scene-duration-buttons';
+      const durationApply = document.createElement('button');
+      durationApply.type = 'button'; durationApply.className = 'scene-duration-apply';
+      durationApply.textContent = 'Apply'; durationApply.disabled = durationInput.disabled;
+      const durationReset = document.createElement('button');
+      durationReset.type = 'button'; durationReset.className = 'scene-duration-reset';
+      durationReset.textContent = 'Reset Timing';
+      durationReset.disabled = durationInput.disabled
+        || (scene.manual_duration == null && !sceneDurationDrafts.has(scene.scene_id));
+      const timingStatus = document.createElement('small');
+      timingStatus.className = 'scene-duration-status';
+      timingStatus.dataset.sceneDurationMessage = scene.scene_id;
+      timingStatus.setAttribute('role', 'status');
+      timingStatus.setAttribute('aria-live', 'polite');
+      timingStatus.textContent = scene.timing_warning || (scene.manual_duration != null
+        ? `Manual · automatic baseline ${sceneSeconds(scene.automatic_duration)}`
+        : `Automatic baseline · ${sceneSeconds(scene.automatic_duration)}`);
+      if (scene.timing_warning) timingStatus.classList.add('scene-duration-warning');
+      const commitDuration = () => applySceneDuration(index, durationInput.value);
+      durationInput.addEventListener('input', () => {
+        sceneDurationDrafts.set(scene.scene_id, durationInput.value);
+        durationInput.setAttribute('aria-invalid', 'false');
+        durationReset.disabled = false;
+        timingStatus.textContent = 'Pending · Apply to update this scene only.';
+        timingStatus.classList.remove('text-red-600', 'scene-duration-warning');
+      });
+      durationInput.addEventListener('keydown', event => {
+        if (event.key === 'Enter') { event.preventDefault(); commitDuration(); }
+      });
+      durationApply.addEventListener('click', commitDuration);
+      durationReset.addEventListener('click', () => resetSceneDuration(index));
+      const adjustments = document.createElement('div');
+      adjustments.className = 'scene-duration-adjustments';
+      [[-1, '−1.0s'], [1, '+1.0s'], [-.1, '−0.1s'], [.1, '+0.1s']].forEach(([delta, label]) => {
+        const adjust = document.createElement('button');
+        adjust.type = 'button'; adjust.className = 'scene-duration-step';
+        adjust.textContent = label; adjust.disabled = durationInput.disabled;
+        adjust.setAttribute('aria-label', `${label} for scene ${index + 1}`);
+        adjust.addEventListener('click', () => {
+          const baseText = durationInput.value.trim() || String(scene.duration || '');
+          const base = Number(baseText);
+          if (!Number.isFinite(base)) {
+            timingStatus.textContent = 'Enter a valid duration first.';
+            timingStatus.classList.add('text-red-600');
+            return;
+          }
+          const adjusted = (Math.round((base + Number(delta)) * 1000) / 1000).toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
+          durationInput.value = adjusted;
+          sceneDurationDrafts.set(scene.scene_id, adjusted);
+          commitDuration();
+        });
+        adjustments.append(adjust);
+      });
+      timingButtons.append(durationApply, durationReset);
+      timingControl.append(durationLabel, durationInput, timingButtons, adjustments, timingStatus);
+      row.append(timingControl);
 
       const actions = document.createElement('div');
       actions.className = 'scene-actions';
-      if (scene.segment_count > 1) {
-        const share = document.createElement('label'); share.className = 'scene-share'; share.textContent = 'Share %';
-        const input = document.createElement('input'); input.type = 'number'; input.min = '5'; input.max = '95'; input.step = '1';
-        input.value = String(Math.round(Number(scene.duration_fraction || 0) * 100));
-        input.setAttribute('aria-label', `Ayah ${scene.ayah_number}, part ${scene.segment_index} audio time percentage`);
-        input.addEventListener('change', () => {
-          const group = previewScenes.filter(item => item.ayah_number === scene.ayah_number);
-          const shareValue = Math.max(5, Math.min(95, Number(input.value || 5))) / 100;
-          const siblings = group.filter(item => item !== scene);
-          const siblingTotal = siblings.reduce((sum, item) => sum + Number(item.duration_fraction || item.weight), 0) || siblings.length;
-          scene.duration_fraction = shareValue; scene.manual_duration_fraction = true;
-          siblings.forEach(item => { item.duration_fraction = (1 - shareValue) * (Number(item.duration_fraction || item.weight) / siblingTotal); item.manual_duration_fraction = true; });
-          input.value = String(Math.round(shareValue * 100));
-          scenePlanRequest++; scenePlanManual = true; refreshSceneLabels(); renderSceneTimeline(true);
-          updateCaptionPreview().catch(showError); hideRenderedVideo();
+      const structureActions = document.createElement('div');
+      structureActions.className = 'scene-structure-actions';
+      if (index === previewIndex) {
+        const textControl = document.createElement('div');
+        textControl.className = 'scene-text-control';
+        const textLabel = document.createElement('label');
+        textLabel.textContent = 'Edit exact scene words';
+        textLabel.htmlFor = 'scene-text-input';
+        const textInput = document.createElement('textarea');
+        textInput.rows = 2; textInput.id = 'scene-text-input';
+        textInput.className = 'scene-text-input';
+        textInput.dir = 'rtl'; textInput.lang = 'ar';
+        textInput.value = sceneTextDraft?.sceneId === scene.scene_id ? sceneTextDraft.text : scene.text;
+        textInput.placeholder = 'Type the exact next words from this ayah…';
+        textInput.setAttribute('aria-describedby', 'scene-text-feedback');
+        textInput.setAttribute('aria-invalid', 'false');
+        textInput.setAttribute('aria-label', `Edit exact words for ayah ${scene.ayah_number}, scene ${scene.segment_index}`);
+        textInput.disabled = Boolean(scene.locked);
+        const textButtons = document.createElement('div');
+        textButtons.className = 'scene-text-buttons';
+        const applyText = document.createElement('button');
+        applyText.type = 'button'; applyText.className = 'scene-text-apply';
+        applyText.textContent = 'Apply'; applyText.title = 'Apply the exact source-word sequence';
+        applyText.disabled = Boolean(scene.locked);
+        const resetText = document.createElement('button');
+        resetText.type = 'button'; resetText.className = 'scene-text-reset';
+        resetText.textContent = 'Reset'; resetText.title = 'Discard this scene text draft';
+        resetText.disabled = Boolean(scene.locked);
+        const feedback = document.createElement('small');
+        feedback.id = 'scene-text-feedback'; feedback.className = 'scene-text-feedback';
+        feedback.setAttribute('role', 'status'); feedback.setAttribute('aria-live', 'polite');
+        feedback.textContent = scene.locked ? 'Unlock this scene to edit its words.'
+          : 'Keep the exact Quran words and their original order.';
+        textInput.addEventListener('input', () => {
+          textInput.setAttribute('aria-invalid', 'false');
+          if (textInput.value.trim() === scene.text) {
+            sceneTextDraft = null;
+            feedback.textContent = 'No pending text edit.';
+          } else {
+            sceneTextDraft = {sceneId:scene.scene_id, text:textInput.value};
+            feedback.textContent = 'Draft only · Apply to validate and update the scene.';
+          }
+          feedback.classList.remove('text-red-600');
         });
-        share.append(input); actions.append(share);
+        textInput.addEventListener('keydown', event => {
+          if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); applySceneText(index, textInput.value).catch(showError); }
+        });
+        applyText.addEventListener('click', () => applySceneText(index, textInput.value).catch(showError));
+        resetText.addEventListener('click', () => {
+          sceneTextDraft = null; textInput.value = scene.text;
+          textInput.setAttribute('aria-invalid', 'false');
+          feedback.textContent = 'Scene text draft discarded.'; feedback.classList.remove('text-red-600');
+        });
+        textButtons.append(applyText, resetText);
+        textControl.append(textLabel, textInput, textButtons, feedback);
+        actions.append(textControl);
       }
       const words = scene.text.trim().split(/\s+/);
-      if (words.length >= 6) {
+      const bounds = sceneWordCountBounds(index);
+      const wordControl = document.createElement('div');
+      wordControl.className = 'scene-word-control';
+      const wordLabel = document.createElement('label');
+      wordLabel.textContent = 'Words in scene';
+      wordLabel.htmlFor = `scene-word-count-${index}`;
+      const wordCount = document.createElement('input');
+      wordCount.type = 'text'; wordCount.className = 'scene-word-count';
+      wordCount.id = `scene-word-count-${index}`;
+      wordCount.dataset.sceneIndex = String(index);
+      wordCount.dataset.currentCount = String(words.length);
+      wordCount.inputMode = 'numeric'; wordCount.pattern = '[0-9]*'; wordCount.maxLength = 3;
+      wordCount.setAttribute('max', String(bounds.max));
+      wordCount.value = String(words.length); wordCount.disabled = bounds.disabled;
+      wordCount.title = `Words in scene · ${words.length} now, maximum ${bounds.max}`;
+      wordCount.setAttribute('aria-label', `Words in scene ${index + 1}; current ${words.length}, maximum ${bounds.max}`);
+      const wordBounds = document.createElement('small');
+      wordBounds.className = 'scene-word-bounds';
+      wordBounds.textContent = bounds.disabled ? `${words.length} now · unlock to adjust` : `${words.length} now · up to ${bounds.max}`;
+      const lockButton = document.createElement('button');
+      lockButton.type = 'button';
+      lockButton.className = `scene-word-lock${scene.locked ? ' is-locked' : ''}`;
+      lockButton.innerHTML = `<span class="material-symbols-outlined" aria-hidden="true">${scene.locked ? 'lock' : 'lock_open'}</span>`;
+      lockButton.setAttribute('aria-label', scene.locked ? `Unlock scene ${index + 1} word allocation` : `Lock scene ${index + 1} word allocation`);
+      lockButton.setAttribute('aria-pressed', String(Boolean(scene.locked)));
+      lockButton.title = scene.locked ? 'Locked · click to allow word changes and splits' : 'Unlocked · click to protect this scene from word changes';
+      lockButton.addEventListener('click', () => toggleSceneLock(index, !scene.locked).catch(showError));
+      const applyCount = document.createElement('button');
+      applyCount.type = 'button'; applyCount.className = 'scene-word-apply';
+      applyCount.textContent = 'Apply'; applyCount.title = `Apply a new word count to scene ${index + 1}`;
+      applyCount.disabled = bounds.disabled;
+      const commitWordCount = () => {
+        const requested = wordCount.value.trim();
+        if (requested === String(words.length)) return;
+        if (!/^[1-9]\d{0,2}$/.test(requested)) {
+          wordCount.setAttribute('aria-invalid', 'true');
+          wordCount.setCustomValidity('Enter a positive whole number of words.');
+          wordBounds.textContent = 'Enter a positive whole number.';
+          wordBounds.classList.add('text-red-600');
+          return;
+        }
+        if (Number(requested) < bounds.min || Number(requested) > bounds.max) {
+          wordCount.setAttribute('aria-invalid', 'true');
+          wordCount.setCustomValidity(`Choose from ${bounds.min} to ${bounds.max} words.`);
+          wordBounds.textContent = `Allowed: ${bounds.min}–${bounds.max} words.`;
+          wordBounds.classList.add('text-red-600');
+          return;
+        }
+        wordCount.setAttribute('aria-invalid', 'false');
+        wordCount.setCustomValidity('');
+        wordBounds.classList.remove('text-red-600');
+        updateSceneWordCount(index, wordCount.value).catch(showError);
+      };
+      wordCount.addEventListener('input', () => {
+        const valid = /^[1-9]\d{0,2}$/.test(wordCount.value)
+          && Number(wordCount.value) >= bounds.min && Number(wordCount.value) <= bounds.max;
+        applyCount.disabled = bounds.disabled || !valid || Number(wordCount.value) === words.length;
+        wordCount.setAttribute('aria-invalid', 'false');
+        wordCount.setCustomValidity('');
+        wordBounds.classList.remove('text-red-600');
+        wordBounds.textContent = `${words.length} now · ${wordCount.value || '—'} requested · max ${bounds.max}`;
+      });
+      wordCount.addEventListener('keydown', event => {
+        if (event.key === 'Enter') { event.preventDefault(); commitWordCount(); }
+      });
+      applyCount.addEventListener('click', commitWordCount);
+      wordControl.append(wordLabel, wordCount, lockButton, applyCount, wordBounds);
+      actions.append(wordControl);
+      const hasSameAyahPrevious = index > 0 && previewScenes[index - 1].ayah_number === scene.ayah_number;
+      const hasSameAyahFollowing = previewScenes[index + 1]?.ayah_number === scene.ayah_number;
+      let splitButton = null, mergeButton = null;
+      if (words.length > appliedWordsPerScene) {
         const split = document.createElement('button');
-        split.type = 'button'; split.textContent = 'Split'; split.title = 'Split this caption scene';
+        splitButton = split;
+        split.type = 'button';
+        split.innerHTML = '<span class="material-symbols-outlined" aria-hidden="true">call_split</span><span>Split</span>';
+        split.title = `Split into groups of ${appliedWordsPerScene} words`;
+        split.disabled = Boolean(scene.locked);
         split.addEventListener('click', event => {
           event.stopPropagation();
-          let middle = Math.floor(words.length / 2);
-          for (let distance = 0; distance < 3; distance++) {
-            const candidate = middle + distance;
-            if (candidate > 0 && candidate < words.length && /[،؛.!؟ۚۖۗۘۙۛۜ۞۩۝]$/u.test(words[candidate - 1])) { middle = candidate; break; }
-          }
-          previewScenes.splice(index, 1,
-            {...scene, text: words.slice(0, middle).join(' ')},
-            {...scene, text: words.slice(middle).join(' ')});
-          scenePlanRequest++; scenePlanManual = true; refreshSceneLabels(); previewIndex = index;
-          renderSceneTimeline(true); updateCaptionPreview().catch(showError); hideRenderedVideo();
+          splitSceneByWordCount(index).catch(showError);
         });
-        actions.append(split);
+        structureActions.append(split);
       }
-      if (index > 0 && previewScenes[index - 1].ayah_number === scene.ayah_number) {
+      if (hasSameAyahPrevious || hasSameAyahFollowing) {
         const merge = document.createElement('button');
-        merge.type = 'button'; merge.textContent = 'Merge'; merge.title = 'Merge with the previous part of this ayah';
+        mergeButton = merge;
+        merge.type = 'button';
+        merge.innerHTML = '<span class="material-symbols-outlined" aria-hidden="true">merge_type</span><span>Merge</span>';
+        const mergeTarget = previewScenes[hasSameAyahPrevious ? index - 1 : index + 1];
+        const mergeLocked = Boolean(scene.locked || mergeTarget?.locked);
+        merge.disabled = mergeLocked;
+        merge.title = mergeLocked ? 'Unlock both scenes before merging'
+          : hasSameAyahPrevious ? 'Merge with the previous scene in this ayah'
+          : 'Merge with the next scene in this ayah';
         merge.addEventListener('click', event => {
           event.stopPropagation();
-          previewScenes.splice(index - 1, 2, {...scene, text: `${previewScenes[index - 1].text} ${scene.text}`});
-          scenePlanRequest++; scenePlanManual = true; refreshSceneLabels(); previewIndex = index - 1;
-          renderSceneTimeline(true); updateCaptionPreview().catch(showError); hideRenderedVideo();
+          if (hasSameAyahPrevious) mergeSceneWithPrevious(index).catch(showError);
+          else mergeSceneWithPrevious(index + 1).catch(showError);
         });
-        actions.append(merge);
+        structureActions.append(merge);
       }
+      if (structureActions.childElementCount) actions.append(structureActions);
       row.append(actions); list.append(row);
     });
     $('scene-summary').textContent = `${previewScenes.length} scene${previewScenes.length === 1 ? '' : 's'} · ${new Set(previewScenes.map(scene => scene.ayah_number)).size} ayah${new Set(previewScenes.map(scene => scene.ayah_number)).size === 1 ? '' : 's'}`;
-    $('scene-timing-note').textContent = approximate
-      ? 'Ayah boundaries follow recitation timing when loaded. Phrase splits inside a long ayah are estimated; adjust each segment’s share to move its scene boundary.'
-      : 'Scene boundaries use the selected recitation’s ayah-level timing. Phrase timing is not claimed as word-aligned.';
+    $('scene-timing-note').textContent = previewScenes.some(scene => scene.timing_mode === 'weighted_estimate')
+      ? 'Approximate timing · no word timestamps were supplied. Scene spans are weighted by Arabic word length and pause marks; exact voice timing is preferred.'
+      : previewScenes.some(scene => scene.timing_mode === 'word_timing_pending')
+        ? `Each scene contains up to ${appliedWordsPerScene} words. Exact voice word timestamps will be used when available; otherwise export labels the word-length estimate as approximate.`
+        : previewScenes.some(scene => scene.timing_mode === 'word_timestamp')
+          ? 'Scene boundaries use validated word timestamps from the selected recitation.'
+          : 'Unsplit scenes follow measured ayah boundaries.';
+    const warnings = previewScenes.filter(scene => scene.timing_warning).length;
+    if (warnings) $('scene-timing-note').textContent += ` ${warnings} timing warning${warnings === 1 ? ' is' : 's are'} marked on the affected scene${warnings === 1 ? '' : 's'}.`;
   }
 
   async function updateScenePlan() {
-    if (scenePlanManual) { renderSceneTimeline(true); return previewScenes; }
+    if (guardPendingSceneDurationDraft()) return previewScenes;
+    if (hasPendingSceneTextDraft()) {
+      guardPendingSceneTextDraft();
+      return previewScenes;
+    }
+    saveVisibleSceneEdits();
+    sceneWordEditRequest++;
+    clearTimeout(sceneWordEditTimer);
+    playbackSceneText = null;
     const requestId = ++scenePlanRequest;
+    const selectionKey = verseSelectionKey();
+    const [surahText, startText] = selectionKey.split(':');
+    const surah = Number(surahText), start = Number(startText);
+    const ayahs = ayahText.value.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+    const sourceTexts = Object.fromEntries(ayahs.map((text, index) => [String(start + index), text]));
+    const signature = sceneLayoutSignature();
     const response = await fetch('/api/scenes/plan', {
       method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(scenePayload()),
     });
-    const payload = await response.json();
+    let payload;
+    try { payload = await response.json(); }
+    catch (_) { throw new Error('The scene planner returned an invalid response. Restart Flask from this project and reload.'); }
     if (!response.ok) throw new Error(payload.error || 'Could not plan caption scenes.');
-    if (requestId !== scenePlanRequest) return previewScenes;
+    if (requestId !== scenePlanRequest || selectionKey !== verseSelectionKey()) return previewScenes;
+    rememberDefaultScenes(payload.default_scenes || [], sourceTexts, surah, signature);
     previewScenes = payload.scenes;
+    previewAyahs = ayahs;
+    previewSceneSourceByAyah = sourceTexts;
+    previewSceneSelectionKey = selectionKey;
+    previewSceneSurah = surah;
+    previewSceneSignature = signature;
+    scenePlanManual = Number(payload.saved_edit_ayah_count || 0) > 0;
+    if (previewAyahTimingRows.length && previewTimingSelectionKey === selectionKey
+        && previewTimingReciter === selectedReciter) previewTimings = expandSceneTimings(previewAyahTimingRows);
     previewIndex = Math.min(previewIndex, Math.max(0, previewScenes.length - 1));
     renderSceneTimeline(payload.approximate_timing);
     return previewScenes;
@@ -2332,8 +3245,9 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
   }
 
-  function paintPreviewAyah(index = 0) {
+  function paintPreviewAyah(index = 0, textOverride = null) {
     previewIndex = index;
+    playbackSceneText = textOverride;
     renderSceneTimeline();
     updateViewerLayerPreview();
     updateCaptionPreview().catch(() => {});
@@ -2344,24 +3258,31 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     const count = Number(selected.dataset.ayahCount);
     const surah = Number(surahSelect.value);
     $('surah-total').textContent = `Total ${count} Ayahs`;
-    startInput.max = count; endInput.max = count;
-    if (Number(startInput.value) > count) startInput.value = count;
-    if (Number(endInput.value) > count) endInput.value = count;
+    startInput.dataset.max = count; endInput.dataset.max = count;
     updateRangeSummary();
     updateViewerLayerPreview();
   }
 
   function updateRangeSummary() {
     const first = Number(startInput.value || 1), last = Number(endInput.value || first);
+    if (!Number.isInteger(first) || !Number.isInteger(last) || first < 1 || last < first) return;
     const count = Math.max(0, last - first + 1);
     document.querySelector('.scope-count').textContent = `${count} ${count === 1 ? 'Ayah' : 'Ayahs'}`;
     document.querySelector('.scope-duration').textContent = `Audio timed to ${count} ${count === 1 ? 'ayah' : 'ayahs'}`;
   }
 
   async function loadVerses(updateEditor = true) {
+    if (updateEditor && (guardPendingSceneTextDraft() || guardPendingSceneDurationDraft())) return previewAyahs;
     const selectionKey = verseSelectionKey();
     const requestId = ++verseLoadRequest;
     if (updateEditor) {
+      stopRecitationPreview();
+      sceneWordEditRequest++;
+      clearTimeout(sceneWordEditTimer);
+      playbackSceneText = null;
+      previewAyahTimingRows = [];
+      previewTimings = [];
+      previewAudioStart = previewAudioEnd = previewAudioDuration = null;
       ayahText.setAttribute('aria-busy', 'true');
       $('ayah-text-status').textContent = 'Loading the selected ayahs…';
     }
@@ -2388,6 +3309,8 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     previewAyahs = payload.ayahs;
     if (updateEditor) {
       ayahText.value = payload.ayahs.join('\n');
+      acceptedAyahText = ayahText.value;
+      sceneTextDraft = null;
       ayahText.setAttribute('aria-busy', 'false');
       $('ayah-text-status').textContent = `${payload.ayahs.length} ${payload.ayahs.length === 1 ? 'ayah' : 'ayahs'} loaded for this range. You can edit the captions.`;
       scenePlanManual = false;
@@ -2402,23 +3325,47 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     }
     document.querySelector('.scope-duration').textContent = 'Audio timed to selected ayahs';
     hideRenderedVideo();
-    if (updateEditor || !scenePlanManual) await updateScenePlan();
+    await updateScenePlan();
     if (requestId !== verseLoadRequest || selectionKey !== verseSelectionKey()) return previewAyahs;
     paintPreviewAyah(0);
+    await loadRecitationTimings({quiet:true}).catch(() => null);
     return payload.ayahs;
   }
 
   function scheduleVerseLoad(changedInput = null) {
+    if (hasPendingSceneTextDraft() || hasPendingSceneDurationDraft()) {
+      const message = hasPendingSceneTextDraft()
+        ? 'Apply or reset the pending scene text before changing the ayah range.'
+        : 'Apply or reset the pending scene duration before changing the ayah range.';
+      const [savedSurah, savedStart, savedEnd] = (loadedVerseSelection || '').split(':');
+      if (changedInput === startInput) startInput.value = savedStart || '1';
+      else if (changedInput === endInput) endInput.value = savedEnd || startInput.value || '1';
+      else {
+        if (savedSurah) surahSelect.value = savedSurah;
+        startInput.value = savedStart || '1'; endInput.value = savedEnd || savedStart || '1';
+      }
+      $('ayah-range-validation').textContent = message;
+      $('ayah-range-validation').classList.remove('hidden');
+      updateSurahInfo();
+      if (hasPendingSceneTextDraft()) guardPendingSceneTextDraft();
+      else guardPendingSceneDurationDraft();
+      return;
+    }
     updateSurahInfo();
     const count = Number(surahSelect.selectedOptions[0]?.dataset.ayahCount || 1);
-    let start = Math.max(1, Math.min(count, Number(startInput.value || 1)));
-    let end = Math.max(1, Math.min(count, Number(endInput.value || start)));
-    if (start > end) {
-      if (changedInput === endInput) start = end;
-      else end = start;
-    }
-    startInput.value = String(start);
-    endInput.value = String(end);
+    const start = Number(startInput.value), end = Number(endInput.value);
+    let message = '';
+    if (!Number.isInteger(start) || start < 1 || start > count) message = `Starting ayah must be a whole number from 1 to ${count}.`;
+    else if (!Number.isInteger(end) || end < 1 || end > count) message = `Ending ayah must be a whole number from 1 to ${count}.`;
+    else if (end < start) message = 'Ending ayah must be the same as or later than the starting ayah.';
+    $('ayah-range-validation').textContent = message;
+    $('ayah-range-validation').classList.toggle('hidden', !message);
+    startInput.setAttribute('aria-invalid', String(Boolean(message && changedInput === startInput)));
+    endInput.setAttribute('aria-invalid', String(Boolean(message && changedInput === endInput)));
+    startInput.closest('.ayah-range-control')?.classList.toggle('is-invalid', Boolean(message && changedInput === startInput));
+    endInput.closest('.ayah-range-control')?.classList.toggle('is-invalid', Boolean(message && changedInput === endInput));
+    if (message) return;
+    saveVisibleSceneEdits();
     loadedVerseSelection = '';
     ayahText.setAttribute('aria-busy', 'true');
     $('ayah-text-status').textContent = `Updating Arabic text for ayahs ${start}–${end}…`;
@@ -2441,7 +3388,50 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     $('render-cancel-btn').classList.add('hidden');
   }
 
+  function refreshDownloadLink() {
+    const link = $('result-download-link');
+    if (!link || !lastDownloadUrl) return;
+    const target = new URL(lastDownloadUrl, window.location.origin);
+    const title = $('video-title').value.trim();
+    if (title) target.searchParams.set('title', title);
+    else target.searchParams.delete('title');
+    link.href = target.pathname + target.search;
+  }
+
+  async function loadYoutubeMetadata() {
+    const params = new URLSearchParams({
+      surah: surahSelect.value, start: startInput.value || '1',
+      end: endInput.value || startInput.value || '1', reciter_id: selectedReciter,
+    });
+    const response = await fetch('/api/youtube-metadata?' + params);
+    const metadata = await response.json();
+    if (!response.ok) throw new Error(metadata.error || 'Could not generate YouTube metadata.');
+    $('metadata-ar-title').value = metadata.arabic.title;
+    $('metadata-ar-description').value = metadata.arabic.description + '\n\n' + metadata.arabic.hashtags.join(' ');
+    $('metadata-ar-tags').value = metadata.arabic.tags.join(', ');
+    $('metadata-en-title').value = metadata.english.title;
+    $('metadata-en-description').value = metadata.english.description + '\n\n' + metadata.english.hashtags.join(' ');
+    $('metadata-en-tags').value = metadata.english.tags.join(', ');
+    if (!$('video-title').value.trim()) $('video-title').value = metadata.title;
+    refreshDownloadLink();
+    return metadata;
+  }
+
+  $('refresh-youtube-metadata').addEventListener('click', () => {
+    loadYoutubeMetadata().catch(error => { $('metadata-copy-status').textContent = error.message; });
+  });
+  document.querySelectorAll('.metadata-copy').forEach(button => button.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText($(button.dataset.copyTarget).value);
+      $('metadata-copy-status').textContent = button.textContent.replace(/^Copy /, '') + ' copied.';
+    } catch {
+      $('metadata-copy-status').textContent = 'Clipboard access is unavailable in this browser.';
+    }
+  }));
+  $('video-title').addEventListener('input', () => { refreshDownloadLink(); scheduleProjectAutosave(); });
+
   function expandSceneTimings(ayahTimings) {
+    const timingOrigin = ayahTimings.length ? Number(ayahTimings[0].start) || 0 : 0;
     const scenesByAyah = new Map();
     previewScenes.forEach(scene => {
       if (!scenesByAyah.has(scene.ayah_number)) scenesByAyah.set(scene.ayah_number, []);
@@ -2450,37 +3440,172 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     const expanded = [];
     ayahTimings.forEach((timing, index) => {
       const scenes = scenesByAyah.get(Number(timing.ayah)) || [];
-      const nextStart = ayahTimings[index + 1]?.start;
-      const end = Number.isFinite(nextStart) ? nextStart : timing.end;
-      const duration = Math.max(.01, end - timing.start);
-      const parts = scenes.length ? scenes : [{scene_index:index, ayah_number:Number(timing.ayah), text:previewAyahs[index] || '', weight:1}];
-      const useManualFractions = parts.length > 1 && parts.every(scene => scene.manual_duration_fraction);
-      const totalWeight = parts.reduce((sum, scene) => sum + (useManualFractions
-        ? (scene.duration_fraction || 0) : (scene.weight || 1)), 0);
-      let cursor = timing.start;
-      parts.forEach((scene, part) => {
-        const partWeight = useManualFractions ? scene.duration_fraction : (scene.weight || 1);
-        const partEnd = part === parts.length - 1 ? end : cursor + duration * partWeight / totalWeight;
-        scene.start_time = cursor; scene.end_time = partEnd; scene.duration = partEnd - cursor;
-        scene.ayah_total_duration = duration; scene.duration_fraction = scene.duration / duration;
-        expanded.push({...scene, start:cursor, end:partEnd});
-        cursor = partEnd;
+      const start = Number(timing.start), end = Number(timing.end);
+      let parts = scenes.length ? scenes : [{scene_index:index, ayah_number:Number(timing.ayah), text:previewAyahs[index] || ''}];
+      const words = Array.isArray(timing.words) ? timing.words : [];
+      const sceneWords = parts.flatMap(scene => String(scene.text || '').trim().split(/\s+/).filter(Boolean));
+      const sourceWords = String(previewAyahs[index] || '').trim().split(/\s+/).filter(Boolean);
+      const matchesTimedSource = sceneWords.length === sourceWords.length
+        && sceneWords.every((word, wordIndex) => word === sourceWords[wordIndex]);
+      let previousWordEnd = 0;
+      const validWordTiming = words.length === sceneWords.length && matchesTimedSource && words.every((word, wordIndex) => {
+        const wordStart = Number(word.start), wordEnd = Number(word.end);
+        const valid = Number(word.index) === wordIndex && Number.isFinite(wordStart)
+          && Number.isFinite(wordEnd) && wordStart >= previousWordEnd
+          && wordEnd > wordStart && wordEnd <= end - start + .001;
+        previousWordEnd = wordEnd;
+        return valid;
       });
+      const sourceDuration = Math.max(.001, end - start);
+      const pauseMarks = new Set([...'،؛.?!ۚۖۗۘۙۛۜ۞۩۝']);
+      const wordWeight = word => {
+        let letters = 0, marks = 0, pauses = 0;
+        for (const character of word) {
+          if (/\p{M}/u.test(character)) marks++;
+          else if (/\p{L}/u.test(character)) letters++;
+          if (pauseMarks.has(character)) pauses++;
+        }
+        return Math.max(1, letters + marks * .3 + pauses * 2);
+      };
+      let groupedWeights = parts.map(scene => String(scene.text || '').trim().split(/\s+/)
+        .filter(Boolean).reduce((sum, word) => sum + wordWeight(word), 0));
+      let canEstimate = parts.length > 1 && groupedWeights.every(weight => weight > 0);
+      if (parts.length > 1 && !canEstimate) {
+        parts = [{scene_index:scenes[0]?.scene_index ?? index, ayah_number:Number(timing.ayah),
+          text:scenes.map(scene => scene.text).join(' ') || previewAyahs[index] || '',
+          timing_mode:'ayah_timestamp'}];
+        groupedWeights = [0];
+        canEstimate = false;
+      }
+      const totalWeight = groupedWeights.reduce((sum, weight) => sum + weight, 0);
+      let elapsedWeight = 0;
+      let estimatedStart = start;
+      let wordCursor = 0;
+      parts.forEach((scene, part) => {
+        const count = String(scene.text || '').trim().split(/\s+/).filter(Boolean).length;
+        let partStart = start;
+        let partEnd = end;
+        if (validWordTiming) {
+          partStart = start + Number(words[wordCursor].start);
+          wordCursor += count;
+          partEnd = start + Number(words[wordCursor - 1].end);
+        } else if (canEstimate) {
+          elapsedWeight += groupedWeights[part];
+          const elapsedSeconds = part === parts.length - 1 ? sourceDuration : sourceDuration * elapsedWeight / totalWeight;
+          partStart = estimatedStart;
+          partEnd = start + elapsedSeconds;
+          estimatedStart = partEnd;
+        }
+        const automaticDuration = Math.max(.001, partEnd - partStart);
+        scene.ayah_total_duration = sourceDuration;
+        scene.ayah_audio_start = start - timingOrigin;
+        scene.ayah_audio_end = end - timingOrigin;
+        scene.automatic_start_time = partStart - timingOrigin;
+        scene.automatic_end_time = partEnd - timingOrigin;
+        scene.automatic_duration = automaticDuration;
+        scene.start_time = partStart - timingOrigin;
+        scene.end_time = partEnd - timingOrigin;
+        scene.duration = automaticDuration;
+        scene.playback_origin = timingOrigin;
+        scene.word_start_index = validWordTiming ? wordCursor - count : undefined;
+        scene.word_end_index = validWordTiming ? wordCursor - 1 : undefined;
+        scene.timing_mode = validWordTiming ? 'word_timestamp' : canEstimate ? 'weighted_estimate' : 'ayah_timestamp';
+        scene.timing_approximate = !validWordTiming && canEstimate;
+        expanded.push({...scene, start:partStart, end:partEnd,
+          audio_start:partStart, audio_end:partEnd,
+          caption_start:partStart, caption_end:partEnd});
+      });
+    });
+    const totalDuration = ayahTimings.length
+      ? Math.max(...ayahTimings.map(timing => Number(timing.end) || 0)) - timingOrigin : null;
+    applySceneTimingModel(previewScenes, totalDuration);
+    const appliedById = new Map(previewScenes.map(scene => [scene.scene_id, scene]));
+    expanded.forEach(timing => {
+      const applied = appliedById.get(timing.scene_id);
+      if (!applied) return;
+      timing.duration = applied.duration;
+      timing.start_time = applied.start_time;
+      timing.end_time = applied.end_time;
+      timing.timing_warning = applied.timing_warning;
+      timing.caption_start = timingOrigin + Number(applied.start_time);
+      timing.caption_end = timingOrigin + Number(applied.end_time);
     });
     return expanded;
   }
 
+  async function loadRecitationTimings({quiet=false} = {}) {
+    const selectionKey = verseSelectionKey();
+    const reciter = selectedReciter;
+    const cacheKey = `${reciter}|${selectionKey}`;
+    const requestId = ++previewTimingRequest;
+    let result = recitationTimingCache.get(cacheKey);
+    try {
+      if (!result) {
+        const [surah, start, end] = selectionKey.split(':');
+        const params = new URLSearchParams({surah, start, end});
+        const response = await fetch(`/api/reciters/${encodeURIComponent(reciter)}/timings?${params}`);
+        try { result = await response.json(); }
+        catch (_) { throw new Error(`The recitation timing endpoint returned invalid JSON (HTTP ${response.status}).`); }
+        if (!response.ok) throw new Error(result.error || 'Could not load voice timing for these ayahs.');
+        recitationTimingCache.set(cacheKey, result);
+        if (recitationTimingCache.size > 24) recitationTimingCache.delete(recitationTimingCache.keys().next().value);
+      }
+    } catch (error) {
+      if (!quiet) throw error;
+      if (requestId === previewTimingRequest && selectionKey === verseSelectionKey() && reciter === selectedReciter) {
+        previewAyahTimingRows = []; previewTimings = [];
+        previewAudioStart = previewAudioEnd = previewAudioDuration = null;
+        previewTimingSelectionKey = selectionKey; previewTimingReciter = reciter;
+        $('scene-timing-note').textContent = 'Voice timing could not be loaded. Export will use the renderer’s validated ayah timing or its labeled approximate split fallback.';
+        renderSceneTimeline(true);
+      }
+      return null;
+    }
+    if (requestId !== previewTimingRequest || selectionKey !== verseSelectionKey() || reciter !== selectedReciter) return null;
+    previewAyahTimingRows = Array.isArray(result.timings) ? result.timings : [];
+    previewAudioStart = Number(result.audio_start ?? previewAyahTimingRows[0]?.start);
+    previewAudioEnd = Number(result.audio_end ?? previewAyahTimingRows.at(-1)?.end);
+    previewAudioDuration = Number(result.audio_duration ?? (previewAudioEnd - previewAudioStart));
+    if (!Number.isFinite(previewAudioStart) || !Number.isFinite(previewAudioEnd)
+        || !Number.isFinite(previewAudioDuration) || previewAudioEnd <= previewAudioStart
+        || previewAudioDuration <= 0) previewAudioStart = previewAudioEnd = previewAudioDuration = null;
+    previewTimingSelectionKey = selectionKey;
+    previewTimingReciter = reciter;
+    previewTimingSource = result.timing_source || '';
+    previewTimings = expandSceneTimings(previewAyahTimingRows);
+    const exact = previewTimings.some(scene => scene.timing_mode === 'word_timestamp');
+    const approximate = previewTimings.some(scene => scene.timing_mode === 'weighted_estimate');
+    $('scene-timing-note').textContent = exact
+      ? 'Scene boundaries follow validated word start and end times from this recitation; pauses between words remain caption-free.'
+      : approximate
+        ? 'Approximate scene timing · measured ayah duration is divided by Arabic word length and pause marks because word timestamps are unavailable.'
+        : result.timing_note || 'Ayah-level voice timing is active; split scene timing is an approximate word-length estimate.';
+    renderSceneTimeline(!exact);
+    return result;
+  }
+
   async function startRecitationPreview() {
-    const params = new URLSearchParams({surah: surahSelect.value, start: startInput.value || '1', end: endInput.value || startInput.value || '1'});
-    const response = await fetch(`/api/reciters/${selectedReciter}/timings?${params}`);
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || 'Could not load verse timing.');
+    const requestedSelection = verseSelectionKey();
+    const requestedReciter = selectedReciter;
+    const result = await loadRecitationTimings();
+    if (!result || requestedSelection !== verseSelectionKey() || requestedReciter !== selectedReciter) return;
     const player = $('voice-preview-audio');
     previewAyahs = await loadVerses(false);
-    previewTimings = expandSceneTimings(result.timings);
+    if (requestedSelection !== verseSelectionKey() || requestedReciter !== selectedReciter
+        || previewTimingSelectionKey !== requestedSelection || previewTimingReciter !== requestedReciter) return;
+    renderSceneTimeline(false);
     if (!previewTimings.length) throw new Error('No ayah scene timing was returned for this selection.');
-    if (player.src !== result.audio_url) {
-      player.src = result.audio_url;
+    const audioStart = previewAudioStart ?? previewTimings[0].audio_start ?? previewTimings[0].start;
+    const audioEnd = previewAudioEnd ?? previewTimings.at(-1).audio_end ?? previewTimings.at(-1).end;
+    const audioDuration = previewAudioDuration ?? (audioEnd - audioStart);
+    if (!Number.isFinite(audioStart) || !Number.isFinite(audioEnd)
+        || !Number.isFinite(audioDuration) || audioEnd <= audioStart || audioDuration <= 0) {
+      throw new Error('The selected recitation has invalid audio boundaries.');
+    }
+    const previewAudioUrl = new URL(result.audio_url, window.location.href);
+    previewAudioUrl.hash = '';
+    if (player.src !== previewAudioUrl.href) {
+      player.src = previewAudioUrl.href;
       await new Promise((resolve, reject) => {
         player.addEventListener('loadedmetadata', resolve, {once:true});
         player.addEventListener('error', () => reject(new Error('Recitation audio could not be loaded.')), {once:true});
@@ -2490,27 +3615,39 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
       await new Promise(resolve => player.addEventListener('loadedmetadata', resolve, {once:true}));
     }
     player.playbackRate = speed;
-    player.currentTime = previewTimings[0].start;
-    paintPreviewAyah(0);
-    player.ontimeupdate = () => {
-      const elapsed = player.currentTime;
-      let current = previewTimings.findIndex(timing => elapsed >= timing.start && elapsed < timing.end);
-      if (current < 0) {
-        for (let index = previewTimings.length - 1; index >= 0; index--) {
-          if (elapsed >= previewTimings[index].start) { current = index; break; }
-        }
-      }
-      if (current < 0) current = 0;
-      if (current !== previewIndex) paintPreviewAyah(current);
-      const first = previewTimings[0].start, last = previewTimings[previewTimings.length - 1].end;
+    player.currentTime = 0;
+    paintPreviewAyah(Number(previewTimings[0].scene_index) || 0, previewTimings[0].text);
+    const finishPreview = () => {
+      player.pause();
+      player.currentTime = 0;
+      paintPreviewAyah(Number(previewTimings[0].scene_index) || 0, previewTimings[0].text);
       syncTimeline(player);
-      if (elapsed >= previewTimings[previewTimings.length - 1].end) {
-        player.pause();
-        player.currentTime = previewTimings[0].start;
-        paintPreviewAyah(0);
+      setPlaybackIcon(false);
+    };
+    player.onpause = () => {
+      if (player.currentTime >= audioDuration - .05) {
+        player.currentTime = 0;
+        paintPreviewAyah(Number(previewTimings[0].scene_index) || 0, previewTimings[0].text);
         syncTimeline(player);
-        setPlaybackIcon(false);
       }
+      setPlaybackIcon(false);
+    };
+    player.onended = finishPreview;
+    player.ontimeupdate = () => {
+      const elapsed = audioStart + player.currentTime;
+      const timingIndex = previewTimings.findIndex(timing =>
+        elapsed >= (timing.caption_start ?? timing.start)
+        && elapsed < (timing.caption_end ?? timing.end));
+      if (timingIndex >= 0) {
+        const current = Number(previewTimings[timingIndex]?.scene_index) || 0;
+        if (current !== previewIndex || playbackSceneText !== previewTimings[timingIndex]?.text) {
+          paintPreviewAyah(current, previewTimings[timingIndex].text);
+        }
+      } else if (playbackSceneText !== '') {
+        playbackSceneText = '';
+        hideCaptionPreview();
+      }
+      syncTimeline(player);
     };
     await player.play();
     setPlaybackIcon(true);
@@ -2528,11 +3665,16 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
       item.append(name, type);
       if (index === 0) item.classList.add('bg-brand-50/70');
       item.addEventListener('click', () => {
+        stopRecitationPreview();
         selectedReciter = reciter.id;
+        previewAyahTimingRows = []; previewTimings = [];
+        playbackSceneText = null;
+        refreshSceneLabels(); renderSceneTimeline();
         $('selected-reciter-name').textContent = reciter.name;
         updatePreviewReciterName(reciter.name);
         $('reciter-dropdown').classList.add('hidden');
         hideRenderedVideo();
+        loadRecitationTimings({quiet:true}).then(() => updateCaptionPreview()).catch(() => {});
       });
       reciterList.append(item);
     });
@@ -2566,15 +3708,35 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
 
   [['start-inc', startInput, 1], ['start-dec', startInput, -1], ['end-inc', endInput, 1], ['end-dec', endInput, -1]].forEach(([button, input, delta]) => {
       $(button).addEventListener('click', () => {
-      input.value = Math.max(Number(input.min), Math.min(Number(input.max), Number(input.value || 1) + delta));
+      const min = Number(input.dataset.min || 1), max = Number(input.dataset.max || 999);
+      const current = /^\d+$/.test(input.value) ? Number(input.value) : min;
+      input.value = Math.max(min, Math.min(max, current + delta));
       scheduleVerseLoad(input);
     });
   });
   [startInput, endInput].forEach(input => {
-    input.addEventListener('input', () => scheduleVerseLoad(input));
+    input.type = 'text';
+    input.inputMode = 'numeric';
+    input.addEventListener('input', () => {
+      input.value = input.value.replace(/[٠-٩۰-۹]/g, digit => {
+        const code = digit.charCodeAt(0);
+        return String(code - (code >= 0x06f0 ? 0x06f0 : 0x0660));
+      }).replace(/[^0-9]/g, '').slice(0, 3);
+      scheduleVerseLoad(input);
+    });
     input.addEventListener('change', () => scheduleVerseLoad(input));
   });
   ayahText.addEventListener('input', () => {
+    if (hasPendingSceneTextDraft() || hasPendingSceneDurationDraft()) {
+      ayahText.value = acceptedAyahText;
+      $('ayah-text-status').textContent = hasPendingSceneTextDraft()
+        ? 'Apply or reset the pending scene text before editing the ayah caption.'
+        : 'Apply or reset the pending scene duration before editing the ayah caption.';
+      if (hasPendingSceneTextDraft()) guardPendingSceneTextDraft();
+      else guardPendingSceneDurationDraft();
+      return;
+    }
+    acceptedAyahText = ayahText.value;
     hideRenderedVideo(); scenePlanRequest++; scenePlanManual = false; clearTimeout(scenePlanTimer);
     scenePlanTimer = setTimeout(() => updateScenePlan().then(() => paintPreviewAyah(0)).catch(showError), 250);
   });
@@ -2614,6 +3776,8 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
   updateQualityDescription(); updateCanvasSummary(); updateEncoderCapabilities();
 
   document.querySelectorAll('.background-choice').forEach(button => button.addEventListener('click', () => {
+    backgroundMediaCategory = 'image';
+    setBackgroundMediaCategory('image');
     theme = button.dataset.theme;
     $('background-sequence-template').value = '';
     $('sequence-enabled').checked = false;
@@ -2635,9 +3799,38 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     document.querySelectorAll('.background-choice').forEach(button => {
       const matchesText = button.textContent.toLowerCase().includes(query);
       const matchesCategory = category === 'all' || button.dataset.category === category;
-      button.hidden = !matchesText || !matchesCategory;
+      button.hidden = backgroundMediaCategory !== 'image' || !matchesText || !matchesCategory;
     });
   }
+  function setBackgroundMediaCategory(category) {
+    backgroundMediaCategory = category === 'video' ? 'video' : 'image';
+    const isVideo = backgroundMediaCategory === 'video';
+    $('background-image-tab').classList.toggle('selected', !isVideo);
+    $('background-video-tab').classList.toggle('selected', isVideo);
+    $('background-image-tab').setAttribute('aria-selected', String(!isVideo));
+    $('background-video-tab').setAttribute('aria-selected', String(isVideo));
+    $('background-image-gallery').classList.toggle('hidden', isVideo);
+    $('background-video-gallery').classList.toggle('hidden', !isVideo);
+    $('background-file').accept = isVideo
+      ? 'video/mp4,video/quicktime,video/webm,video/x-m4v'
+      : 'image/png,image/jpeg,image/webp';
+    $('background-video-selection').textContent = selectedBackgroundVideoTemplate
+      ? `${backgroundVideoTemplates[selectedBackgroundVideoTemplate]?.name || 'Bundled video'} selected · source audio muted`
+      : backgroundClipRows.some(row => row.file?.type?.startsWith('video/'))
+      ? backgroundClipRows.filter(row => row.file?.type?.startsWith('video/')).map(row => row.file.name).join(' · ')
+      : 'No video selected yet. Choose a licensed video file above or here.';
+    filterBackgrounds();
+  }
+  $('background-image-tab').addEventListener('click', () => setBackgroundMediaCategory('image'));
+  $('background-video-tab').addEventListener('click', () => setBackgroundMediaCategory('video'));
+  document.querySelectorAll('.background-video-choice').forEach(button => button.addEventListener('click', () => {
+    setBackgroundMediaCategory('video');
+    selectBackgroundVideoTemplate(button.dataset.videoTemplate);
+  }));
+  $('choose-video-background').addEventListener('click', () => {
+    setBackgroundMediaCategory('video');
+    $('background-file').click();
+  });
   $('background-search').addEventListener('input', filterBackgrounds);
   $('background-category').addEventListener('change', filterBackgrounds);
   document.querySelectorAll('.background-sequence-choice').forEach(button => button.addEventListener('click', () => {
@@ -2658,10 +3851,14 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
   $('background-file').addEventListener('change', () => {
     const files = [...$('background-file').files];
     if (!files.length) return;
+    setBackgroundMediaCategory(files[0].type.startsWith('video/') ? 'video' : 'image');
     $('background-sequence-template').value = '';
     updateBackgroundSequenceSelection();
     $('background-file-name').textContent = files.length === 1 ? files[0].name : `${files.length} background items · sequence ${$('sequence-enabled').checked ? 'enabled' : 'off (first item active)'}`;
     renderUploadedBackgroundPreview(files);
+    $('background-video-selection').textContent = files.some(file => file.type.startsWith('video/'))
+      ? files.filter(file => file.type.startsWith('video/')).map(file => file.name).join(' · ')
+      : backgroundMediaCategory === 'video' ? 'Choose a supported video file to preview and render.' : 'No video selected yet.';
     hideRenderedVideo();
   });
   $('sequence-enabled').addEventListener('change', () => {
@@ -2685,7 +3882,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
   $('background-animation-enabled').addEventListener('change', () => {
     updateBackgroundAnimationPreview(); hideRenderedVideo(); scheduleProjectAutosave();
   });
-  ['background-animation-preset','background-animation-intensity','background-animation-duration','background-animation-speed','background-animation-start'].forEach(id => {
+  ['background-motion-direction','background-animation-preset','background-animation-intensity','background-animation-duration','background-animation-speed','background-animation-start'].forEach(id => {
     $(id).addEventListener('input', () => {
       updateBackgroundAnimationPreview(); hideRenderedVideo(); scheduleProjectAutosave();
     });
@@ -2783,7 +3980,9 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
   });
   $('rewind-preview').addEventListener('click', () => {
     const player = activePlayer();
-    if (player.src && Number.isFinite(player.currentTime)) player.currentTime = Math.max(player === $('voice-preview-audio') && previewTimings.length ? previewTimings[0].start : 0, player.currentTime - 10);
+    if (player.src && Number.isFinite(player.currentTime)) {
+      player.currentTime = Math.max(0, player.currentTime - 10);
+    }
   });
   $('playback-toggle').addEventListener('click', () => {
     const rendered = $('rendered-video');
@@ -2802,8 +4001,25 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     $('voice-preview-audio').playbackRate = speed;
   });
   $('api-toggle-btn').addEventListener('click', () => $('api-panel').classList.toggle('hidden'));
+  function currentRenderCurl() {
+    const shellQuote = value => "'" + String(value).replace(/'/g, "'\\''") + "'";
+    const fields = [
+      ['surah', surahSelect.value], ['ayah_start', startInput.value], ['ayah_end', endInput.value],
+      ['reciter_id', selectedReciter], ['aspect_ratio', ratio],
+      ['resolution', $('export-resolution').value], ['fps', $('export-fps').value],
+      ['quality', $('export-quality').value], ['encoder', $('export-encoder').value],
+      ['theme', theme], ['template_id', selectedTemplateId],
+      ['background_video_template', selectedBackgroundVideoTemplate],
+      ['transition', $('transition-style').value], ['caption_style', $('caption-style').value],
+      ['speed', String(speed)], ['video_title', $('video-title').value.trim()],
+    ];
+    const args = fields.map(([key, value]) => '-F ' + shellQuote(key + '=' + value));
+    const command = 'curl -sS -X POST ' + shellQuote(window.location.origin + '/api/generate') + ' ' + args.join(' ');
+    $('api-curl-command').textContent = command;
+    return command;
+  }
   $('copy-curl-btn').addEventListener('click', async () => {
-    try { await navigator.clipboard.writeText('curl -X POST http://127.0.0.1:5000/api/generate -F "surah=55" -F "ayah_start=13" -F "ayah_end=16" -F "reciter_id=mishary_alafasy" -F "aspect_ratio=9:16" -F "theme=misty_forest" -F "transition=crossfade" -F "caption_style=classic" -F "speed=1.0"'); $('copy-status').textContent='Copied!'; }
+    try { await navigator.clipboard.writeText(currentRenderCurl()); $('copy-status').textContent='Copied current settings!'; }
     catch { $('copy-status').textContent='Clipboard unavailable'; }
   });
 
@@ -2866,11 +4082,24 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     $('render-cancel-btn').classList.add('hidden');
     activeRenderJobId = null;
     try {
+      if (guardPendingSceneTextDraft() || guardPendingSceneDurationDraft()) return;
       await updateEncoderCapabilities(true);
       const selectionAtExport = verseSelectionKey();
       const verses = loadedVerseSelection === selectionAtExport ? previewAyahs : await loadVerses(true);
       if (loadedVerseSelection !== verseSelectionKey()) {
         throw new Error('The ayah range changed while preparing the video. Please export again.');
+      }
+      const rawWordLimit = $('words-per-scene').value.trim();
+      if (!/^[1-9]\d?$/.test(rawWordLimit) || Number(rawWordLimit) > 30
+          || Number(rawWordLimit) !== appliedWordsPerScene) {
+        $('words-per-scene').focus();
+        throw new Error('Apply the Words per scene value before exporting. Choose a whole number from 1 to 30.');
+      }
+      const pendingSceneCount = [...document.querySelectorAll('.scene-word-count')]
+        .find(input => input.value.trim() !== input.dataset.currentCount);
+      if (pendingSceneCount) {
+        pendingSceneCount.focus();
+        throw new Error('Apply or clear the pending scene word-count edit before exporting.');
       }
       const form = new FormData();
       form.set('ayah_text', ayahText.value); form.set('aspect_ratio', ratio); form.set('reciter_id', selectedReciter);
@@ -2926,21 +4155,24 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
       form.set('glow_type', $('glow-type').value); form.set('glow_radius', $('glow-radius').value);
       form.set('caption_color', captionColor); form.set('wrap_width', String(wrapWidth));
       form.set('font_id', $('arabic-font').value); form.set('max_lines', $('max-lines').value);
+      form.set('words_per_scene', String(appliedWordsPerScene));
       form.set('surah', surahSelect.value); form.set('ayah_start', startInput.value); form.set('ayah_end', endInput.value);
-      form.set('scene_overrides', JSON.stringify(previewScenes.map(scene => ({
-        ayah_number:scene.ayah_number, text:scene.text,
-        ...(scene.manual_duration_fraction ? {duration_fraction:scene.duration_fraction} : {}),
-      }))));
+      form.set('video_title', $('video-title').value.trim());
+      // The displayed caption rows are the source of truth for every export,
+      // including an untouched automatic plan.
+      form.set('scene_overrides', JSON.stringify(sceneRowsForRequest()));
       form.set('background_fit', $('background-fit').value);
       form.set('crop_x', $('background-crop-x').value); form.set('crop_y', $('background-crop-y').value);
       form.set('background_speed', $('background-speed').value);
       form.set('background_loop', $('sequence-enabled').checked ? $('sequence-loop').checked : $('background-loop').checked);
       form.set('sequence_enabled', $('sequence-enabled').checked);
       form.set('background_sequence_template', $('background-sequence-template').value);
+      form.set('background_video_template', selectedBackgroundVideoTemplate);
       form.set('transitions_enabled', $('transitions-enabled').checked);
       form.set('default_background_transition', $('default-background-transition').value);
       form.set('background_transition_color', $('background-transition-color').value);
       form.set('background_animation_enabled', $('background-animation-enabled').checked);
+      form.set('background_motion_direction', $('background-motion-direction').value);
       form.set('background_animation_preset', $('background-animation-preset').value);
       form.set('background_animation_intensity', $('background-animation-intensity').value);
       form.set('background_animation_duration', $('background-animation-duration').value);
@@ -2980,9 +4212,14 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
       $('render-cancel-btn').classList.add('hidden');
       const fallbackMessage = result.fallback_reason ? ` · fallback: ${result.fallback_reason}` : '';
       $('render-status-message').replaceChildren(document.createTextNode(
-        `Video ready · ${result.encoder_name || 'CPU · x264'}${fallbackMessage} · MP4 playback verified · ${result.width}×${result.height} · ${result.fps || 30} FPS · ${result.duration.toFixed(1)} seconds · ${result.reciter} · ${verses.length} ayahs · ${result.scene_count || previewScenes.length} scenes. `));
-      const link = document.createElement('a'); link.className = 'font-semibold underline'; link.href = result.download_url; link.textContent = 'Download MP4';
+        'Video ready · ' + (result.encoder_name || 'CPU · x264') + fallbackMessage + ' · MP4 playback verified · ' + result.width + '×' + result.height + ' · ' + (result.fps || 30) + ' FPS · ' + result.duration.toFixed(1) + ' seconds · ' + result.reciter + ' · ' + verses.length + ' ayahs · ' + (result.scene_count || previewScenes.length) + ' scenes. ' + (result.timing_note || '')));
+      lastDownloadUrl = result.download_url;
+      if (!$('video-title').value.trim()) $('video-title').value = result.download_title || '';
+      const link = document.createElement('a'); link.id = 'result-download-link'; link.className = 'font-semibold underline'; link.href = result.download_url; link.textContent = 'Download MP4';
+      refreshDownloadLink();
       $('render-status-message').append(link);
+      $('youtube-metadata-panel').classList.remove('hidden');
+      loadYoutubeMetadata().catch(error => { $('metadata-copy-status').textContent = error.message; });
       const video = $('rendered-video'); video.src = result.download_url; video.classList.remove('hidden');
       video.volume = Number($('preview-volume').value); video.load();
       button.innerHTML = '<span class="material-symbols-outlined">check_circle</span><span>Video Ready</span>';

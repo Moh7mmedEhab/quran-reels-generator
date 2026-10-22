@@ -25,3 +25,9 @@ listed above. The grade slightly reduces saturation, shapes a soft dark
 caption-safe center, and adds a light edge vignette. The originals are not
 duplicated in the project, so each photo's source and photographer remain
 listed in the table above.
+
+The silent loops in `../background-videos/` are locally generated motion
+derivatives of these existing credited project assets: `misty_forest.jpg`,
+`marble_arch.jpg`, and `sahara_moon.jpg`. They use the same Unsplash License
+terms and retain the corresponding photo credits above. They were created from
+local files; no additional stock media was downloaded.

@@ -1,9 +1,12 @@
 """Web routes for Quran text, reciters, and video generation."""
 from pathlib import Path
 from datetime import datetime
+import hashlib
 import json
 import tempfile
+import time
 from io import BytesIO
+from threading import Lock
 from uuid import uuid4
 
 from flask import Blueprint, current_app, jsonify, render_template, request, send_file, send_from_directory, url_for
@@ -18,18 +21,28 @@ from .video_engine import (BACKGROUND_FIT_MODES, BACKGROUND_VIDEO_EXTENSIONS,
                            THEMES, THEME_CATEGORIES, _background, output_dimensions,
                            render_caption_image, render_reel)
 from .video_templates import DEFAULT_VIDEO_TEMPLATE, VIDEO_TEMPLATES
-from .background_motion import IMAGE_ANIMATION_PRESETS
+from .background_motion import IMAGE_ANIMATION_PRESETS, MOTION_DIRECTIONS, resolve_motion_preset
 from .background_sequence_templates import BACKGROUND_SEQUENCE_TEMPLATES
+from .background_video_templates import (BACKGROUND_VIDEO_TEMPLATES,
+                                         available_background_video_templates,
+                                         background_video_template_path)
 from .font_catalog import DEFAULT_FONT_ID, FONT_CATALOG, resolve_font
-from .scenes import build_scene_plan
+from .scenes import (build_scene_plan, edit_scene_text, merge_scene_with_previous,
+                     compose_scene_plan_overrides, redistribute_scene_words, set_scene_lock,
+                     split_scene_by_word_count)
 from .media_validation import validate_rendered_output
 from .ffmpeg_encoder import hardware_encoder_status
+from .word_alignment import get_chapter_word_timing
 from .design_templates import (AYAH_NUMBER_TEMPLATES, QURAN_TEXT_TEMPLATES,
                                SURAH_NAME_TEMPLATES, TRANSITION_TEMPLATES)
 from .reel_viewer import (REEL_VIEWER_TEMPLATES, render_playback_layer,
                           render_static_layer)
+from .youtube_metadata import generate_youtube_metadata
+from .file_names import unique_download_filename
+from .version import APP_VERSION, DISPLAY_VERSION
 
 bp = Blueprint("main", __name__)
+_AUDIO_PREVIEW_CACHE_LOCK = Lock()
 CAPTION_STYLES = {
     "Dynamic Karaoke (Glow)": "karaoke",
     "Minimalist Subtitle Fade": "minimal",
@@ -279,7 +292,36 @@ def studio():
                            default_font_id=DEFAULT_FONT_ID, copyright_year=datetime.now().year,
                            quality_presets=QUALITY_PRESETS,
                            image_animation_presets=IMAGE_ANIMATION_PRESETS,
-                           background_sequence_templates=BACKGROUND_SEQUENCE_TEMPLATES)
+                           background_sequence_templates=BACKGROUND_SEQUENCE_TEMPLATES,
+                           background_video_templates=available_background_video_templates(
+                               static_folder=current_app.static_folder),
+                           app_version=APP_VERSION, display_version=DISPLAY_VERSION)
+
+
+@bp.get("/api/version")
+def application_version():
+    return jsonify({"name": "Quran Reels Generator", "version": APP_VERSION,
+                    "display_version": DISPLAY_VERSION})
+
+
+@bp.get("/api/youtube-metadata")
+def youtube_metadata():
+    try:
+        surah = int(request.args.get("surah", "55"))
+        ayah_start = int(request.args.get("start", "13"))
+        ayah_end = int(request.args.get("end", str(ayah_start)))
+        get_ayahs(surah, ayah_start, ayah_end)
+    except (TypeError, ValueError) as exc:
+        return jsonify(error=str(exc)), 400
+    reciter = RECITERS_BY_ID.get(request.args.get("reciter_id", "mishary_alafasy"))
+    if reciter is None:
+        return jsonify(error="Choose a reciter from the list."), 400
+    chapter = SURAHS_BY_NUMBER[surah]
+    return jsonify(generate_youtube_metadata(
+        surah_number=surah, surah_english=chapter["english_name"],
+        surah_arabic=chapter["name_arabic"], ayah_start=ayah_start,
+        ayah_end=ayah_end, reciter_name=reciter["name"],
+    ))
 
 
 @bp.get("/api/surahs")
@@ -305,6 +347,23 @@ def list_backgrounds():
         {"id": key, "name": value["name"], "category": THEME_CATEGORIES.get(key, "Other")}
         for key, value in THEMES.items()
     ]})
+
+
+@bp.get("/api/background-video-templates")
+def list_background_video_templates():
+    templates = {}
+    for template_id, template in available_background_video_templates(
+            static_folder=current_app.static_folder).items():
+        templates[template_id] = {
+            "id": template_id,
+            "name": template["name"],
+            "description": template["description"],
+            "duration": template["duration"],
+            "video_url": url_for("static", filename=f"assets/background-videos/{template['filename']}"),
+            "poster_url": url_for("main.background_preview", theme=template["theme"], ratio="9:16"),
+            "audio": False,
+        }
+    return jsonify({"templates": templates})
 
 
 @bp.get("/api/video-templates")
@@ -361,6 +420,7 @@ def scene_plan():
         ayah_start = int(payload.get("ayah_start", 1))
         wrap_width = int(payload.get("wrap_width", 85))
         max_lines = int(payload.get("max_lines", template.get("max_lines", 5)))
+        words_per_scene = int(payload.get("words_per_scene", 8))
         ratio = payload.get("aspect_ratio", "9:16")
         dimensions = output_dimensions(ratio, payload.get("resolution", "1080p"),
                                        payload.get("custom_width"), payload.get("custom_height"))
@@ -371,16 +431,104 @@ def scene_plan():
         if isinstance(show_number, str):
             show_number = show_number.lower() in ("true", "1", "yes", "on")
         font_id = payload.get("font_id", template.get("font_id", DEFAULT_FONT_ID))
-        scenes = build_scene_plan(
+        default_scenes = build_scene_plan(
             ayahs, ayah_start=ayah_start, aspect_ratio=ratio, wrap_width=wrap_width,
             max_lines=max_lines, font_path=resolve_font(font_id, current_app.config.get("ARABIC_FONT")),
             show_surah_title=show_header or show_number, output_size=dimensions,
+            words_per_scene=words_per_scene, preview_untimed_splits=True,
         )
+        composition = compose_scene_plan_overrides(
+            ayahs, default_scenes, ayah_start=ayah_start,
+            saved_defaults=payload.get("scene_defaults"),
+            saved_edits=payload.get("scene_edits"),
+        )
+        resolved_defaults = default_scenes
+        scenes = default_scenes
+        if composition["cached_default_ayah_count"] or composition["edited_ayah_count"]:
+            overrides = [
+                {"scene_id":scene["scene_id"], "ayah_number":scene["ayah_number"],
+                 "text":scene["text"], "locked":scene["locked"],
+                 "manual_duration":scene.get("manual_duration")}
+                for scene in composition["default_scenes"]
+            ]
+            resolved_defaults = build_scene_plan(
+                ayahs, ayah_start=ayah_start, aspect_ratio=ratio, wrap_width=wrap_width,
+                max_lines=max_lines, font_path=resolve_font(font_id, current_app.config.get("ARABIC_FONT")),
+                show_surah_title=show_header or show_number, output_size=dimensions,
+                words_per_scene=words_per_scene, scene_overrides=overrides,
+            )
+            edited_overrides = [
+                {"scene_id":scene["scene_id"], "ayah_number":scene["ayah_number"],
+                 "text":scene["text"], "locked":scene["locked"],
+                 "manual_duration":scene.get("manual_duration")}
+                for scene in composition["scenes"]
+            ]
+            scenes = build_scene_plan(
+                ayahs, ayah_start=ayah_start, aspect_ratio=ratio, wrap_width=wrap_width,
+                max_lines=max_lines, font_path=resolve_font(font_id, current_app.config.get("ARABIC_FONT")),
+                show_surah_title=show_header or show_number, output_size=dimensions,
+                words_per_scene=words_per_scene, scene_overrides=edited_overrides,
+            )
     except (TypeError, ValueError, FileNotFoundError) as exc:
         return jsonify(error=str(exc)), 400
-    return jsonify({"scenes": scenes, "count": len(scenes),
+    return jsonify({"scenes": scenes, "default_scenes": resolved_defaults, "count": len(scenes),
+                    "saved_edit_ayah_count": composition["edited_ayah_count"],
                     "approximate_timing": True,
-                    "timing_note": "Scene times are estimates until verified recitation timing is loaded. Long-ayah phrases use proportional character timing because no word-level source timestamps are available."})
+                    "words_per_scene": words_per_scene,
+                    "timing_note": "Caption groups use the selected word count. Export uses validated word timestamps when available; otherwise split boundaries use a clearly marked word-length estimate, while an unsplit ayah keeps its measured ayah timing."})
+
+
+@bp.post("/api/scenes/redistribute")
+def scene_redistribute():
+    payload = request.get_json(silent=True) or {}
+    try:
+        ayahs = payload.get("ayahs")
+        if not isinstance(ayahs, list) or not ayahs or any(not str(text).strip() for text in ayahs):
+            raise ValueError("Provide the source ayah text for every selected ayah.")
+        action = payload.get("action", "word_count")
+        if action == "merge_previous":
+            result = merge_scene_with_previous(
+                ayahs, payload.get("scenes"), ayah_start=payload.get("ayah_start", 1),
+                scene_index=payload.get("scene_index"),
+            )
+        elif action == "edit_text":
+            result = edit_scene_text(
+                ayahs, payload.get("scenes"), ayah_start=payload.get("ayah_start", 1),
+                scene_index=payload.get("scene_index"), text=payload.get("text", ""),
+            )
+        elif action == "set_lock":
+            result = set_scene_lock(
+                ayahs, payload.get("scenes"), ayah_start=payload.get("ayah_start", 1),
+                scene_index=payload.get("scene_index"), locked=payload.get("locked"),
+            )
+        elif action == "word_count":
+            result = redistribute_scene_words(
+                ayahs, payload.get("scenes"), ayah_start=payload.get("ayah_start", 1),
+                scene_index=payload.get("scene_index"),
+                requested_word_count=payload.get("word_count"),
+            )
+        elif action == "split_by_word_count":
+            result = split_scene_by_word_count(
+                ayahs, payload.get("scenes"), ayah_start=payload.get("ayah_start", 1),
+                scene_index=payload.get("scene_index"),
+                words_per_scene=payload.get("words_per_scene"),
+            )
+        else:
+            raise ValueError("Choose a supported scene operation.")
+        # Structural edits recalculate timing for changed word allocations.
+        # Keep a manual duration only when that exact scene and text survived.
+        old_rows = payload.get("scenes") or []
+        old_timing = {
+            (str(row.get("scene_id") or ""), str(row.get("text", "")).strip()): row.get("manual_duration")
+            for row in old_rows if isinstance(row, dict) and row.get("manual_duration") not in (None, "")
+        }
+        for row in result.get("scenes", []):
+            key = (str(row.get("scene_id") or ""), str(row.get("text", "")).strip())
+            if key in old_timing:
+                row["manual_duration"] = old_timing[key]
+    except (TypeError, ValueError) as exc:
+        return jsonify(error=str(exc)), 400
+    return jsonify(result)
 
 
 @bp.get("/api/backgrounds/<theme>/preview")
@@ -542,17 +690,119 @@ def preview_reciter_timings(reciter_id):
         surah = int(request.args.get("surah", "55"))
         start = int(request.args.get("start", "1"))
         end = int(request.args.get("end", str(start)))
-        get_ayahs(surah, start, end)
-        rows = get_recitation_timings(reciter, surah, start, end)
+        verses = get_ayahs(surah, start, end)
+        word_data = get_chapter_word_timing(reciter_id, surah, start, end, verses)
+        rows = word_data["ayahs"] if word_data else get_recitation_timings(reciter, surah, start, end)
     except (TypeError, ValueError) as exc:
         return jsonify(error=str(exc)), 400
     except AudioSourceError as exc:
         return jsonify(error=str(exc)), 502
+    except RuntimeError:
+        word_data = None
+        try:
+            rows = get_recitation_timings(reciter, surah, start, end)
+        except AudioSourceError as exc:
+            return jsonify(error=str(exc)), 502
+    durations = []
+    for index, row in enumerate(rows):
+        next_start = rows[index + 1]["start_time"] if index + 1 < len(rows) else row["end_time"]
+        durations.append(max(0.001, (int(next_start) - int(row["start_time"])) / 1000))
     return jsonify({
-        "audio_url": get_audio_url(reciter, surah),
+        "audio_url": url_for("main.preview_reciter_audio", reciter_id=reciter_id,
+                              surah=surah, start=start, end=end),
+        "audio_start": int(rows[0]["start_time"]) / 1000,
+        "audio_end": int(rows[-1]["end_time"]) / 1000,
+        "audio_duration": (int(rows[-1]["end_time"]) - int(rows[0]["start_time"])) / 1000,
         "timings": [{"ayah": int(row["ayah"]), "start": int(row["start_time"]) / 1000,
-                     "end": int(row["end_time"]) / 1000} for row in rows],
+                     "end": int(row["end_time"]) / 1000,
+                     **({"words": [
+                         {"index": int(word["index"]),
+                          "start": (int(word["start_ms"]) - int(row["start_time"])) / 1000,
+                          "end": (int(word["end_ms"]) - int(row["start_time"])) / 1000}
+                         for word in row["segments"]
+                     ]} if word_data else {})} for index, row in enumerate(rows)],
+        "timing_source": "quran_foundation_word" if word_data else "mp3quran_ayah",
+        "timing_note": ("Validated word timing from Quran Foundation chapter audio."
+                        if word_data else "Ayah boundaries only; full ayahs remain visible during recitation."),
     })
+
+
+@bp.get("/api/reciters/<reciter_id>/audio-preview")
+def preview_reciter_audio(reciter_id):
+    """Serve a PCM excerpt containing only the selected ayah range."""
+    reciter = RECITERS_BY_ID.get(reciter_id)
+    if reciter is None:
+        return jsonify(error="Choose a reciter from the list."), 404
+    try:
+        surah = int(request.args.get("surah", "55"))
+        start = int(request.args.get("start", "1"))
+        end = int(request.args.get("end", str(start)))
+        verses = get_ayahs(surah, start, end)
+    except (TypeError, ValueError) as exc:
+        return jsonify(error=str(exc)), 400
+
+    cache_dir = Path(current_app.config.get(
+        "AUDIO_PREVIEW_FOLDER", Path(tempfile.gettempdir()) / "quran-reels-audio-previews",
+    ))
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_key = hashlib.sha256(f"{reciter_id}:{surah}:{start}:{end}".encode()).hexdigest()
+    preview_path = cache_dir / f"{cache_key}.wav"
+    with _AUDIO_PREVIEW_CACHE_LOCK:
+        try:
+            now = time.time()
+            cached_segments = []
+            for cached in cache_dir.glob("*.wav"):
+                try:
+                    modified = cached.stat().st_mtime
+                    if now - modified > 24 * 60 * 60:
+                        cached.unlink(missing_ok=True)
+                    else:
+                        cached_segments.append((modified, cached))
+                except OSError:
+                    continue
+            if not preview_path.is_file() or preview_path.stat().st_size < 1024:
+                track = download_recitation(
+                    reciter, surah, start, end,
+                    Path(tempfile.gettempdir()) / "quran-reels-uploads",
+                    expected_ayahs=verses,
+                )
+                partial_path = preview_path.with_name(f".{preview_path.stem}-{uuid4().hex}.partial.wav")
+                source_audio = selected_audio = None
+                try:
+                    from moviepy import AudioFileClip
+                    source_audio = AudioFileClip(str(track.path))
+                    source_duration = float(source_audio.duration or 0)
+                    if (track.start < 0 or track.end <= track.start
+                            or track.start >= source_duration
+                            or track.end > source_duration + .05):
+                        raise ValueError("Selected recitation boundaries fall outside the downloaded audio.")
+                    selected_audio = source_audio.subclipped(
+                        float(track.start), min(float(track.end), source_duration),
+                    )
+                    selected_audio.write_audiofile(
+                        str(partial_path), fps=48000, nbytes=2,
+                        codec="pcm_s16le", logger=None,
+                    )
+                    if not partial_path.is_file() or partial_path.stat().st_size < 1024:
+                        raise AudioSourceError("Could not create the selected recitation preview segment.")
+                    partial_path.replace(preview_path)
+                    cached_segments.append((now, preview_path))
+                    for _modified, old_preview in sorted(cached_segments, key=lambda item: item[0])[:-24]:
+                        old_preview.unlink(missing_ok=True)
+                finally:
+                    if selected_audio is not None:
+                        selected_audio.close()
+                    if source_audio is not None:
+                        source_audio.close()
+                    partial_path.unlink(missing_ok=True)
+                    track.path.unlink(missing_ok=True)
+        except (AudioSourceError, OSError, RuntimeError, ValueError, ImportError) as exc:
+            current_app.logger.exception("Could not prepare the selected recitation preview")
+            preview_path.unlink(missing_ok=True)
+            return jsonify(error=str(exc)), 502
+
+    return send_file(preview_path, mimetype="audio/wav", conditional=True,
+                     max_age=3600, download_name=f"surah-{surah:03d}-{start}-{end}.wav")
 
 
 @bp.post("/api/generate")
@@ -604,6 +854,13 @@ def generate():
             official_ayahs = get_ayahs(surah, ayah_start, ayah_end)
         except ValueError as exc:
             return jsonify(error=str(exc)), 400
+        chapter = SURAHS_BY_NUMBER[surah]
+        metadata_defaults = generate_youtube_metadata(
+            surah_number=surah, surah_english=chapter["english_name"],
+            surah_arabic=chapter["name_arabic"], ayah_start=ayah_start,
+            ayah_end=ayah_end, reciter_name=reciter["name"],
+        )
+        download_title = str(data.get("video_title", "")).strip()[:100] or metadata_defaults["title"]
 
         entered_text = str(data.get("ayah_text", "")).strip()
         ayahs = [line.strip() for line in entered_text.splitlines() if line.strip()] if entered_text else official_ayahs
@@ -653,6 +910,12 @@ def generate():
             return jsonify(error="Maximum lines must be between 1 and 8."), 400
         if max_lines not in range(1, 9):
             return jsonify(error="Maximum lines must be between 1 and 8."), 400
+        try:
+            words_per_scene = int(data.get("words_per_scene", 8))
+        except (TypeError, ValueError):
+            return jsonify(error="Words per scene must be a whole number from 1 to 30."), 400
+        if words_per_scene not in range(1, 31):
+            return jsonify(error="Words per scene must be a whole number from 1 to 30."), 400
         theme = data.get("theme", template["theme"])
         if theme not in THEMES:
             return jsonify(error="Choose one of the available background presets."), 400
@@ -729,6 +992,12 @@ def generate():
         animation_preset = data.get("background_animation_preset", "static")
         if animation_preset not in IMAGE_ANIMATION_PRESETS:
             return jsonify(error="Choose a supported still-image animation preset."), 400
+        motion_direction = str(data.get("background_motion_direction", "preset"))
+        if motion_direction != "preset" and motion_direction not in MOTION_DIRECTIONS:
+            return jsonify(error="Choose left-to-right, right-to-left, top-to-bottom, bottom-to-top, static, or use the saved preset."), 400
+        animation_preset = resolve_motion_preset(motion_direction, animation_preset)
+        if motion_direction != "preset":
+            animation_enabled = motion_direction != "static"
         try:
             animation_intensity = float(data.get("background_animation_intensity", .6))
             animation_duration = float(data.get("background_animation_duration", 12))
@@ -794,12 +1063,19 @@ def generate():
 
         background_files = [item for item in request.files.getlist("background_clips")
                             if item and item.filename]
+        background_video_template = str(data.get("background_video_template", "") or "").strip()
+        if background_video_template and background_video_template not in BACKGROUND_VIDEO_TEMPLATES:
+            return jsonify(error="Choose one of the available video backgrounds."), 400
+        if background_video_template and sequence_enabled and background_sequence_template:
+            return jsonify(error="Choose either a bundled video background or a photo sequence template."), 400
         legacy_background_upload = False
         if not background_files:
             legacy_file = request.files.get("background")
             if legacy_file and legacy_file.filename:
                 background_files = [legacy_file]
                 legacy_background_upload = True
+        if background_video_template and background_files:
+            return jsonify(error="Choose either a bundled video background or uploaded media, not both."), 400
         if len(background_files) > 12:
             return jsonify(error="A background sequence can contain up to 12 clips."), 400
         raw_clip_settings = data.get("background_clip_settings", "[]")
@@ -821,6 +1097,13 @@ def generate():
         background_paths = []
         background_clip_specs = []
         try:
+            if background_video_template:
+                background_path = background_video_template_path(
+                    background_video_template, static_folder=current_app.static_folder,
+                )
+                if not background_path.is_file():
+                    raise ValueError("The selected bundled video file is missing.")
+                validate_background_upload(background_path, background_path.suffix.lower())
             for index, background_file in enumerate(background_files):
                 background_name = secure_filename(background_file.filename)
                 background_extension = Path(background_name).suffix.lower()
@@ -869,7 +1152,8 @@ def generate():
                     "speed": clip_speed, "transition": clip_transition,
                     "transition_duration": transition_duration,
                 })
-            if (sequence_enabled and not background_files and background_sequence_template):
+            if (sequence_enabled and not background_files and not background_video_template
+                    and background_sequence_template):
                 preset = BACKGROUND_SEQUENCE_TEMPLATES[background_sequence_template]
                 background_asset_dir = Path(current_app.static_folder) / "assets" / "backgrounds"
                 for scene in preset["scenes"]:
@@ -922,6 +1206,7 @@ def generate():
 
                 track = download_recitation(
                     reciter, surah, ayah_start, ayah_end, upload_dir,
+                    expected_ayahs=official_ayahs if ayahs == official_ayahs else None,
                     cancel_event=cancel_event, on_progress=audio_progress,
                 )
                 update(progress=15, phase="preparing", message="Preparing Arabic scenes and video layers.")
@@ -940,11 +1225,14 @@ def generate():
                     output_size=output_size, fps=fps, quality=quality, encoder=encoder, crf=crf,
                     audio_bitrate=audio_bitrate, audio_fps=audio_fps,
                     audio_path=track.path, audio_start=track.start, audio_end=track.end,
-                    ayah_durations=track.ayah_durations, background_path=background_path,
+                    ayah_durations=track.ayah_durations,
+                    word_timings=getattr(track, "word_timings", None) if ayahs == official_ayahs else None,
+                    background_path=background_path,
                     background_clips=background_clip_specs,
                     theme=theme, transition=transition, caption_style=caption_style, speed=speed,
                     caption_color=caption_color, wrap_width=wrap_width,
-                    font_path=font_path, max_lines=max_lines, scene_overrides=raw_scenes,
+                    font_path=font_path, max_lines=max_lines, words_per_scene=words_per_scene,
+                    scene_overrides=raw_scenes,
                     background_fit=background_fit, crop_x=crop_x, crop_y=crop_y,
                     background_speed=background_speed, background_loop=background_loop,
                     background_audio_enabled=background_audio_enabled,
@@ -991,17 +1279,46 @@ def generate():
                 update(progress=99, phase="verification", message="Checking the exported MP4 video and audio streams.")
                 playback = validate_rendered_output(partial_path, expected_size=output_size, require_audio=True)
                 result.pop("path", None)
+                phrase_timing_mode = result.get("phrase_timing_mode", "ayah_boundary_fallback")
+                if ayahs == official_ayahs:
+                    timing_note = getattr(track, "timing_note", "Ayah-level timing; word-level alignment is not configured.")
+                else:
+                    timing_note = "Custom caption text differs from the Quran source; exact voice-word alignment was disabled."
+                if phrase_timing_mode == "weighted_estimate":
+                    timing_note += " Split-scene spans are approximate, weighted by Arabic word length and Quran pause marks within measured ayah durations."
+                elif phrase_timing_mode == "mixed":
+                    timing_note += " Some split-scene boundaries use exact voice word timestamps; the remaining spans are approximate estimates weighted by Arabic word length and pause marks."
+                elif phrase_timing_mode == "word_timestamp":
+                    timing_note += " Split-scene boundaries use validated voice word timestamps."
+                else:
+                    timing_note += " Whole ayahs remain visible for their measured ayah intervals because phrase-level voice timing is unavailable."
+                caption_tail = float(result.get("caption_audio_overrun_seconds") or 0)
+                if caption_tail > .005:
+                    timing_note += (
+                        f" The video continues {caption_tail:.2f}s after the selected recitation "
+                        "so the final caption remains visible; no Quran audio is added after the selected boundary."
+                    )
                 result.update({
                     "filename": output_path.name,
                     "download_url": download_url,
+                    "download_title": download_title,
                     "reciter": reciter["name"],
                     "surah": SURAHS_BY_NUMBER[surah]["english_name"],
                     "ayah_start": ayah_start,
                     "ayah_end": ayah_end,
+                    "recitation_audio_start": float(track.start),
+                    "recitation_audio_end": float(track.end),
+                    "selected_recitation_duration": round(float(track.end) - float(track.start), 3),
+                    "timing_source": (getattr(track, "timing_source", "mp3quran_ayah")
+                                      if ayahs == official_ayahs else "ayah_only_custom_text"),
+                    "timing_note": timing_note,
+                    "phrase_timing_mode": phrase_timing_mode,
+                    "phrase_timing_approximate": bool(result.get("phrase_timing_approximate", False)),
                     "theme": theme,
                     "template_id": template_id,
                     "font_id": font_id,
                     "max_lines": max_lines,
+                    "words_per_scene": words_per_scene,
                     "caption_color": caption_color,
                     "caption_style": caption_style,
                     "caption_position": caption_position,
@@ -1014,6 +1331,7 @@ def generate():
                     "surah_scale": surah_scale, "ayah_number_scale": ayah_number_scale,
                     "surah_align": surah_align, "ayah_number_align": ayah_number_align,
                     "background_clip_count": len(background_clip_specs),
+                    "background_video_template": background_video_template or None,
                     "background_sequence_template": background_sequence_template or None,
                     "background_audio_enabled": background_audio_enabled,
                     "background_brightness": background_brightness,
@@ -1022,6 +1340,7 @@ def generate():
                     "background_overlay_color": background_overlay_color,
                     "background_overlay_opacity": background_overlay_opacity,
                     "background_animation_start": animation_start,
+                    "background_motion_direction": motion_direction,
                     "background_atmosphere_enabled": atmosphere_enabled,
                     "background_atmosphere_intensity": atmosphere_intensity if atmosphere_enabled else 0,
                     "background_fit": background_fit,
@@ -1078,4 +1397,26 @@ def cancel_render_job(job_id):
 
 @bp.get("/outputs/<path:filename>")
 def download(filename):
-    return send_from_directory(current_app.config["OUTPUT_FOLDER"], filename, as_attachment=True)
+    fallback = "Quran Reel"
+    try:
+        source_name = Path(filename).name
+        result = current_app.extensions["render_job_manager"]
+        # Render outputs use UUID storage names; metadata and title are supplied
+        # in the current download request so edits do not rename stored files.
+        title = request.args.get("title", "").strip()
+        if title:
+            download_name = unique_download_filename(
+                title, fallback, current_app.config["OUTPUT_FOLDER"], source_name,
+            )
+        else:
+            job_id = Path(source_name).stem
+            snapshot = result.get(job_id)
+            saved_title = ((snapshot or {}).get("result") or {}).get("download_title", "")
+            download_name = unique_download_filename(
+                saved_title or fallback, fallback,
+                current_app.config["OUTPUT_FOLDER"], source_name,
+            )
+    except (TypeError, ValueError):
+        download_name = "Quran Reel.mp4"
+    return send_from_directory(current_app.config["OUTPUT_FOLDER"], filename,
+                               as_attachment=True, download_name=download_name)

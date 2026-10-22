@@ -54,6 +54,39 @@ def test_studio_renders_light_template_with_all_surahs():
     assert b"id=\"export-encoder\"" in response.data
 
 
+def test_ayah_range_fields_are_styled_text_inputs_with_numeric_mobile_keypad():
+    client = create_app(TestConfig).test_client()
+    page = client.get("/")
+    assert page.status_code == 200
+    html = page.get_data(as_text=True)
+    assert 'id="start-ayah" data-max="78" data-min="1"' in html
+    assert 'id="end-ayah" data-max="78" data-min="1"' in html
+    assert 'inputmode="numeric"' in html
+    assert 'id="start-ayah"' in html and 'dir="ltr" type="text"' in html
+    assert 'id="end-ayah"' in html and 'dir="ltr" type="text"' in html
+    assert 'id="ayah-range-grid"' in html
+    assert html.count('id="start-ayah"') == 1
+    assert html.count('id="end-ayah"') == 1
+    assert 'id="words-per-scene" type="text"' in html
+    assert 'id="reset-scenes"' in html
+    assert "scene-timing-1" in html
+    css = client.get("/static/css/app.css?v=studio-2026-10-22-scene-timing-1")
+    assert css.status_code == 200
+    assert b".ayah-range-control:focus-within" in css.data
+    assert b".ayah-range-value:focus-visible" in css.data
+    assert b"#ayah-range-grid { grid-template-columns:minmax(0,1fr); }" in css.data
+    assert b".scene-setting-input" in css.data
+    assert b".scene-setting-input:hover:not(:disabled)" in css.data
+    assert b".scene-word-apply:focus-visible" in css.data
+    assert b".scene-duration-input" in css.data
+    assert b".scene-duration-adjustments" in css.data
+    assert b".scene-text-input[aria-invalid=\"true\"]" in css.data
+    assert "$('scene-text-input')?.setAttribute('aria-invalid', 'true')" in html
+    assert b".scene-row.active-scene" in css.data
+    assert b".scene-text-input" in css.data and b"overflow-wrap:anywhere" in css.data
+    assert b"@media (max-width:520px)" in css.data
+
+
 def test_app_uses_writable_temp_output_when_project_output_is_read_only():
     class ReadOnlyOutputConfig(TestConfig):
         OUTPUT_FOLDER = "/proc/quran-reels-unwritable"
@@ -235,17 +268,212 @@ def test_font_catalog_lists_bundled_arabic_font_families():
     assert response.json["default"] == "naskh"
 
 
-def test_scene_plan_endpoint_splits_long_ayah_and_marks_estimated_phrase_timing():
+def test_scene_plan_endpoint_groups_by_word_count_without_inventing_times():
     from app.quran_data import get_ayahs
+    ayah = get_ayahs(2, 282, 282)[0]
     response = create_app().test_client().post("/api/scenes/plan", json={
-        "ayahs": [get_ayahs(2, 282, 282)[0]], "ayah_start": 282,
+        "ayahs": [ayah], "ayah_start": 282, "words_per_scene": 7,
         "aspect_ratio": "9:16", "wrap_width": 85, "max_lines": 4,
         "font_id": "naskh", "show_surah_title": True,
     })
     assert response.status_code == 200, response.json
     assert response.json["count"] > 1
     assert response.json["approximate_timing"] is True
-    assert "no word-level" in response.json["timing_note"]
+    scenes = response.json["scenes"]
+    assert all(scene["word_count"] <= 7 for scene in scenes)
+    assert all(scene["timing_mode"] == "word_timing_pending" for scene in scenes)
+    assert all(scene["duration"] is None and scene["start_time"] is None for scene in scenes)
+    assert "word-length estimate" in response.json["timing_note"]
+    assert "".join(ayah.split()) == "".join("".join(scene["text"].split()) for scene in scenes)
+
+
+def test_scene_plan_restores_saved_ayah_edits_across_narrowed_range():
+    client = create_app(TestConfig).test_client()
+    ayahs = [
+        "أَوَّلٌ",
+        "ثَانٍ ثَالِثٌ رَابِعٌ خَامِسٌ",
+        "سَادِسٌ",
+        "سَابِعٌ ثَامِنٌ تَاسِعٌ عَاشِرٌ",
+        "حَادِيَ عَشَرَ",
+    ]
+    edits = [
+        {"ayah_number":2, "source_text":ayahs[1], "scenes":[
+            {"ayah_number":2, "scene_id":"ayah-2-first", "text":"ثَانٍ ثَالِثٌ", "locked":False, "manual_duration":2.75},
+            {"ayah_number":2, "scene_id":"ayah-2-rest", "text":"رَابِعٌ خَامِسٌ", "locked":False, "manual_duration":1.25},
+        ]},
+        {"ayah_number":4, "source_text":ayahs[3], "scenes":[
+            {"ayah_number":4, "scene_id":"ayah-4-first", "text":"سَابِعٌ ثَامِنٌ", "locked":True},
+            {"ayah_number":4, "scene_id":"ayah-4-rest", "text":"تَاسِعٌ عَاشِرٌ", "locked":False},
+        ]},
+    ]
+    full_payload = {"ayahs":ayahs, "ayah_start":1, "words_per_scene":30, "scene_edits":edits}
+    full = client.post("/api/scenes/plan", json=full_payload)
+    assert full.status_code == 200, full.json
+    assert [row["text"] for row in full.json["scenes"] if row["ayah_number"] == 2] == [
+        "ثَانٍ ثَالِثٌ", "رَابِعٌ خَامِسٌ",
+    ]
+    assert [row["manual_duration"] for row in full.json["scenes"] if row["ayah_number"] == 2] == [2.75, 1.25]
+    assert [row["text"] for row in full.json["scenes"] if row["ayah_number"] == 4] == [
+        "سَابِعٌ ثَامِنٌ", "تَاسِعٌ عَاشِرٌ",
+    ]
+
+    narrowed = client.post("/api/scenes/plan", json={
+        **full_payload, "ayahs":ayahs[:3],
+    })
+    assert narrowed.status_code == 200, narrowed.json
+    assert all(row["ayah_number"] <= 3 for row in narrowed.json["scenes"])
+    assert [row["text"] for row in narrowed.json["scenes"] if row["ayah_number"] == 2] == [
+        "ثَانٍ ثَالِثٌ", "رَابِعٌ خَامِسٌ",
+    ]
+    assert [row["manual_duration"] for row in narrowed.json["scenes"] if row["ayah_number"] == 2] == [2.75, 1.25]
+
+    expanded = client.post("/api/scenes/plan", json=full_payload)
+    assert expanded.status_code == 200, expanded.json
+    assert [row["text"] for row in expanded.json["scenes"] if row["ayah_number"] == 4] == [
+        "سَابِعٌ ثَامِنٌ", "تَاسِعٌ عَاشِرٌ",
+    ]
+    assert [row["manual_duration"] for row in expanded.json["scenes"] if row["ayah_number"] == 2] == [2.75, 1.25]
+    assert [row["locked"] for row in expanded.json["scenes"] if row["ayah_number"] == 4] == [True, False]
+
+    shifted_start = client.post("/api/scenes/plan", json={
+        **full_payload, "ayah_start":3, "ayahs":ayahs[2:],
+    })
+    assert shifted_start.status_code == 200, shifted_start.json
+    assert all(row["ayah_number"] >= 3 for row in shifted_start.json["scenes"])
+    assert [row["text"] for row in shifted_start.json["scenes"] if row["ayah_number"] == 4] == [
+        "سَابِعٌ ثَامِنٌ", "تَاسِعٌ عَاشِرٌ",
+    ]
+
+    default_groups = {}
+    for row in expanded.json["default_scenes"]:
+        default_groups.setdefault(row["ayah_number"], []).append(row)
+    defaults_for_reset_range = [
+        {"ayah_number":number, "source_text":ayahs[number - 1], "scenes":rows}
+        for number, rows in default_groups.items() if number <= 3
+    ]
+    reset_range = client.post("/api/scenes/plan", json={
+        **full_payload, "ayahs":ayahs[:3], "scene_defaults":defaults_for_reset_range,
+        "scene_edits":[],
+    })
+    assert reset_range.status_code == 200, reset_range.json
+    assert [row["text"] for row in reset_range.json["scenes"] if row["ayah_number"] == 2] == [ayahs[1]]
+    assert all(row["ayah_number"] <= 3 for row in reset_range.json["scenes"])
+
+    after_reset_expansion = client.post("/api/scenes/plan", json={
+        **full_payload, "scene_edits":[edits[1]],
+    })
+    assert after_reset_expansion.status_code == 200, after_reset_expansion.json
+    assert [row["text"] for row in after_reset_expansion.json["scenes"] if row["ayah_number"] == 2] == [ayahs[1]]
+    assert [row["text"] for row in after_reset_expansion.json["scenes"] if row["ayah_number"] == 4] == [
+        "سَابِعٌ ثَامِنٌ", "تَاسِعٌ عَاشِرٌ",
+    ]
+
+
+def test_scene_plan_endpoint_validates_words_per_scene():
+    response = create_app().test_client().post("/api/scenes/plan", json={
+        "ayahs": ["بِسْمِ اللَّهِ"], "words_per_scene": 31,
+    })
+    assert response.status_code == 400
+    assert "between 1 and 30" in response.json["error"]
+
+
+def test_scene_redistribution_endpoint_updates_adjacent_word_groups():
+    from app import create_app
+    ayahs = ["أَوَّلٌ ثَانٍ ثَالِثٌ رَابِعٌ", "خَامِسٌ سَادِسٌ"]
+    response = create_app().test_client().post("/api/scenes/redistribute", json={
+        "ayah_start":1, "ayahs":ayahs, "scene_index":0, "word_count":3,
+        "scenes":[
+            {"ayah_number":1,"text":"أَوَّلٌ ثَانٍ"},
+            {"ayah_number":1,"text":"ثَالِثٌ رَابِعٌ"},
+            {"ayah_number":2,"text":ayahs[1]},
+        ],
+    })
+    assert response.status_code == 200, response.json
+    assert [row["text"] for row in response.json["scenes"]] == [
+        "أَوَّلٌ ثَانٍ ثَالِثٌ", "رَابِعٌ", ayahs[1],
+    ]
+    assert response.json["max_words"] == 4
+
+
+def test_scene_redistribution_keeps_timing_only_for_unchanged_scenes():
+    ayahs = ["أَوَّلٌ ثَانٍ ثَالِثٌ رَابِعٌ", "خَامِسٌ سَادِسٌ"]
+    response = create_app().test_client().post("/api/scenes/redistribute", json={
+        "ayah_start":1, "ayahs":ayahs, "scene_index":0, "word_count":3,
+        "scenes":[
+            {"scene_id":"first", "ayah_number":1, "text":"أَوَّلٌ ثَانٍ", "manual_duration":1.2},
+            {"scene_id":"second", "ayah_number":1, "text":"ثَالِثٌ رَابِعٌ", "manual_duration":1.4},
+            {"scene_id":"other-ayah", "ayah_number":2, "text":ayahs[1], "manual_duration":.9},
+        ],
+    })
+    assert response.status_code == 200, response.json
+    rows = response.json["scenes"]
+    assert [row.get("manual_duration") for row in rows] == [None, None, .9]
+
+
+def test_scene_redistribution_rejects_zero_word_count():
+    response = create_app().test_client().post("/api/scenes/redistribute", json={
+        "ayah_start":1, "ayahs":["أَوَّلٌ ثَانٍ"], "scene_index":0,
+        "word_count":0, "scenes":[{"ayah_number":1,"text":"أَوَّلٌ ثَانٍ"}],
+    })
+    assert response.status_code == 400
+    assert "at least one" in response.json["error"]
+
+
+def test_scene_redistribution_endpoint_preserves_existing_merge_action():
+    ayahs = ["أَوَّلٌ ثَانٍ ثَالِثٌ رَابِعٌ", "خَامِسٌ سَادِسٌ"]
+    response = create_app().test_client().post("/api/scenes/redistribute", json={
+        "action":"merge_previous", "ayah_start":1, "ayahs":ayahs,
+        "scene_index":1,
+        "scenes":[
+            {"ayah_number":1,"text":"أَوَّلٌ ثَانٍ"},
+            {"ayah_number":1,"text":"ثَالِثٌ رَابِعٌ"},
+            {"ayah_number":2,"text":ayahs[1]},
+        ],
+    })
+    assert response.status_code == 200, response.json
+    assert [scene["text"] for scene in response.json["scenes"]] == ayahs
+    assert response.json["selected_scene_index"] == 0
+
+
+def test_scene_redistribution_endpoint_splits_selected_scene_by_requested_word_count():
+    ayah = "كَلِمَة١ كَلِمَة٢ كَلِمَة٣ كَلِمَة٤ كَلِمَة٥ كَلِمَة٦ كَلِمَة٧ كَلِمَة٨ كَلِمَة٩ كَلِمَة١٠ كَلِمَة١١ كَلِمَة١٢"
+    response = create_app().test_client().post("/api/scenes/redistribute", json={
+        "action":"split_by_word_count", "ayah_start":7, "ayahs":[ayah],
+        "scene_index":0, "words_per_scene":4,
+        "scenes":[{"ayah_number":7,"text":ayah}],
+    })
+    assert response.status_code == 200, response.json
+    assert response.json["word_counts"] == [4,4,4]
+    assert [len(row["text"].split()) for row in response.json["scenes"]] == [4,4,4]
+    assert "".join(ayah.split()) == "".join("".join(row["text"].split()) for row in response.json["scenes"])
+
+
+def test_scene_redistribution_endpoint_supports_locks_and_exact_text_edits():
+    ayah = "أَوَّلٌ ثَانٍ ثَالِثٌ رَابِعٌ"
+    scenes = [
+        {"scene_id":"opening","ayah_number":1,"text":"أَوَّلٌ ثَانٍ"},
+        {"scene_id":"closing","ayah_number":1,"text":"ثَالِثٌ رَابِعٌ"},
+    ]
+    client = create_app(TestConfig).test_client()
+    locked = client.post("/api/scenes/redistribute", json={
+        "action":"set_lock", "ayah_start":1, "ayahs":[ayah], "scenes":scenes,
+        "scene_index":1, "locked":True,
+    })
+    assert locked.status_code == 200, locked.json
+    assert locked.json["locked"] is True
+    assert locked.json["scenes"][1]["scene_id"] == "closing"
+    edited = client.post("/api/scenes/redistribute", json={
+        "action":"edit_text", "ayah_start":1, "ayahs":[ayah], "scenes":scenes,
+        "scene_index":0, "text":"أَوَّلٌ ثَانٍ ثَالِثٌ",
+    })
+    assert edited.status_code == 200, edited.json
+    assert [scene["text"] for scene in edited.json["scenes"]] == ["أَوَّلٌ ثَانٍ ثَالِثٌ", "رَابِعٌ"]
+    invalid = client.post("/api/scenes/redistribute", json={
+        "action":"edit_text", "ayah_start":1, "ayahs":[ayah], "scenes":scenes,
+        "scene_index":0, "text":"ثَانٍ أَوَّلٌ",
+    })
+    assert invalid.status_code == 400
+    assert "exact next words" in invalid.json["error"]
 
 
 def test_caption_preview_returns_pillow_caption_for_selected_video_template():
@@ -313,6 +541,78 @@ def test_timing_endpoint_returns_selected_ayah_sequence(monkeypatch):
         {"ayah": 13, "start": 1.2, "end": 3.2},
         {"ayah": 14, "start": 3.4, "end": 5.8},
     ]
+    assert response.json["audio_start"] == pytest.approx(1.2)
+    assert response.json["audio_end"] == pytest.approx(5.8)
+    assert response.json["audio_duration"] == pytest.approx(4.6)
+    assert response.json["audio_url"].startswith("/api/reciters/mishary_alafasy/audio-preview?")
+
+
+def test_timing_endpoint_includes_word_timestamps_from_matching_recitation(monkeypatch):
+    import app.routes as routes
+    monkeypatch.setattr(routes, "get_chapter_word_timing", lambda *args: {
+        "audio_url": "https://audio.example/chapter.mp3",
+        "ayahs": [{"ayah":13, "start_time":1200, "end_time":3200, "segments":[
+            {"index":0,"start_ms":1400,"end_ms":1750},
+            {"index":1,"start_ms":1900,"end_ms":2250},
+        ]}],
+    })
+    response = create_app(TestConfig).test_client().get(
+        "/api/reciters/mishary_alafasy/timings?surah=55&start=13&end=13"
+    )
+    assert response.status_code == 200, response.json
+    assert response.json["audio_url"].startswith("/api/reciters/mishary_alafasy/audio-preview?")
+    assert response.json["audio_start"] == pytest.approx(1.2)
+    assert response.json["audio_end"] == pytest.approx(3.2)
+    assert response.json["timing_source"] == "quran_foundation_word"
+    assert response.json["timings"][0]["words"] == [
+        {"index":0,"start":.2,"end":.55},
+        {"index":1,"start":.7,"end":1.05},
+    ]
+
+
+def test_recitation_preview_endpoint_serves_only_selected_ayah_audio(tmp_path, monkeypatch):
+    import wave
+    import numpy as np
+    import app.routes as routes
+
+    sample_rate = 44100
+    time_axis = np.arange(int(sample_rate * 3.5), dtype=np.float64) / sample_rate
+    samples = np.zeros_like(time_axis)
+    for start, end, frequency in ((.5, 1.5, 220), (1.5, 2.5, 440), (2.5, 3.5, 880)):
+        active = (time_axis >= start) & (time_axis < end)
+        samples[active] = .35 * np.sin(2 * np.pi * frequency * time_axis[active])
+    source_path = tmp_path / "chapter-with-next-ayah.wav"
+    with wave.open(str(source_path), "wb") as audio_file:
+        audio_file.setnchannels(1)
+        audio_file.setsampwidth(2)
+        audio_file.setframerate(sample_rate)
+        audio_file.writeframes((samples * 32767).astype("int16").tobytes())
+    monkeypatch.setattr(routes, "download_recitation", lambda *_args, **_kwargs: SimpleNamespace(
+        path=source_path, start=.5, end=2.5,
+    ))
+    app = create_app(TestConfig)
+    app.config["AUDIO_PREVIEW_FOLDER"] = tmp_path / "preview-cache"
+
+    response = app.test_client().get(
+        "/api/reciters/mishary_alafasy/audio-preview?surah=18&start=29&end=30"
+    )
+
+    assert response.status_code == 200
+    assert response.mimetype == "audio/wav"
+    from io import BytesIO
+    with wave.open(BytesIO(response.data), "rb") as audio_file:
+        assert audio_file.getframerate() == 48000
+        assert audio_file.getnframes() == 2 * 48000
+        interleaved = np.frombuffer(audio_file.readframes(audio_file.getnframes()), dtype="<i2").astype(float)
+        selected = interleaved.reshape(-1, audio_file.getnchannels()).mean(axis=1) / 32768
+    first = selected[int(.2 * 48000):int(.4 * 48000)]
+    second = selected[int(1.6 * 48000):int(1.8 * 48000)]
+    assert np.sqrt(np.mean(first ** 2)) > .15
+    assert np.sqrt(np.mean(second ** 2)) > .15
+    first_reference = np.sin(2 * np.pi * 220 * (np.arange(len(first)) / 48000 + .7))
+    second_reference = np.sin(2 * np.pi * 440 * (np.arange(len(second)) / 48000 + 2.1))
+    assert np.corrcoef(first_reference, first)[0, 1] > .98
+    assert np.corrcoef(second_reference, second)[0, 1] > .98
 
 
 def test_generate_rejects_invalid_range_before_audio_fetch():
@@ -400,7 +700,8 @@ def test_generate_success_uses_local_ayah_text_and_selected_qari(monkeypatch, tm
         captured.update(kwargs)
         Path(kwargs["output_path"]).write_bytes(b"complete-mp4" * 200)
         return {"path": str(kwargs["output_path"]), "duration": 4.16, "width": 1080,
-                "height": 1920, "has_audio": True, "scene_count": 1}
+                "height": 1920, "has_audio": True, "scene_count": 2,
+                "phrase_timing_mode":"weighted_estimate", "phrase_timing_approximate":True}
 
     monkeypatch.setattr(routes, "download_recitation", lambda *args, **kwargs: SimpleNamespace(
         path=track_path, start=1.0, end=5.16, ayah_durations=[4.16]))
@@ -411,9 +712,18 @@ def test_generate_success_uses_local_ayah_text_and_selected_qari(monkeypatch, tm
         OUTPUT_FOLDER = tmp_path / "outputs"
 
     client = create_app(Config).test_client()
+    from app.quran_data import get_ayahs
+    ayah = get_ayahs(55, 13, 13)[0]
+    words = ayah.split()
+    midpoint = len(words) // 2
+    scene_overrides = [
+        {"scene_id":"first-half","ayah_number":13,"text":" ".join(words[:midpoint]),"locked":True},
+        {"scene_id":"second-half","ayah_number":13,"text":" ".join(words[midpoint:]),"locked":False},
+    ]
     response = client.post("/api/generate", json={
         "surah": 55, "ayah_start": 13, "ayah_end": 13,
         "reciter_id": "mishary_alafasy", "aspect_ratio": "9:16", "theme": "desert_dawn"
+        , "scene_overrides": scene_overrides
         , "caption_color": "gold", "wrap_width": 75,
         "show_quran_text": False, "viewer_title_enabled": False,
         "viewer_title_icon_enabled": False, "show_translation": True,
@@ -435,6 +745,10 @@ def test_generate_success_uses_local_ayah_text_and_selected_qari(monkeypatch, tm
     assert result["has_audio"] is True
     assert result["reciter"] == "Mishary Rashid Alafasy"
     assert result["theme"] == "desert_dawn"
+    assert result["phrase_timing_mode"] == "weighted_estimate"
+    assert result["phrase_timing_approximate"] is True
+    assert "approximate" in result["timing_note"]
+    assert captured["scene_overrides"] == scene_overrides
     assert "تُكَذِّبَانِ" in captured["ayahs"][0]
     assert captured["audio_start"] == 1.0
     assert captured["theme"] == "desert_dawn"

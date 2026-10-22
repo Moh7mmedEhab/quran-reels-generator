@@ -1,6 +1,6 @@
-# Quran Reels & Shorts Generator
+# Quran Reels Generator v1.0
 
-A light-theme Flask studio for rendering the complete Quran in Arabic with a choice of 20 qaris. MoviePy creates MP4 output at 9:16, 16:9, or 1:1, with a gentle Ken Burns zoom and optional crossfades. PIL renders Arabic captions after right-to-left shaping and bidirectional text processing. Twenty generated wallpapers, sixteen caption colors, and four long-ayah wrap widths are included; users can also upload a still image.
+Release 1.0.0 of a light-theme Flask studio for rendering the complete Quran in Arabic with a choice of 20 qaris. MoviePy creates MP4 output at 9:16, 16:9, or 1:1, with optional camera movement and crossfades. PIL renders Arabic captions with right-to-left shaping and bidirectional text processing. The app includes twenty wallpapers, sixteen caption colors, and four long-ayah wrap widths; users can upload image or video backgrounds.
 
 ## Run locally
 
@@ -32,13 +32,39 @@ The renderer uses one background worker by default so concurrent exports do
 not exhaust memory. Keep the output directory on persistent storage and apply
 the retention and access controls required by your deployment.
 
-The renderer uses `static/assets/NotoNaskhArabic-Regular.ttf`. Uthmani Arabic text for all 114 surahs (6,236 ayahs) is included in `static/data/quran_uthmani.json`. The app fetches the chosen qari's chapter recording and verse timing from MP3Quran.net, then advances one ayah at a time at its recitation boundary. This requires an internet connection. A live preview can audition the selected range and update the displayed ayah with the recitation. You can upload a custom wallpaper; audio always comes from the selected qari. The selected surah and ayah range must match the number of Arabic text lines entered when you edit the captions.
+The renderer uses `static/assets/NotoNaskhArabic-Regular.ttf`. Uthmani Arabic text for all 114 surahs (6,236 ayahs) is included in `static/data/quran_uthmani.json`. The app fetches the chosen qari's chapter recording and verse timing from MP3Quran.net, then advances one ayah at a time at its recitation boundary. This requires an internet connection. A live preview can audition the selected range and update the displayed ayah with the recitation. The Image and Video background tabs include twenty still wallpapers and three silent MP4 loops generated locally from the already credited bundled photos; users can also upload image or video backgrounds. Source background audio is off unless enabled. The selected surah and ayah range must match the number of Arabic text lines entered when you edit the captions.
 
-Generated MP4s are saved in `static/outputs/` and downloaded through the app. Treat this folder as user data when deploying; add retention and access controls appropriate to your deployment.
+For optional word-synchronized phrase scenes, configure Quran Foundation Content API credentials and a matched chapter-reciter ID map:
+
+    export QURAN_FOUNDATION_CLIENT_ID="your-client-id"
+    export QURAN_FOUNDATION_CLIENT_SECRET="your-client-secret"
+    export QURAN_REELS_QF_RECITER_MAP='{"mishary_alafasy":123}'
+
+The map must use Quran Foundation chapter-reciter IDs for the matching selected reciter. Credentials remain server-side. The integration checks canonical Uthmani words and segment counts against the local Quran text; missing, invalid, or mismatched timings fall back to ayah-level timing and are reported. As an optional local fallback, install WhisperX and set `QURAN_REELS_FORCE_ALIGN=1`. The Arabic CTC aligner maps times against a normalized copy of the known Quran words and keeps the original text for display. It uses CUDA when available; set `QURAN_REELS_WHISPERX_DEVICE=cpu` or `cuda` to choose explicitly, and `QURAN_REELS_WHISPERX_MODEL` to override WhisperX's Arabic alignment model. WhisperX and its model weights are not part of the default requirements because they add a large PyTorch/model download. If the local aligner is absent, fails, omits words, or reports low confidence, complete ayahs use ayah-level timing. An edited multi-scene ayah export is rejected with an actionable message instead of silently replacing the user's segments with the full ayah. Custom caption text disables word alignment because it cannot be safely mapped to canonical word indexes.
+
+The scene editor groups captions by a configurable word count and submits those exact displayed scenes as the render source of truth. Split, merge, and per-scene word-count edits preserve the original Quran words. Every exported phrase boundary follows validated word timestamps from the selected recitation. If those timestamps are unavailable, an unsplit ayah uses its ayah timing, while an edited multi-scene ayah export is refused rather than showing the wrong full-ayah caption or guessing phrase durations.
+
+Generated MP4s are saved in `static/outputs/` and downloaded through the app. Downloads use the editable video title as their sanitized filename. Treat this folder as user data when deploying; add retention and access controls appropriate to your deployment.
 
 ## HTTP API
 
-`GET /api/surahs` returns all surah metadata, `GET /api/verses?surah=55&start=13&end=14` returns Arabic text, `GET /api/reciters` returns the 20-reciter catalog, and `GET /api/backgrounds` lists the presets. `GET /api/backgrounds/<theme>/preview?ratio=9:16` returns the wallpaper crop used by export. `GET /api/reciters/<id>/timings?surah=55&start=13&end=14` returns synchronized ayah boundaries. `POST /api/generate` accepts multipart form data (`surah`, `ayah_start`, `ayah_end`, `reciter_id`, `aspect_ratio`, `theme`, `transition`, `caption_style`, `caption_color`, `wrap_width`, `speed`, plus optional `ayah_text` and `background`). Successful renders return a JSON object with dimensions, duration, audio presence, and `download_url`.
+GET /api/version returns the application version. GET /api/youtube-metadata?surah=55&start=13&end=14&reciter_id=mishary_alafasy returns editable Arabic and English YouTube titles, descriptions, tags, and hashtags. GET /api/reciters/<id>/timings returns ayah boundaries and validated word segments when the optional Quran Foundation setup is active. POST /api/generate accepts multipart form data, including an optional video_title and encoder. Renders are asynchronous: poll /api/jobs/<job_id> and download from its download_url.
+
+NVENC encodes H.264 exports when the Quadro is selected or detected by auto. MoviePy scene composition still runs on the CPU. Auto mode falls back to x264 if NVIDIA encoding fails.
+
+To force an export through NVIDIA NVENC from a terminal, submit a render job and poll its returned job ID:
+
+```bash
+curl -sS -X POST 'http://127.0.0.1:5000/api/generate' \
+  -F 'encoder=nvidia' -F 'surah=55' -F 'ayah_start=13' -F 'ayah_end=13'
+curl -sS 'http://127.0.0.1:5000/api/jobs/<job_id>'
+```
+
+Replace port `5000` with the port used by your running server, then replace `<job_id>` with the ID returned by the first request. `encoder=nvidia` fails with a capability error if NVENC is unavailable; `encoder=auto` tries NVIDIA and falls back to CPU x264.
+
+Bundled video loops can be rebuilt from the credited local stills with `python scripts/build_background_video_templates.py`; the script uses the installed FFmpeg and does not access the network.
+
+The original API endpoint overview remains accurate for Quran text, reciter catalogs, wallpaper previews, and render form fields. The asynchronous job lifecycle, optional word-timing fields, metadata endpoint, encoder selection, and title-based downloads are described above.
 
 ## Tests
 

@@ -11,6 +11,10 @@ IMAGE_ANIMATION_PRESETS = {
                       "zoom": (1.08, 1.08), "pan_x": (1.0, 0.0), "pan_y": (.5, .5)},
     "slow_pan_right": {"name": "Slow pan right", "description": "A gentle horizontal camera move.",
                        "zoom": (1.08, 1.08), "pan_x": (0.0, 1.0), "pan_y": (.5, .5)},
+    "slow_pan_top_to_bottom": {"name": "Move top to bottom", "description": "A gentle vertical drift.",
+                               "zoom": (1.08, 1.08), "pan_x": (.5, .5), "pan_y": (1.0, 0.0)},
+    "slow_pan_bottom_to_top": {"name": "Move bottom to top", "description": "A gentle vertical drift.",
+                               "zoom": (1.08, 1.08), "pan_x": (.5, .5), "pan_y": (0.0, 1.0)},
     "gentle_movement": {"name": "Gentle movement", "description": "A restrained zoom with a small diagonal drift.",
                         "zoom": (1.025, 1.06), "pan_x": (.42, .58), "pan_y": (.58, .42)},
     "floating_camera": {"name": "Floating camera", "description": "A slow, subtle floating movement.",
@@ -18,6 +22,23 @@ IMAGE_ANIMATION_PRESETS = {
     "parallax_depth": {"name": "Parallax depth", "description": "A slow forward move with a mild vertical shift.",
                        "zoom": (1.04, 1.105), "pan_x": (.44, .56), "pan_y": (.62, .38)},
 }
+
+MOTION_DIRECTIONS = {
+    "static": "static",
+    "left_to_right": "slow_pan_left",
+    "right_to_left": "slow_pan_right",
+    "top_to_bottom": "slow_pan_top_to_bottom",
+    "bottom_to_top": "slow_pan_bottom_to_top",
+}
+
+
+def resolve_motion_preset(direction, preset_id):
+    """Return the active preset for an explicit direction or legacy preset UI."""
+    if direction == "preset":
+        return preset_id
+    if direction not in MOTION_DIRECTIONS:
+        raise ValueError("Choose static, a supported movement direction, or the saved preset.")
+    return MOTION_DIRECTIONS[direction]
 
 
 def image_motion_values(preset_id, progress, intensity=1.0):
