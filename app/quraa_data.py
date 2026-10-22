@@ -2,11 +2,17 @@
 
 SOURCE = "MP3Quran.net"
 SOURCE_CATALOG_URL = "https://www.mp3quran.net/eng/api/"
+TIMING_API_URL = "https://www.mp3quran.net/eng/timing-api"
 ALL_SURAHS = tuple(range(1, 115))
+ISLAM_SOBHI_QUD_SURAHS = (*range(1, 4), 5, 6, 8, *range(10, 37), 38,
+                          *range(41, 45), *range(46, 65), *range(66, 115))
+QUD_TIMING_SOURCE = "Qur'anic Universal Audio v3.2.0"
+QUD_TIMING_SOURCE_URL = "https://github.com/QUD-Technologies/quranic-universal-audio/releases/tag/v3.2.0"
 
 
 def _record(record_id, reciter_id, name, recording_name, reading_style, riwayah,
-            read_id, audio_base_url, *, available_surahs=ALL_SURAHS):
+            read_id, audio_base_url, *, available_surahs=ALL_SURAHS,
+            timing_slug=None, timing_source=SOURCE, timing_source_url=TIMING_API_URL):
     """Keep each audio recording paired with its timing API read ID."""
     return {
         "id": record_id,
@@ -21,6 +27,10 @@ def _record(record_id, reciter_id, name, recording_name, reading_style, riwayah,
         "available_surahs": len(available_surahs),
         "source": SOURCE,
         "source_url": SOURCE_CATALOG_URL,
+        "timing_provider": "qud" if timing_slug else "mp3quran",
+        "timing_slug": timing_slug,
+        "timing_source": timing_source,
+        "timing_source_url": timing_source_url,
     }
 
 
@@ -34,9 +44,11 @@ RECITERS = [
     _record("abdul_basit_mujawwad", "abdul_basit", "Abdul Basit Abd us-Samad",
             "Almusshaf Al Mojawwad - Almusshaf Al Mojawwad", "Mujawwad", None, 51,
             "https://cdn.mp3quran.net/audio/abdulbasit-abdulsamad/r1/"),
-    _record("minshawi", "minshawi", "Muhammad Siddiq Al-Minshawi",
+    _record("minshawi", "minshawi", "Mohamed Siddiq Al-Minshawi",
             "Rewayat Hafs A'n Assem - Murattal", "Murattal", "Hafs 'an Asim", 112,
-            "https://cdn.mp3quran.net/audio/muhammad-minshawi/r1/"),
+            "https://server10.mp3quran.net/minsh/",
+            timing_slug="mohammed_siddiq_al_minshawi_mp3quran",
+            timing_source=QUD_TIMING_SOURCE, timing_source_url=QUD_TIMING_SOURCE_URL),
     _record("husary", "husary", "Mahmoud Khalil Al-Husary",
             "Rewayat Hafs A'n Assem - Murattal", "Murattal", "Hafs 'an Asim", 118,
             "https://cdn.mp3quran.net/audio/mahmoud-husary/r1/"),
@@ -100,6 +112,17 @@ RECITERS = [
     _record("ahmed_ajmi", "ahmed_ajmi", "Ahmed Al-Ajmi",
             "Rewayat Hafs A'n Assem - Murattal", "Murattal", "Hafs 'an Asim", 5,
             "https://cdn.mp3quran.net/audio/ahmad-ajmi/r1/"),
+    _record("minshawi_mujawwad", "minshawi", "Mohamed Siddiq Al-Minshawi",
+            "Almusshaf Al Mojawwad - Almusshaf Al Mojawwad", "Mujawwad", "Hafs 'an Asim", None,
+            "https://server10.mp3quran.net/minsh/Almusshaf-Al-Mojawwad/",
+            timing_slug="mohammed_siddiq_al_minshawi_mujawwad_mp3quran",
+            timing_source=QUD_TIMING_SOURCE, timing_source_url=QUD_TIMING_SOURCE_URL),
+    _record("islam_sobhi", "islam_sobhi", "Islam Sobhi",
+            "Rewayat Hafs A'n Assem - Murattal", "Murattal", "Hafs 'an Asim", 253,
+            "https://server14.mp3quran.net/islam/Rewayat-Hafs-A-n-Assem/",
+            available_surahs=ISLAM_SOBHI_QUD_SURAHS,
+            timing_slug="islam_sobhi_mp3quran",
+            timing_source=QUD_TIMING_SOURCE, timing_source_url=QUD_TIMING_SOURCE_URL),
 ]
 
 RECITERS_BY_ID = {reciter["id"]: reciter for reciter in RECITERS}

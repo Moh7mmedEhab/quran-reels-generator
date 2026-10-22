@@ -17,7 +17,7 @@ class ImageConfig:
     RENDER_JOBS_INLINE = True
 
 
-def test_image_page_has_only_prompt_and_format_inputs_and_handles_missing_comfyui(monkeypatch, tmp_path):
+def test_image_page_offers_api_and_keyless_pollinations_and_has_simple_prompt_controls(monkeypatch, tmp_path):
     monkeypatch.delenv("COMFYUI_BASE_URL", raising=False)
     monkeypatch.setattr(urllib.request, "urlopen", lambda *args, **kwargs: (_ for _ in ()).throw(
         urllib.error.URLError("not running")))
@@ -28,13 +28,12 @@ def test_image_page_has_only_prompt_and_format_inputs_and_handles_missing_comfyu
     assert b'id="prompt"' in image_page.data
     assert b'name="ratio"' in image_page.data
     assert image_page.data.count(b'name="provider"') == 2
-    assert b'value="comfyui" checked' in image_page.data
+    assert b'value="comfyui"' not in image_page.data
     assert b'value="pollinations"' in image_page.data
-    assert b'name="pollinations-mode"' in image_page.data
-    assert b'value="keyless" checked' in image_page.data
-    assert b'value="api"' in image_page.data
+    assert b'value="pollinations_legacy" checked' in image_page.data
+    assert b'name="pollinations-mode"' not in image_page.data
     assert b'id="pollinations-model"' in image_page.data
-    assert b'No API key' in image_page.data
+    assert b'without an API key' in image_page.data
     assert b'id="style"' not in image_page.data
     assert b'id="lighting"' not in image_page.data
     assert b'id="quran"' not in image_page.data
@@ -47,7 +46,7 @@ def test_image_page_has_only_prompt_and_format_inputs_and_handles_missing_comfyu
     assert b"AI generated backgrounds" in client.get("/").data
     missing = client.post("/api/images/generate", json={"prompt":"a quiet lake"})
     assert missing.status_code == 503
-    assert "Start ComfyUI" in missing.json["error"]
+    assert "classic no-key service" in missing.json["error"]
     assert client.post("/api/images/generate", json={"prompt":"", "ratio":"9:16"}).status_code == 400
 
 
@@ -71,7 +70,7 @@ def test_comfyui_http_error_is_actionable(monkeypatch, tmp_path):
     monkeypatch.setenv("COMFYUI_BASE_URL", "http://comfyui.invalid")
     monkeypatch.setattr(urllib.request,"urlopen",lambda *args,**kwargs:(_ for _ in ()).throw(
         urllib.error.HTTPError("http://comfyui.invalid/prompt",400,"bad workflow","",None)))
-    response=create_app(ImageConfig).test_client().post("/api/images/generate",json={"prompt":"a sky"})
+    response=create_app(ImageConfig).test_client().post("/api/images/generate",json={"prompt":"a sky", "provider":"comfyui"})
     assert response.status_code==502
     assert "checkpoint" in response.json["error"]
 
@@ -217,9 +216,11 @@ def test_comfyui_rejection_does_not_save_an_image(monkeypatch, tmp_path):
     class Response:
         def __enter__(self): return self
         def __exit__(self,*args): return False
-        def read(self): return json.dumps({"node_errors":{"1": {"errors": []}}}).encode()
+        def read(self, size=-1):
+            body = json.dumps({"node_errors":{"1": {"errors": []}}}).encode()
+            return body if size < 0 else body[:size]
     monkeypatch.setattr(urllib.request,"urlopen",lambda *args,**kwargs:Response())
-    response=create_app(ImageConfig).test_client().post("/api/images/generate",json={"prompt":"a sky"})
+    response=create_app(ImageConfig).test_client().post("/api/images/generate",json={"prompt":"a sky", "provider":"comfyui"})
     assert response.status_code==502
     assert "checkpoint" in response.json["error"]
     assert not (tmp_path/"generated-images").exists()
@@ -293,7 +294,7 @@ def test_comfyui_image_is_validated_saved_and_uses_expected_dimensions(monkeypat
         raise AssertionError(req.full_url)
     monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
     client = create_app(ImageConfig).test_client()
-    generated = client.post("/api/images/generate", json={"prompt":"quiet sea","ratio":ratio})
+    generated = client.post("/api/images/generate", json={"prompt":"quiet sea","ratio":ratio,"provider":"comfyui"})
     assert generated.status_code == 200
     metadata = generated.json
     assert (metadata["width"], metadata["height"], metadata["mime_type"]) == (*dimensions, "image/png")

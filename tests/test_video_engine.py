@@ -10,7 +10,7 @@ def test_full_quran_catalog_and_local_text():
     assert len(SURAHS) == 114
     assert sum(item["ayah_count"] for item in SURAHS) == 6236
     assert len(get_ayahs(55, 13, 13)) == 1
-    assert len(RECITERS) == 25
+    assert len(RECITERS) == 27
 
 
 def test_all_aspect_ratio_dimensions():
@@ -291,6 +291,25 @@ def test_independent_label_templates_render_separately_from_the_verse_panel():
     assert caption.width < 1080 and caption.height < 1920
 
 
+def test_long_translation_wraps_beneath_arabic_and_stays_inside_caption_safe_height():
+    from app.video_engine import render_caption_image
+
+    ayah = "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ"
+    canvas = (240, 426)
+    arabic_only = render_caption_image(ayah, aspect_ratio="9:16", output_size=canvas)
+    combined = render_caption_image(
+        ayah, aspect_ratio="9:16", output_size=canvas,
+        translation_text="A source translation with a long sentence that wraps cleanly across lines. " * 4,
+        translation_options={"translation_font": "serif", "translation_size": .026,
+                             "translation_align": "left", "translation_wrap_width": .55,
+                             "translation_credit": "Saheeh International · AlQuranCloud"},
+        max_height_ratio=.5,
+    )
+    assert combined.width <= canvas[0]
+    assert combined.height <= canvas[1] * .5
+    assert combined.height > arabic_only.height
+
+
 def test_export_includes_optional_viewer_layers_and_timeline_progress(tmp_path):
     from moviepy import VideoFileClip
 
@@ -315,6 +334,70 @@ def test_export_includes_optional_viewer_layers_and_timeline_progress(tmp_path):
         progress_y = int(426 * .976) + 2
         assert late[progress_y, 200, 0] > late[progress_y, 200, 1]
         assert early[progress_y, 200, 1] >= early[progress_y, 200, 0]
+    finally:
+        exported.close()
+
+
+def test_translation_stays_under_its_ayah_on_last_split_scene_and_export_audio_is_cropped(tmp_path, monkeypatch):
+    import math
+    import struct
+    import wave
+    from app import video_engine
+    from moviepy import VideoFileClip
+
+    source_rate = 44100
+    source_samples = []
+    for index in range(source_rate * 3):
+        seconds = index / source_rate
+        frequency = 440 if .5 <= seconds < 1.5 else 880 if 1.5 <= seconds < 2.5 else 220
+        source_samples.append(int(9000 * math.sin(2 * math.pi * frequency * seconds)))
+    audio_path = tmp_path / "timing-source.wav"
+    with wave.open(str(audio_path), "wb") as source:
+        source.setnchannels(1)
+        source.setsampwidth(2)
+        source.setframerate(source_rate)
+        source.writeframes(struct.pack(f"<{len(source_samples)}h", *source_samples))
+
+    arabic = "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ"
+    word_times = [[
+        {"start": .1, "end": .35}, {"start": .5, "end": .75},
+        {"start": 1.0, "end": 1.25}, {"start": 1.5, "end": 1.75},
+    ]]
+    rendered_translations = []
+    original_caption_renderer = video_engine.render_caption_image
+
+    def record_translation(*args, **kwargs):
+        rendered_translations.append(kwargs.get("translation_text", ""))
+        return original_caption_renderer(*args, **kwargs)
+
+    monkeypatch.setattr(video_engine, "render_caption_image", record_translation)
+    output_path = tmp_path / "translation-split.mp4"
+    metadata = video_engine.render_reel(
+        ayahs=[arabic], output_path=output_path, aspect_ratio="9:16",
+        output_size=(240, 426), fps=24, quality="fast", encoder="cpu",
+        audio_path=audio_path, audio_start=.5, audio_end=2.5,
+        ayah_durations=[2], word_timings=word_times, ayah_start=13,
+        words_per_scene=2, translation_lines=["The verified English translation."],
+        viewer_options={"show_viewer_title": False, "show_translation": True,
+                       "show_waveform": False, "show_reciter_badge": False,
+                       "show_progress": False},
+    )
+    assert rendered_translations == ["", "The verified English translation."]
+    assert metadata["duration"] == pytest.approx(2)
+    assert metadata["scene_count"] == 2
+
+    exported = VideoFileClip(str(output_path))
+    try:
+        assert exported.duration == pytest.approx(2, abs=.08)
+        assert exported.audio is not None
+        samples = exported.audio.to_soundarray(fps=source_rate).mean(axis=1)
+        assert len(samples) / source_rate == pytest.approx(2, abs=.08)
+        first = samples[int(.15 * source_rate):int(.4 * source_rate)]
+        last = samples[int(1.6 * source_rate):int(1.85 * source_rate)]
+        first_frequency = np.fft.rfftfreq(len(first), 1 / source_rate)[np.argmax(np.abs(np.fft.rfft(first)))]
+        last_frequency = np.fft.rfftfreq(len(last), 1 / source_rate)[np.argmax(np.abs(np.fft.rfft(last)))]
+        assert first_frequency == pytest.approx(440, abs=15)
+        assert last_frequency == pytest.approx(880, abs=15)
     finally:
         exported.close()
 

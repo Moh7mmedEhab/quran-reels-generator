@@ -1,6 +1,6 @@
-# Quran Reels Generator v1.2
+# Quran Reels Generator v1.3
 
-Release 1.2.0 of a light-theme Flask studio for rendering the complete Quran in Arabic with 20 reciters and 25 timed recordings. MoviePy creates MP4 output at 9:16, 16:9, or 1:1, with optional camera movement and crossfades. PIL renders Arabic captions with right-to-left shaping and bidirectional text processing. The app includes twenty-three wallpapers, sixteen caption colors, and four long-ayah wrap widths; users can upload image or video backgrounds or securely import a public image URL.
+Release 1.3.0 of a light-theme Flask studio for rendering the complete Quran in Arabic with 21 reciter profiles and 27 recordings. MoviePy creates MP4 output at 9:16, 16:9, or 1:1, with optional camera movement and crossfades. PIL renders Arabic captions with right-to-left shaping and bidirectional text processing. Optional Saheeh International English translations can be shown beneath each ayah. The app includes twenty-three wallpapers, sixteen caption colors, and four long-ayah wrap widths; users can upload image or video backgrounds or securely import a public image URL.
 
 ## Run locally
 
@@ -24,42 +24,27 @@ The local launcher keeps Flask's debugger and reloader off by default. Set
 application as `run:app`; for a Linux deployment, set a stable, private
 `QURAN_REELS_SECRET_KEY` and run it behind a TLS-terminating reverse proxy:
 
-## Local image generation with ComfyUI
+## Image generation
 
-Image generation uses a ComfyUI server on the same machine by default. Install
-ComfyUI, place a compatible checkpoint in `ComfyUI/models/checkpoints`, start
-its server on port `8188`, then set these values in the project `.env` file (or
-the server environment):
+The AI Image Generator offers two Pollinations methods. **Pollinations API**
+uses the current `gen.pollinations.ai` endpoint and requires a server-side key
+from [enter.pollinations.ai](https://enter.pollinations.ai), configured as
+`POLLINATIONS_API_KEY` in `.env`. It loads the live image-model catalog; costs
+depend on the selected model and the key's budget. The key stays on the server.
 
-```dotenv
-COMFYUI_BASE_URL=http://127.0.0.1:8188
-COMFYUI_CHECKPOINT=Realistic_Vision_V6.0_NV_B1_fp16.safetensors
-COMFYUI_TIMEOUT_SECONDS=300
-```
+**Pollinations Classic · no API key** uses Pollinations' Free API Classic image
+endpoint (`image.pollinations.ai`) with its default Flux model. It needs no
+Pollinations key or account; availability and rate limits depend on that free
+service. This path is selected by default so image generation works without
+configuring a key.
 
-The image generator has two main choices: local ComfyUI, which does not use an
-image-service API, or Pollinations online. Pollinations online has a no-key
-classic option and a separate authenticated API option. The classic
-`image.pollinations.ai` option does not require an API key, but it is maintained
-separately and its availability or model list may change. For the current
-`gen.pollinations.ai` API, get a
-server-side key from
-[enter.pollinations.ai](https://enter.pollinations.ai);
-set `POLLINATIONS_API_KEY` in `.env`. The model picker loads the live image
-catalog and honors the models allowed by the configured key. Its default model
-is `black-forest-labs/flux.1-schnell`; override it with
-`POLLINATIONS_IMAGE_MODEL`. Pollinations requests spend Pollen according to the
-selected model and key budget. The key is used only by the server and is not
-exposed to the browser.
-
-The checkpoint name must match a file installed in ComfyUI. The default is
-`Realistic_Vision_V6.0_NV_B1_fp16.safetensors`, an SD 1.5 model. The generator
-sends a built-in text-to-image workflow to ComfyUI's HTTP API and creates
-portrait 576×1024, landscape 1024×576, or square 768×768 images. Generated images and
-JSON metadata are saved under `<QURAN_REELS_OUTPUT_FOLDER>/generated-images`
-and can be selected as video backgrounds. Use a persistent output volume in
-deployments where the application filesystem is ephemeral. ComfyUI and the
-chosen model run on your own hardware; generation speed depends on that hardware.
+Both methods use the prompt as entered and support portrait 576×1024, landscape
+1024×576, and square 768×768 formats. Generated image files and JSON metadata
+are saved under `<QURAN_REELS_OUTPUT_FOLDER>/generated-images` and can be
+selected as video backgrounds. Use persistent storage in deployments where
+the application filesystem is ephemeral. The backend still accepts a local
+ComfyUI provider for existing direct integrations; the image page presents the
+two Pollinations choices above.
 
 ```bash
 gunicorn --workers 1 --threads 4 --timeout 600 run:app
@@ -69,7 +54,7 @@ The renderer uses one background worker by default so concurrent exports do
 not exhaust memory. Keep the output directory on persistent storage and apply
 the retention and access controls required by your deployment.
 
-The renderer uses bundled Amiri, Noto Naskh Arabic, Noto Sans Arabic, and Noto Kufi Arabic in regular and bold weights. The font picker includes live samples and a Reset Typography action. Uthmani Arabic text for all 114 surahs (6,236 ayahs) is included in `static/data/quran_uthmani.json`. The app fetches the chosen reciter's chapter recording and verse timing from MP3Quran.net, then advances one ayah at a time at its recitation boundary. This requires an internet connection. Twenty reciters provide 25 distinct timed recordings, grouped by reciter and labeled with the recording style and verified riwayah when available. A live preview can audition the selected range and update the displayed ayah with the recitation. The Image and Video background tabs include twenty-three still wallpapers and three silent MP4 loops generated locally from the credited bundled photos; users can also upload image or video backgrounds. Public JPEG, PNG, and WEBP image URLs can also be imported into a persistent gallery. URL imports reject private and local network destinations, pin DNS-resolved public IPs, recheck every redirect, limit downloads to 25 MB, verify image bytes, and preserve the original image file and detected dimensions. Source background audio is off unless enabled. The selected surah and ayah range must match the number of Arabic text lines entered when you edit the captions.
+The renderer uses bundled Amiri, Noto Naskh Arabic, Noto Sans Arabic, and Noto Kufi Arabic in regular and bold weights. The font picker includes live samples and a Reset Typography action. Uthmani Arabic text for all 114 surahs (6,236 ayahs) is included in `static/data/quran_uthmani.json`. The app fetches the selected reciter's recording and matching ayah timing, then advances each caption at its recitation boundary. Twenty-one reciter profiles provide 27 recordings, grouped by reciter and labeled with their verified style and riwayah. Minshawi Murattal, Minshawi Mujawwad, and Islam Sobhi use pinned QUD v3.2.0 verse timing files paired with their MP3Quran source URLs; selected ayah windows are clipped and stitched so unselected recitation is excluded. The other existing recordings retain their MP3Quran timing lookups. See [the timing data attribution](static/data/recitations/qud-v3.2.0/NOTICE.md). A live preview can audition the selected range and update the displayed ayah with the recitation. English translations are optional, default off, and use Saheeh International through AlQuranCloud with a local chapter cache. The Image and Video background tabs include twenty-three still wallpapers and three silent MP4 loops generated locally from the credited bundled photos; users can also upload image or video backgrounds. Public JPEG, PNG, and WEBP image URLs can also be imported into a persistent gallery. URL imports reject private and local network destinations, pin DNS-resolved public IPs, recheck every redirect, limit downloads to 25 MB, verify image bytes, and preserve the original image file and detected dimensions. Source background audio is off unless enabled. The selected surah and ayah range must match the number of Arabic text lines entered when you edit the captions.
 
 Surah and ayah decorations start disabled in a new studio project. When enabled, each can use a separate font, style, color, opacity, alignment, above/below placement, and X/Y offset. The caption group has its own X/Y position sliders, and each element has a position reset that leaves other settings intact. Position coordinates scale to the selected aspect ratio and resolution. The background color overlay remains disabled by default and starts with black at 0% opacity.
 

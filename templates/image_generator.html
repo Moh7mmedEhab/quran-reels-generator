@@ -20,51 +20,28 @@
   <main class="mx-auto grid max-w-6xl gap-6 p-5 lg:grid-cols-[1fr_1fr]">
     <section class="rounded-2xl border bg-white p-6 shadow-sm">
       <h1 class="text-2xl font-bold">Create a cinematic background</h1>
-      <p class="mt-2 text-sm text-slate-500">Choose a generator, then describe the image you want.</p>
+      <p class="mt-2 text-sm text-slate-500">Choose a generation method, then describe the image you want.</p>
       <fieldset class="mt-6">
-        <legend class="text-sm font-semibold">Image generator</legend>
+        <legend class="text-sm font-semibold">Generation method</legend>
         <div class="mt-2 grid gap-3 sm:grid-cols-2">
           <label class="cursor-pointer rounded-xl border p-4 has-[:checked]:border-blue-600 has-[:checked]:bg-blue-50">
-            <span class="font-semibold"><input type="radio" name="provider" value="comfyui" checked> Local ComfyUI</span>
-            <span class="mt-1 block text-xs text-slate-500">Use your installed model. No Pollinations account or API key is needed.</span>
+            <span class="font-semibold"><input type="radio" name="provider" value="pollinations"> Pollinations API · key required</span>
+            <span class="mt-1 block text-xs text-slate-500">Use a server-side API key and choose from the live model catalog. Charges may apply.</span>
           </label>
           <label class="cursor-pointer rounded-xl border p-4 has-[:checked]:border-blue-600 has-[:checked]:bg-blue-50">
-            <span class="font-semibold"><input type="radio" name="provider" value="pollinations"> Pollinations online</span>
-            <span class="mt-1 block text-xs text-slate-500">Choose the authenticated API or the classic no-key option.</span>
+            <span class="font-semibold"><input type="radio" name="provider" value="pollinations_legacy" checked> Pollinations Classic · no API key</span>
+            <span class="mt-1 block text-xs text-slate-500">Use Pollinations' direct classic image route without an API key.</span>
           </label>
         </div>
       </fieldset>
-      <div id="pollinations-options" class="mt-4 hidden rounded-xl bg-slate-50 p-4">
-        <fieldset>
-          <legend class="text-sm font-semibold">Pollinations access</legend>
-          <div class="mt-2 grid gap-2 sm:grid-cols-2">
-            <label class="cursor-pointer rounded-lg border bg-white p-3 has-[:checked]:border-blue-600 has-[:checked]:bg-blue-50">
-              <span class="text-sm font-semibold"><input type="radio" name="pollinations-mode" value="keyless" checked> No API key</span>
-              <span class="mt-1 block text-xs text-slate-500">Use Pollinations Classic directly. No account key required.</span>
-            </label>
-            <label class="cursor-pointer rounded-lg border bg-white p-3 has-[:checked]:border-blue-600 has-[:checked]:bg-blue-50">
-              <span class="text-sm font-semibold"><input type="radio" name="pollinations-mode" value="api"> API key</span>
-              <span class="mt-1 block text-xs text-slate-500">Uses POLLINATIONS_API_KEY on the server; model costs apply.</span>
-            </label>
-          </div>
-        </fieldset>
-        <div id="pollinations-api-options" class="mt-4 hidden">
-          <label for="pollinations-model" class="block text-sm font-semibold">Pollinations image model</label>
-          <select id="pollinations-model" class="mt-2 w-full rounded-lg border bg-white p-2" disabled>
-            <option>Loading image models…</option>
-          </select>
-          <p id="pollinations-model-info" class="mt-2 text-xs text-slate-500" aria-live="polite"></p>
-        </div>
-        <div id="pollinations-keyless-options" class="mt-4">
-          <label for="pollinations-legacy-model" class="block text-sm font-semibold">Classic model</label>
-          <select id="pollinations-legacy-model" class="mt-2 w-full rounded-lg border bg-white p-2">
-            <option value="flux">Flux · photorealistic</option>
-            <option value="zimage">Z-Image · artistic</option>
-            <option value="klein">Klein · fast</option>
-          </select>
-          <p class="mt-2 text-xs text-slate-500">This no-key service is the classic Pollinations route. Its availability and model list are managed by Pollinations.</p>
-        </div>
+      <div id="pollinations-api-options" class="mt-4 hidden rounded-xl bg-slate-50 p-4">
+        <label for="pollinations-model" class="block text-sm font-semibold">Pollinations image model</label>
+        <select id="pollinations-model" class="mt-2 w-full rounded-lg border bg-white p-2" disabled>
+          <option>Loading image models…</option>
+        </select>
+        <p id="pollinations-model-info" class="mt-2 text-xs text-slate-500" aria-live="polite"></p>
       </div>
+      <p id="pollinations-keyless-info" class="mt-4 hidden rounded-xl bg-slate-50 p-4 text-xs text-slate-600">Uses Pollinations' Free API Classic image endpoint with its default Flux model. No Pollinations API key is sent or required. The free service can have rate limits or availability changes.</p>
       <label for="prompt" class="mt-6 block text-sm font-semibold">Image prompt</label>
       <textarea id="prompt" rows="7" class="mt-2 w-full rounded-xl border p-3" placeholder="Describe exactly what you want to see…">A peaceful photorealistic cinematic background: a serene mountain lake at dawn, soft mist above the water, distant mountain silhouettes, subtle natural blue and warm gold light, realistic water and stone textures, calm uncluttered composition with generous negative space through the center, important subjects near the outer edges, natural colors.</textarea>
       <fieldset class="mt-6">
@@ -112,10 +89,7 @@
     const preview = document.querySelector('#preview');
     const gallery = document.querySelector('#gallery');
     const providerRadios = document.querySelectorAll('[name=provider]');
-    const pollinationsOptions = document.querySelector('#pollinations-options');
-    const pollinationsModeRadios = document.querySelectorAll('[name=pollinations-mode]');
     const pollinationsApiOptions = document.querySelector('#pollinations-api-options');
-    const pollinationsKeylessOptions = document.querySelector('#pollinations-keyless-options');
     const pollinationsModel = document.querySelector('#pollinations-model');
     const pollinationsModelInfo = document.querySelector('#pollinations-model-info');
     let pollinationsModels = [];
@@ -163,17 +137,10 @@
 
     function updateProviderOptions() {
       const selectedProvider = document.querySelector('[name=provider]:checked').value;
-      pollinationsOptions.classList.toggle('hidden', selectedProvider !== 'pollinations');
-      updatePollinationsModeOptions();
-    }
-
-    function updatePollinationsModeOptions() {
-      const selectedMode = document.querySelector('[name=pollinations-mode]:checked').value;
-      pollinationsApiOptions.classList.toggle('hidden', selectedMode !== 'api');
-      pollinationsKeylessOptions.classList.toggle('hidden', selectedMode !== 'keyless');
+      pollinationsApiOptions.classList.toggle('hidden', selectedProvider !== 'pollinations');
+      document.querySelector('#pollinations-keyless-info').classList.toggle('hidden', selectedProvider !== 'pollinations_legacy');
     }
     providerRadios.forEach(radio => radio.addEventListener('change', updateProviderOptions));
-    pollinationsModeRadios.forEach(radio => radio.addEventListener('change', updatePollinationsModeOptions));
     pollinationsModel.addEventListener('change', updatePollinationsModelInfo);
     updateProviderOptions();
     loadPollinationsModels();
@@ -183,19 +150,15 @@
       if (!text) { status.textContent = 'Enter an image prompt first.'; return; }
       const button = document.querySelector('#generate');
       button.disabled = true;
-      const generator = document.querySelector('[name=provider]:checked').value;
-      const pollinationsMode = document.querySelector('[name=pollinations-mode]:checked').value;
-      const provider = generator === 'pollinations'
-        ? (pollinationsMode === 'api' ? 'pollinations' : 'pollinations_legacy')
-        : 'comfyui';
-      const providerLabel = provider === 'pollinations' ? 'Pollinations API' : provider === 'pollinations_legacy' ? 'Pollinations without an API key' : 'Local ComfyUI';
+      const provider = document.querySelector('[name=provider]:checked').value;
+      const providerLabel = provider === 'pollinations' ? 'Pollinations API' : 'Pollinations Classic without an API key';
       status.textContent = 'Generating with ' + providerLabel + '…';
       try {
         const response = await fetch('/api/images/generate', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({prompt: text, ratio: document.querySelector('[name=ratio]:checked').value, provider,
-            model: provider === 'pollinations' ? pollinationsModel.value : provider === 'pollinations_legacy' ? document.querySelector('#pollinations-legacy-model').value : undefined})
+            model: provider === 'pollinations' ? pollinationsModel.value : undefined})
         });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || 'Generation failed.');

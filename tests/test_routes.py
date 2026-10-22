@@ -196,7 +196,7 @@ def test_reel_viewer_presets_define_ten_complete_compositions():
                 "show_reciter_badge", "show_progress", "title_template", "waveform_style",
                 "progress_color", "caption_style", "theme"}
     assert all(required <= preset.keys() for preset in presets.values())
-    assert presets["modern_translation"]["show_translation"] is True
+    assert presets["modern_translation"]["show_translation"] is False
     assert presets["clean_arabic"]["show_reciter_badge"] is False
 
 
@@ -215,13 +215,16 @@ def test_verse_endpoint_rejects_out_of_range_ayah():
 def test_reciter_endpoint_returns_streamable_recordings_with_source_metadata():
     response = create_app(TestConfig).test_client().get("/api/reciters")
     assert response.status_code == 200
-    assert len(response.json["reciters"]) == len(RECITERS) == 25
+    assert len(response.json["reciters"]) == len(RECITERS) == 27
     assert all(item["audio_base_url"].startswith("https://") for item in response.json["reciters"])
     assert all(item["source"] == "MP3Quran.net" for item in response.json["reciters"])
     groups = {}
     for item in response.json["reciters"]:
         groups.setdefault(item["group_id"], []).append(item)
-    assert len(groups["minshawi"]) == 1
+    assert len(groups["minshawi"]) == 2
+    assert len(groups["islam_sobhi"]) == 1
+    assert len(groups["islam_sobhi"][0]["available_surah_numbers"]) == 106
+    assert groups["minshawi"][1]["timing_source"] == "Qur'anic Universal Audio v3.2.0"
     assert len(groups["abdul_basit"]) == 2
     assert len(groups["husary"]) == 5
     assert {item["read_id"] for item in RECITERS if item["group_id"] == "husary"} == {118, 119, 120, 269, 270}
@@ -237,6 +240,24 @@ def test_mujawwad_recording_preview_uses_its_own_audio_archive():
     response = create_app(TestConfig).test_client().get("/api/reciters/abdul_basit_mujawwad/preview?surah=55")
     assert response.status_code == 200
     assert response.json["audio_url"] == "https://cdn.mp3quran.net/audio/abdulbasit-abdulsamad/r1/055.mp3"
+
+
+def test_minshawi_recording_previews_use_qud_paired_mp3quran_urls():
+    client = create_app(TestConfig).test_client()
+    murattal = client.get("/api/reciters/minshawi/preview?surah=55")
+    mujawwad = client.get("/api/reciters/minshawi_mujawwad/preview?surah=55")
+    assert murattal.status_code == mujawwad.status_code == 200
+    assert murattal.json["audio_url"] == "https://server10.mp3quran.net/minsh/055.mp3"
+    assert mujawwad.json["audio_url"] == "https://server10.mp3quran.net/minsh/Almusshaf-Al-Mojawwad/055.mp3"
+
+
+def test_islam_sobhi_missing_recording_is_reported_without_building_a_fake_url():
+    client = create_app(TestConfig).test_client()
+    preview = client.get("/api/reciters/islam_sobhi/preview?surah=4")
+    timings = client.get("/api/reciters/islam_sobhi/timings?surah=4&start=1&end=1")
+    assert preview.status_code == timings.status_code == 404
+    assert "no verified audio" in preview.json["error"]
+    assert "no verified audio" in timings.json["error"]
 
 
 def test_background_endpoint_lists_twenty_three_presets_including_bundled_photos():
@@ -629,6 +650,29 @@ def test_caption_preview_returns_pillow_caption_for_selected_video_template():
     assert image.height > 0
 
 
+def test_caption_preview_passes_optional_translation_and_attribution_to_shared_renderer(monkeypatch):
+    import app.routes as routes
+    from PIL import Image
+
+    captured = {}
+    monkeypatch.setattr(routes, "render_caption_image", lambda _text, **kwargs: (
+        captured.update(kwargs) or Image.new("RGBA", (320, 180), (0, 0, 0, 0))))
+    base = {"text": "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ", "aspect_ratio": "9:16",
+            "translation": "A source-verified English ayah.", "translation_edition": "en.sahih",
+            "show_translation": True, "translation_font": "serif", "translation_align": "left"}
+    response = create_app(TestConfig).test_client().post("/api/caption-preview", json=base)
+    assert response.status_code == 200
+    assert captured["translation_text"] == base["translation"]
+    assert captured["translation_options"]["translation_font"] == "serif"
+    assert captured["translation_options"]["translation_align"] == "left"
+    assert captured["translation_options"]["translation_credit"] == "Saheeh International · AlQuranCloud"
+    assert captured["max_height_ratio"] == .5
+
+    response = create_app(TestConfig).test_client().post("/api/caption-preview", json={**base, "show_translation": False})
+    assert response.status_code == 200
+    assert captured["translation_text"] == ""
+
+
 def test_caption_preview_uses_arabic_only_surah_header_and_number(monkeypatch):
     import app.routes as routes
     from PIL import Image
@@ -703,6 +747,29 @@ def test_timing_endpoint_includes_word_timestamps_from_matching_recitation(monke
         {"index":0,"start":.2,"end":.55},
         {"index":1,"start":.7,"end":1.05},
     ]
+
+
+def test_qud_preview_timings_match_the_stitched_selected_ayah_timeline(monkeypatch):
+    import app.routes as routes
+    monkeypatch.setattr(routes, "get_chapter_word_timing", lambda *_args: pytest.fail(
+        "QUD preview timings must stay paired with their pinned MP3Quran audio."))
+    monkeypatch.setattr(routes, "get_recitation_timings", lambda *_args: [
+        {"ayah": 13, "start_time": 1200, "end_time": 3200},
+        {"ayah": 14, "start_time": 4200, "end_time": 5800},
+    ])
+    response = create_app(TestConfig).test_client().get(
+        "/api/reciters/minshawi/timings?surah=55&start=13&end=14"
+    )
+    assert response.status_code == 200, response.json
+    assert response.json["timing_source"] == "qud_ayah"
+    assert response.json["audio_start"] == 0
+    assert response.json["audio_end"] == pytest.approx(3.6)
+    assert response.json["audio_duration"] == pytest.approx(3.6)
+    assert response.json["timings"] == [
+        {"ayah": 13, "start": 0, "end": 2},
+        {"ayah": 14, "start": 2, "end": 3.6},
+    ]
+    assert "selected canonical ayah clips" in response.json["timing_note"]
 
 
 def test_recitation_preview_endpoint_serves_only_selected_ayah_audio(tmp_path, monkeypatch):
@@ -860,7 +927,7 @@ def test_generate_success_uses_local_ayah_text_and_selected_qari(monkeypatch, tm
         "reciter_id": "mishary_alafasy", "aspect_ratio": "9:16", "theme": "desert_dawn"
         , "scene_overrides": scene_overrides
         , "caption_color": "gold", "wrap_width": 75,
-        "show_quran_text": False, "viewer_title_enabled": False,
+        "show_quran_text": True, "viewer_title_enabled": False,
         "viewer_title_icon_enabled": False, "show_translation": True,
         "viewer_header_surah_enabled": True,
         "viewer_header_surah_language": "both",
@@ -899,7 +966,7 @@ def test_generate_success_uses_local_ayah_text_and_selected_qari(monkeypatch, tm
     assert captured["output_size"] == (1080, 1920)
     assert captured["fps"] == 30
     assert captured["quality"] == "balanced"
-    assert captured["show_quran_text"] is False
+    assert captured["show_quran_text"] is True
     assert captured["viewer_options"]["show_viewer_title"] is False
     assert captured["viewer_options"]["show_title_icon"] is False
     assert captured["viewer_options"]["show_header_surah"] is True

@@ -41,6 +41,11 @@ from .scenes import (build_scene_plan, edit_scene_text, merge_scene_with_previou
 from .media_validation import validate_rendered_output
 from .ffmpeg_encoder import hardware_encoder_status
 from .word_alignment import get_chapter_word_timing
+from .translations import (TRANSLATION_EDITION, TRANSLATION_NAME,
+                           TRANSLATION_SOURCE, TranslationSourceError,
+                           TranslationRequestError,
+                           TranslationSourceUnavailable,
+                           get_translation_range)
 from .design_templates import (AYAH_NUMBER_TEMPLATES, QURAN_TEXT_TEMPLATES,
                                SURAH_NAME_TEMPLATES, TRANSITION_TEMPLATES)
 from .reel_viewer import (REEL_VIEWER_TEMPLATES, render_playback_layer,
@@ -306,6 +311,12 @@ def _viewer_layer_options(data, template=None):
         "show_translation": flag("show_translation", template.get("show_translation", False)),
         "translation_color": data.get("translation_color", template.get("translation_color", "#ffffff")),
         "translation_size": number("translation_size", template.get("translation_size", .026), .02, .036),
+        "translation_font": data.get("translation_font", template.get("translation_font", "sans")),
+        "translation_opacity": number("translation_opacity", template.get("translation_opacity", .96), 0, 1),
+        "translation_line_spacing": number("translation_line_spacing", template.get("translation_line_spacing", 1.35), 1, 2.2),
+        "translation_gap": number("translation_gap", template.get("translation_gap", .012), .003, .05),
+        "translation_align": data.get("translation_align", template.get("translation_align", "center")),
+        "translation_wrap_width": number("translation_wrap_width", template.get("translation_wrap_width", .84), .45, .95),
         "translation_bg_enabled": flag("translation_bg_enabled", template.get("translation_bg_enabled", False)),
         "translation_bg_color": data.get("translation_bg_color", template.get("translation_bg_color", "#10161d")),
         "translation_bg_opacity": number("translation_bg_opacity", template.get("translation_bg_opacity", .4), .1, .9),
@@ -336,6 +347,10 @@ def _viewer_layer_options(data, template=None):
         raise ValueError("Choose English or Arabic for the ayah range.")
     if options["ayah_range_format"] not in {"label", "compact"}:
         raise ValueError("Choose a supported ayah range label format.")
+    if options["translation_font"] not in {"sans", "serif", "noto"}:
+        raise ValueError("Choose a supported English translation font.")
+    if options["translation_align"] not in {"left", "center", "right"}:
+        raise ValueError("English translation alignment must be left, center, or right.")
     if options["waveform_style"] not in {"gold", "white", "glow", "minimal"}:
         raise ValueError("Choose a supported waveform style.")
     if options["waveform_count"] not in {9, 13, 17}:
@@ -762,9 +777,9 @@ def generate_image():
     if ratio not in {"9:16", "16:9", "1:1"}:
         return jsonify(error="Choose a supported aspect ratio."), 400
     prompt = user_prompt
-    provider = payload.get("provider", "comfyui")
+    provider = payload.get("provider", "pollinations_legacy")
     if provider not in {"comfyui", "pollinations", "pollinations_legacy"}:
-        return jsonify(error="Choose ComfyUI or one of the Pollinations options as the image generator."), 400
+        return jsonify(error="Choose one of the Pollinations image-generation options."), 400
     if not _IMAGE_GENERATION_LOCK.acquire(blocking=False):
         return jsonify(error="An image is already being generated. Wait for it to finish before starting another."), 429
     try:
@@ -811,7 +826,7 @@ def generate_image():
         current_app.logger.warning("Image provider %s returned HTTP %s", provider, exc.code)
         if provider in {"pollinations", "pollinations_legacy"}:
             message = ("Pollinations rejected the request. Check the configured model and prompt." if exc.code in (400, 404) else
-                       ("Pollinations' classic no-key service could not complete the request. Try its API-key option or local ComfyUI." if provider == "pollinations_legacy" else
+                       ("Pollinations' classic no-key service could not complete the request. Try its API-key option." if provider == "pollinations_legacy" else
                         "Pollinations could not complete the request. Check the API key, account limits, and try again."))
         else:
             message = ("ComfyUI rejected the workflow. Check its checkpoint and workflow configuration." if exc.code in (400, 404) else
@@ -819,7 +834,7 @@ def generate_image():
         return jsonify(error=message), 502
     except urllib.error.URLError:
         if provider == "pollinations_legacy":
-            return jsonify(error="The Pollinations classic no-key service could not be reached. Try its API-key option or local ComfyUI."), 503
+            return jsonify(error="The Pollinations classic no-key service could not be reached. Try its API-key option."), 503
         if provider in {"pollinations", "pollinations_legacy"}:
             return jsonify(error="Cannot reach Pollinations. Check the server's internet connection and try again."), 503
         return jsonify(error="Cannot reach ComfyUI. Start ComfyUI and check COMFYUI_BASE_URL on the server."), 503
@@ -829,7 +844,7 @@ def generate_image():
         return jsonify(error=str(exc)), 502
     except Exception:
         current_app.logger.exception("Image generation failed for provider %s", provider)
-        message = ("Image generation failed. Try the Pollinations API-key option or local ComfyUI." if provider == "pollinations_legacy" else
+        message = ("Image generation failed. Try the Pollinations API-key option." if provider == "pollinations_legacy" else
                    "Image generation failed. Check the Pollinations configuration and try again." if provider == "pollinations" else
                    "Image generation failed. Check the ComfyUI server and model configuration.")
         return jsonify(error=message), 502
@@ -1256,6 +1271,26 @@ def video_template_preview(template_id):
     return send_file(preview, mimetype="image/jpeg", max_age=86400)
 
 
+@bp.get("/api/translations")
+def translations_for_range():
+    """Return exact, edition-indexed English ayahs from the chapter cache."""
+    try:
+        surah = int(request.args.get("surah", ""))
+        start = int(request.args.get("start", ""))
+        end = int(request.args.get("end", str(start)))
+        edition = request.args.get("edition", TRANSLATION_EDITION)
+        payload = get_translation_range(
+            surah, start, end, Path(current_app.config["OUTPUT_FOLDER"]), edition,
+        )
+    except (TypeError, ValueError) as exc:
+        return jsonify(error=str(exc)), 400
+    except TranslationSourceUnavailable as exc:
+        return jsonify(error=str(exc)), 503
+    except TranslationSourceError as exc:
+        return jsonify(error=str(exc)), 502
+    return jsonify(payload)
+
+
 @bp.post("/api/caption-preview")
 def caption_preview():
     """Rasterize the live caption with the exact renderer used by exported MP4s."""
@@ -1293,8 +1328,18 @@ def caption_preview():
     custom_opts = _caption_options(template, payload)
     try:
         label_options = _label_style_options(payload, font_id)
+        viewer_options = _viewer_layer_options(payload, template)
+        translation_text = str(payload.get("translation", "")).strip()
+        if len(translation_text) > 5000:
+            return jsonify(error="One ayah translation is too long to preview."), 400
+        if translation_text and not viewer_options["show_translation"]:
+            translation_text = ""
+        viewer_options["translation_credit"] = (
+            f"{TRANSLATION_NAME} · {TRANSLATION_SOURCE}"
+            if translation_text and payload.get("translation_edition") == TRANSLATION_EDITION else ""
+        )
         caption_x, caption_y, _caption_position = _caption_position_coordinates(
-            payload, template, has_translation=bool(str(payload.get("translation", "")).strip())
+            payload, template, has_translation=bool(translation_text)
         )
     except ValueError as exc:
         return jsonify(error=str(exc)), 400
@@ -1340,7 +1385,8 @@ def caption_preview():
             ayah_color=payload.get("ayah_color"), surah_scale=surah_scale,
             ayah_number_scale=ayah_number_scale, surah_align=surah_align,
             ayah_number_align=ayah_number_align,
-            max_height_ratio=.36 if str(payload.get("translation", "")).strip() else .44,
+            translation_text=translation_text, translation_options=viewer_options,
+            max_height_ratio=.5 if translation_text else .44,
             output_size=output_size,
             **custom_opts, **label_options,
         )
@@ -1357,7 +1403,8 @@ def list_reciters():
     return jsonify({"reciters": [
         {key: item[key] for key in (
             "id", "group_id", "name", "recording_name", "style", "riwayah",
-            "available_surahs", "source", "source_url", "audio_base_url",
+            "available_surahs", "available_surah_numbers", "source", "source_url",
+            "audio_base_url", "timing_provider", "timing_source", "timing_source_url",
         )}
         for item in RECITERS
     ]})
@@ -1374,7 +1421,13 @@ def preview_reciter(reciter_id):
         return jsonify(error="Surah number must be between 1 and 114."), 400
     if surah not in SURAHS_BY_NUMBER:
         return jsonify(error="Surah number must be between 1 and 114."), 400
-    return jsonify({"audio_url": get_audio_url(reciter, surah), "name": reciter["name"]})
+    if surah not in reciter.get("available_surah_numbers", range(1, 115)):
+        return jsonify(error="This recording has no verified audio for the selected Surah."), 404
+    try:
+        audio_url = get_audio_url(reciter, surah)
+    except AudioSourceError as exc:
+        return jsonify(error=str(exc)), 503
+    return jsonify({"audio_url": audio_url, "name": reciter["name"]})
 
 
 @bp.get("/api/reciters/<reciter_id>/timings")
@@ -1387,7 +1440,10 @@ def preview_reciter_timings(reciter_id):
         start = int(request.args.get("start", "1"))
         end = int(request.args.get("end", str(start)))
         verses = get_ayahs(surah, start, end)
-        word_data = get_chapter_word_timing(reciter_id, surah, start, end, verses)
+        if surah not in reciter.get("available_surah_numbers", range(1, 115)):
+            return jsonify(error="This recording has no verified audio for the selected Surah."), 404
+        word_data = (None if reciter.get("timing_provider") == "qud"
+                     else get_chapter_word_timing(reciter_id, surah, start, end, verses))
         rows = word_data["ayahs"] if word_data else get_recitation_timings(reciter, surah, start, end)
     except (TypeError, ValueError) as exc:
         return jsonify(error=str(exc)), 400
@@ -1399,16 +1455,36 @@ def preview_reciter_timings(reciter_id):
             rows = get_recitation_timings(reciter, surah, start, end)
         except AudioSourceError as exc:
             return jsonify(error=str(exc)), 502
-    durations = []
-    for index, row in enumerate(rows):
-        next_start = rows[index + 1]["start_time"] if index + 1 < len(rows) else row["end_time"]
-        durations.append(max(0.001, (int(next_start) - int(row["start_time"])) / 1000))
+    qud_stitched = not word_data and reciter.get("timing_provider") == "qud"
+    if qud_stitched:
+        # The preview endpoint stitches only selected canonical windows, so
+        # expose timing on that compact timeline rather than chapter offsets.
+        timing_rows = []
+        cursor = 0
+        for row in rows:
+            duration = int(row["end_time"]) - int(row["start_time"])
+            timing_rows.append({"ayah": row["ayah"], "start_time": cursor,
+                                "end_time": cursor + duration})
+            cursor += duration
+        rows = timing_rows
+        audio_start_ms, audio_end_ms = 0, cursor
+        timing_source = "qud_ayah"
+        timing_note = (
+            "Pinned QUD v3.2.0 ayah boundaries matched to this recording. "
+            "The preview contains only the selected canonical ayah clips; "
+            "phrase splits use the labeled ayah-duration fallback."
+        )
+    else:
+        audio_start_ms, audio_end_ms = int(rows[0]["start_time"]), int(rows[-1]["end_time"])
+        timing_source = "quran_foundation_word" if word_data else "mp3quran_ayah"
+        timing_note = ("Validated word timing from Quran Foundation chapter audio."
+                       if word_data else "Ayah boundaries only; full ayahs remain visible during recitation.")
     return jsonify({
         "audio_url": url_for("main.preview_reciter_audio", reciter_id=reciter_id,
                               surah=surah, start=start, end=end),
-        "audio_start": int(rows[0]["start_time"]) / 1000,
-        "audio_end": int(rows[-1]["end_time"]) / 1000,
-        "audio_duration": (int(rows[-1]["end_time"]) - int(rows[0]["start_time"])) / 1000,
+        "audio_start": audio_start_ms / 1000,
+        "audio_end": audio_end_ms / 1000,
+        "audio_duration": (audio_end_ms - audio_start_ms) / 1000,
         "timings": [{"ayah": int(row["ayah"]), "start": int(row["start_time"]) / 1000,
                      "end": int(row["end_time"]) / 1000,
                      **({"words": [
@@ -1417,9 +1493,8 @@ def preview_reciter_timings(reciter_id):
                           "end": (int(word["end_ms"]) - int(row["start_time"])) / 1000}
                          for word in row["segments"]
                      ]} if word_data else {})} for index, row in enumerate(rows)],
-        "timing_source": "quran_foundation_word" if word_data else "mp3quran_ayah",
-        "timing_note": ("Validated word timing from Quran Foundation chapter audio."
-                        if word_data else "Ayah boundaries only; full ayahs remain visible during recitation."),
+        "timing_source": timing_source,
+        "timing_note": timing_note,
     })
 
 
@@ -1434,6 +1509,8 @@ def preview_reciter_audio(reciter_id):
         start = int(request.args.get("start", "1"))
         end = int(request.args.get("end", str(start)))
         verses = get_ayahs(surah, start, end)
+        if surah not in reciter.get("available_surah_numbers", range(1, 115)):
+            return jsonify(error="This recording has no verified audio for the selected Surah."), 404
     except (TypeError, ValueError) as exc:
         return jsonify(error=str(exc)), 400
 
@@ -1565,9 +1642,27 @@ def generate():
         translation_text = str(data.get("translation_text", ""))
         if len(translation_text) > 10000:
             return jsonify(error="Translation text is too long (maximum 10,000 characters)."), 400
-        translation_lines = translation_text.splitlines()
-        if any(line.strip() for line in translation_lines) and len(translation_lines) != len(official_ayahs):
-            return jsonify(error="Enter one translation line per selected ayah, including blank lines where needed."), 400
+        translation_edition = str(data.get("translation_edition", "")).strip()
+        translation_requested = data.get("show_translation", False)
+        if not isinstance(translation_requested, bool):
+            translation_requested = str(translation_requested).lower() in {"true", "1", "yes", "on"}
+        if translation_requested and translation_edition:
+            try:
+                translation_payload = get_translation_range(
+                    surah, ayah_start, ayah_end,
+                    Path(current_app.config["OUTPUT_FOLDER"]), translation_edition,
+                )
+            except TranslationRequestError as exc:
+                return jsonify(error=str(exc)), 400
+            except TranslationSourceUnavailable as exc:
+                return jsonify(error=str(exc)), 503
+            except TranslationSourceError as exc:
+                return jsonify(error=str(exc)), 502
+            translation_lines = [row["text"] for row in translation_payload["ayahs"]]
+        else:
+            translation_lines = translation_text.splitlines()
+            if any(line.strip() for line in translation_lines) and len(translation_lines) != len(official_ayahs):
+                return jsonify(error="Enter one translation line per selected ayah, including blank lines where needed."), 400
 
         template_id = data.get("template_id", DEFAULT_VIDEO_TEMPLATE)
         template = _template_catalog().get(template_id)
@@ -1585,6 +1680,12 @@ def generate():
         show_quran_text = data.get("show_quran_text", True)
         if isinstance(show_quran_text, str):
             show_quran_text = show_quran_text.lower() in ("true", "1", "yes", "on")
+        if viewer_options["show_translation"] and not show_quran_text:
+            return jsonify(error="English translation is shown below Quran text. Enable Show Quran text first."), 400
+        viewer_options["translation_credit"] = (
+            f"{TRANSLATION_NAME} · {TRANSLATION_SOURCE}"
+            if viewer_options["show_translation"] and translation_edition == TRANSLATION_EDITION else ""
+        )
 
         transition = data.get("transition", "crossfade")
         if transition not in {"crossfade", "cut"}:
@@ -1631,7 +1732,7 @@ def generate():
             label_options = _label_style_options(data, font_id)
             caption_x, caption_y, caption_position = _caption_position_coordinates(
                 data, template,
-                has_translation=bool(str(data.get("translation_text", data.get("translation", ""))).strip()),
+                has_translation=bool(viewer_options["show_translation"] and any(line.strip() for line in translation_lines)),
             )
         except ValueError as exc:
             return jsonify(error=str(exc)), 400

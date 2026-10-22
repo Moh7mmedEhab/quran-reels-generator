@@ -68,6 +68,45 @@ def wrap_arabic_lines(text: str, font, max_width: int, stroke_width: int = 0) ->
     return lines
 
 
+def wrap_latin_lines(text: str, font, draw: ImageDraw.ImageDraw, max_width: int) -> list[str]:
+    """Wrap English without changing its words or dropping long text."""
+    lines, current = [], ""
+    for word in str(text).split():
+        candidate = f"{current} {word}".strip()
+        if current and draw.textbbox((0, 0), candidate, font=font)[2] > max_width:
+            lines.append(current)
+            current = word
+        else:
+            current = candidate
+        while current and draw.textbbox((0, 0), current, font=font)[2] > max_width:
+            split_at = max(1, len(current) - 1)
+            while split_at > 1 and draw.textbbox((0, 0), current[:split_at], font=font)[2] > max_width:
+                split_at -= 1
+            lines.append(current[:split_at])
+            current = current[split_at:]
+    if current:
+        lines.append(current)
+    return lines
+
+
+_LATIN_FONTS = {
+    "sans": Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+    "serif": Path("/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf"),
+    "noto": Path(__file__).resolve().parents[1] / "static" / "assets" / "fonts" / "NotoSansArabic-Regular.ttf",
+}
+
+
+def translation_font_path(font_id: str = "sans") -> Path:
+    """Resolve a small, fixed set of Latin fonts without accepting a file path."""
+    selected = _LATIN_FONTS.get(str(font_id or "sans"))
+    fallback = _LATIN_FONTS["noto"]
+    if selected and selected.is_file():
+        return selected
+    if fallback.is_file():
+        return fallback
+    return DEFAULT_FONT
+
+
 def render_arabic_text(text: str, *, font_path=None, font_size=72, color=(255,255,255,255),
                        max_width=1400, max_height=None, padding=28, padding_x=None, padding_y=None,
                        stroke_width=2, stroke_fill=(0,0,0,220), backdrop_fill=(0,0,0,145), corner_radius=24,
@@ -77,7 +116,13 @@ def render_arabic_text(text: str, *, font_path=None, font_size=72, color=(255,25
                        surah_font_path=None, ayah_number_font_path=None,
                        surah_position_x=0, surah_position_y=0,
                        ayah_number_position_x=0, ayah_number_position_y=0,
-                       output_size=None) -> Image.Image:
+                       output_size=None, translation_text="", translation_font="sans",
+                       translation_font_size=None, translation_color="#ffffff",
+                       translation_opacity=1.0, translation_line_spacing=1.35,
+                       translation_gap=18, translation_align="center",
+                       translation_max_width=None, translation_bg_enabled=False,
+                       translation_bg_color="#10161d", translation_bg_opacity=.4,
+                       translation_credit="") -> Image.Image:
     """Return a readable RGBA Arabic caption with custom styling, contrast plate, and optional Surah header."""
     shape_arabic(text)  # Fail early with a clear message if shaping dependencies are unavailable.
     chosen_font = Path(font_path) if font_path else DEFAULT_FONT
@@ -93,6 +138,29 @@ def render_arabic_text(text: str, *, font_path=None, font_size=72, color=(255,25
 
     pad_x = padding if padding_x is None else int(padding_x)
     pad_y = padding if padding_y is None else int(padding_y)
+    translation_text = str(translation_text or "").strip()
+    if translation_align not in {"left", "center", "right"}:
+        raise ValueError("English translation alignment must be left, center, or right.")
+    try:
+        translation_opacity = max(0.0, min(1.0, float(translation_opacity)))
+        translation_bg_opacity = max(0.0, min(1.0, float(translation_bg_opacity)))
+        translation_line_spacing = max(1.0, min(2.2, float(translation_line_spacing)))
+        translation_gap = max(0, min(240, int(translation_gap)))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("English translation layout values must be valid numbers.") from exc
+    try:
+        translation_rgb = ImageColor.getrgb(translation_color)
+        translation_bg_rgb = ImageColor.getrgb(translation_bg_color)
+    except (ValueError, TypeError) as exc:
+        raise ValueError("English translation colors must be valid colors.") from exc
+    translation_fill = (*translation_rgb[:3], round(255 * translation_opacity))
+    translation_bg_fill = (*translation_bg_rgb[:3], round(255 * translation_bg_opacity))
+    translation_credit = str(translation_credit or "").strip()[:100]
+    base_translation_size = max(6, int(translation_font_size or round(font_size * .34)))
+    translation_wrap_width = max(1, int(translation_max_width or max_width))
+    translation_path = translation_font_path(translation_font)
+    if not translation_path.is_file():
+        raise FileNotFoundError(f"English translation font not found: {translation_path}")
 
     from .design_templates import AYAH_NUMBER_TEMPLATES, SURAH_NAME_TEMPLATES
 
@@ -157,10 +225,43 @@ def render_arabic_text(text: str, *, font_path=None, font_size=72, color=(255,25
         def labels_height(items):
             return sum(item["height"] + 8 + (6 if item["style"].get("accent_line") else 0) for item in items)
         before_height, after_height = labels_height(before_items), labels_height(after_items)
-        total_content_w = max(content_width, header_max_w)
-        total_h = verse_height + before_height + after_height + pad_y * 2
+        translation_layout = None
+        translation_width = 0
+        translation_height = 0
+        if translation_text:
+            scaled_translation_size = max(6, round(base_translation_size * size / max(1, int(font_size))))
+            translation_font_obj = _load_font(translation_path, scaled_translation_size)
+            translation_lines = wrap_latin_lines(
+                translation_text, translation_font_obj, draw, translation_wrap_width,
+            )
+            translation_boxes = [draw.textbbox((0, 0), item, font=translation_font_obj)
+                                 for item in translation_lines]
+            translation_line_height = max(
+                scaled_translation_size + 2,
+                round(scaled_translation_size * translation_line_spacing),
+                max((box[3] - box[1] for box in translation_boxes), default=scaled_translation_size),
+            )
+            credit_font_obj = _load_font(
+                translation_path, max(6, round(scaled_translation_size * .68)),
+            ) if translation_credit else None
+            credit_box = draw.textbbox((0, 0), translation_credit, font=credit_font_obj) if credit_font_obj else None
+            translation_width = max(
+                max((box[2] - box[0] for box in translation_boxes), default=0),
+                (credit_box[2] - credit_box[0]) if credit_box else 0,
+            )
+            translation_height = len(translation_lines) * translation_line_height
+            if credit_box:
+                translation_height += max(4, round(scaled_translation_size * .25)) + (credit_box[3] - credit_box[1])
+            translation_layout = {
+                "font": translation_font_obj, "lines": translation_lines,
+                "boxes": translation_boxes, "line_height": translation_line_height,
+                "credit_font": credit_font_obj, "credit_box": credit_box,
+            }
+        total_content_w = max(content_width, header_max_w, translation_width)
+        total_h = (verse_height + before_height + after_height + pad_y * 2
+                   + (translation_gap + translation_height if translation_layout else 0))
         return (font, shaped, boxes, line_height, content_width, total_content_w, verse_height,
-                before_items, after_items, before_height, after_height, total_h)
+                before_items, after_items, before_height, after_height, translation_layout, total_h)
 
     # Keep even very long ayat inside the video safe area by reducing type size
     # gradually while retaining word boundaries and the user's selected wrap width.
@@ -169,9 +270,16 @@ def render_arabic_text(text: str, *, font_path=None, font_size=72, color=(255,25
     while max_height and layout_result[-1] > max_height and current_size > 26:
         current_size -= 2
         layout_result = layout(current_size)
+    # A very long English rendering can remain taller than the safe area after
+    # the Arabic reaches its minimum size. Reduce only the subordinate English
+    # type in that edge case so the complete combined block remains in frame.
+    while max_height and translation_text and layout_result[-1] > max_height and base_translation_size > 6:
+        base_translation_size -= 1
+        layout_result = layout(current_size)
 
     (font, shaped_lines, boxes, line_height, content_width,
-     total_w, verse_h, before_items, after_items, before_h, after_h, height) = layout_result
+     total_w, verse_h, before_items, after_items, before_h, after_h,
+     translation_layout, height) = layout_result
     width = total_w + pad_x * 2
     frame_width, frame_height = output_size or (width, height)
     for item in (*before_items, *after_items):
@@ -311,4 +419,53 @@ def render_arabic_text(text: str, *, font_path=None, font_size=72, color=(255,25
     curr_y += verse_h
     for item in after_items:
         curr_y = draw_label(item, curr_y)
+    if translation_layout:
+        translation_font_obj = translation_layout["font"]
+        translation_lines = translation_layout["lines"]
+        translation_boxes = translation_layout["boxes"]
+        translation_y = curr_y + translation_gap + pad_top
+        line_positions = []
+        line_padding = max(3, round(translation_font_obj.size * .32))
+        content_left = pad_left + pad_x
+        content_right = width - pad_right - pad_x
+        available_width = max(1, min(translation_wrap_width, content_right - content_left))
+        for index, (line, box) in enumerate(zip(translation_lines, translation_boxes)):
+            line_width = box[2] - box[0]
+            if translation_align == "left":
+                line_x = content_left - box[0]
+            elif translation_align == "right":
+                line_x = content_right - line_width - box[0]
+            else:
+                line_x = content_left + (available_width - line_width) // 2 - box[0]
+            line_y = translation_y + index * translation_layout["line_height"] - box[1]
+            line_positions.append((line, line_x, line_y, box))
+        if translation_bg_enabled and translation_bg_fill[3]:
+            for _line, line_x, line_y, box in line_positions:
+                draw.rounded_rectangle(
+                    (line_x + box[0] - line_padding, line_y + box[1] - line_padding,
+                     line_x + box[2] + line_padding, line_y + box[3] + line_padding),
+                    radius=max(3, line_padding // 2), fill=translation_bg_fill,
+                )
+        text_shadow = (0, 0, 0, round(160 * translation_opacity))
+        for line, line_x, line_y, _box in line_positions:
+            draw.text((line_x + 1, line_y + 2), line, font=translation_font_obj,
+                      fill=text_shadow)
+            draw.text((line_x, line_y), line, font=translation_font_obj,
+                      fill=translation_fill)
+        credit_font_obj = translation_layout["credit_font"]
+        credit_box = translation_layout["credit_box"]
+        if credit_font_obj and credit_box:
+            credit_y = translation_y + len(translation_lines) * translation_layout["line_height"] + max(
+                4, round(translation_font_obj.size * .25),
+            )
+            credit_width = credit_box[2] - credit_box[0]
+            if translation_align == "left":
+                credit_x = content_left - credit_box[0]
+            elif translation_align == "right":
+                credit_x = content_right - credit_width - credit_box[0]
+            else:
+                credit_x = content_left + (available_width - credit_width) // 2 - credit_box[0]
+            draw.text((credit_x, credit_y - credit_box[1]), translation_credit,
+                      font=credit_font_obj,
+                      fill=(*translation_rgb[:3], round(210 * translation_opacity)))
     return image

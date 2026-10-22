@@ -576,14 +576,21 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
 <details class="rounded-xl border border-gray-200 bg-white p-3" id="translation-controls">
 <summary class="cursor-pointer text-[11px] font-semibold text-gray-700">English Translation · Optional</summary>
 <div class="mt-3 grid grid-cols-2 gap-3">
-<label class="col-span-2 flex items-center gap-2 text-[11px] text-gray-700"><input id="show-translation" type="checkbox"> Show supplied translation</label>
-<label class="col-span-2 flex flex-col gap-1 text-[10px] text-gray-600">One translation per selected ayah, in range order<textarea id="translation-text" rows="3" dir="auto" placeholder="Translations are not included. Add your chosen translation here, one ayah per line." class="rounded-lg border border-gray-200 bg-white px-2 py-2 text-xs font-normal"></textarea></label>
+<label class="col-span-2 flex items-center gap-2 text-[11px] text-gray-700"><input id="show-translation" type="checkbox"> Add English Translation · Saheeh International</label>
+<p class="col-span-2 text-[10px] leading-relaxed text-gray-500">Exact English edition from AlQuranCloud, cached by Surah. Translation text stays directly below Arabic in the same caption. Its edition credit appears under the translation.</p>
+<p id="translation-status" class="col-span-2 text-[10px] text-gray-500" role="status" aria-live="polite">Translation is off.</p>
+<label class="col-span-2 flex flex-col gap-1 text-[10px] text-gray-600">Fetched text · one ayah per line<textarea id="translation-text" rows="3" dir="auto" readonly placeholder="Enable Add English Translation to load the selected ayahs." class="rounded-lg border border-gray-200 bg-slate-50 px-2 py-2 text-xs font-normal"></textarea></label>
 <label class="flex items-center justify-between gap-2 text-[10px] text-gray-600">Text color<input id="translation-color" type="color" value="#ffffff" class="h-7 w-9 rounded border border-gray-200"></label>
 <label class="flex flex-col gap-1 text-[10px] text-gray-600">Text size<input id="translation-size" type="range" min="0.020" max="0.036" step="0.001" value="0.026"></label>
+<label class="flex items-center justify-between gap-2 text-[10px] text-gray-600">Font<select id="translation-font" class="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs"><option value="sans">Sans</option><option value="serif">Serif</option><option value="noto">Noto</option></select></label>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Text opacity<input id="translation-opacity" type="range" min="0.35" max="1" step="0.05" value="0.96"></label>
+<label class="flex items-center justify-between gap-2 text-[10px] text-gray-600">Alignment<select id="translation-align" class="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs"><option value="left">Left</option><option value="center" selected>Center</option><option value="right">Right</option></select></label>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Wrap width<input id="translation-wrap-width" type="range" min="0.55" max="0.95" step="0.05" value="0.85"></label>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Line spacing<input id="translation-line-spacing" type="range" min="1.0" max="2.0" step="0.05" value="1.35"></label>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Gap below Arabic<input id="translation-gap" type="range" min="0.004" max="0.03" step="0.002" value="0.012"></label>
 <label class="col-span-2 flex items-center gap-2 text-[10px] text-gray-600"><input id="translation-bg-enabled" type="checkbox"> Add a translucent translation plate</label>
 <label class="flex items-center justify-between gap-2 text-[10px] text-gray-600">Plate color<input id="translation-bg-color" type="color" value="#10161d" class="h-7 w-9 rounded border border-gray-200"></label>
 <label class="flex flex-col gap-1 text-[10px] text-gray-600">Plate opacity<input id="translation-bg-opacity" type="range" min="0.1" max="0.9" step="0.05" value="0.4"></label>
-<p class="col-span-2 text-[10px] leading-relaxed text-gray-500">This build has no licensed translation catalog; only text you enter is shown or exported.</p>
 </div>
 </details>
 <details class="rounded-xl border border-gray-200 bg-white p-3" id="waveform-controls">
@@ -742,7 +749,6 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
 </div>
 <img id="preview-ayah-text" class="caption-preview-overlay" alt="Arabic Ayah caption preview" draggable="false">
 <div class="viewer-title-badge" id="viewer-title-badge"><span class="material-symbols-outlined viewer-title-icon" id="viewer-title-icon" aria-hidden="true">menu_book</span><span class="viewer-title-copy"><span id="viewer-title-name">Surah Ar-Rahmaan</span><span id="viewer-title-surah-arabic" dir="rtl" hidden></span><span class="viewer-title-reference" id="viewer-title-reference"></span><span class="viewer-title-qari" id="viewer-title-qari"></span></span></div>
-<div class="viewer-translation hidden" id="viewer-translation" dir="auto"></div>
 <div class="viewer-waveform" id="viewer-waveform" aria-label="Playback animation, not measured audio amplitude" title="Playback animation · not measured audio amplitude">{% for _ in range(13) %}<span></span>{% endfor %}</div>
 <div class="viewer-reciter-badge" id="viewer-reciter-badge"><span class="material-symbols-outlined" aria-hidden="true">auto_awesome</span><span id="preview-reciter-name">Sheikh Mishary Rashid Alafasy</span></div>
 <div class="viewer-progress-track" id="viewer-progress-track" aria-label="Recitation playback progress"><span id="viewer-progress-fill"></span></div>
@@ -837,6 +843,8 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
   let previewAudioEnd = null;
   let previewAudioDuration = null;
   let previewIndex = 0;
+  const englishTranslationByAyah = new Map();
+  let translationLoadRequest = 0;
   let appliedWordsPerScene = 8;
   let sceneWordEditRequest = 0;
   let sceneWordEditTimer = null;
@@ -887,7 +895,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
   const PROJECT_TEMPLATE_FIELDS = [
     'caption-style','arabic-font','max-lines','words-per-scene','show-surah-title','show-ayah-number',
     'show-quran-text','viewer-title-enabled','viewer-title-icon-enabled','viewer-header-surah-enabled','viewer-header-surah-language','viewer-header-range-enabled','viewer-header-range-language','viewer-header-range-format','viewer-header-qari-enabled','viewer-title-text','viewer-title-template','viewer-title-color','viewer-title-opacity','viewer-title-size','viewer-title-position',
-    'show-translation','translation-text','translation-color','translation-size','translation-bg-enabled','translation-bg-color','translation-bg-opacity','show-waveform','waveform-style','waveform-color','waveform-count','waveform-speed',
+    'show-translation','translation-text','translation-color','translation-size','translation-font','translation-opacity','translation-line-spacing','translation-gap','translation-align','translation-wrap-width','translation-bg-enabled','translation-bg-color','translation-bg-opacity','show-waveform','waveform-style','waveform-color','waveform-count','waveform-speed',
     'show-reciter-badge','reciter-label','reciter-color','reciter-background','reciter-opacity','show-progress','progress-color','progress-track-color','progress-height',
     'surah-name-template','ayah-number-template','surah-color','ayah-color','surah-color-hex','ayah-color-hex',
     'caption-color-picker','caption-color-hex','surah-scale',
@@ -1108,9 +1116,50 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
 
   function activeTranslationText() {
     if (!$('show-translation').checked) return '';
-    const lines = $('translation-text').value.split(/\r?\n/);
-    const index = currentPreviewAyahNumber() - Number(startInput.value || 1);
-    return index >= 0 && index < lines.length ? lines[index].trim() : '';
+    const scene = previewScenes[previewIndex];
+    if (scene && Number(scene.segment_index || 1) < Number(scene.segment_count || 1)) return '';
+    return englishTranslationByAyah.get(`${Number(surahSelect.value)}:${currentPreviewAyahNumber()}`) || '';
+  }
+
+  async function loadEnglishTranslationsForSelection() {
+    if (!$('show-translation').checked) return;
+    const surah = Number(surahSelect.value);
+    const start = Number(startInput.value);
+    const end = Number(endInput.value || startInput.value);
+    if (!Number.isInteger(surah) || !Number.isInteger(start) || !Number.isInteger(end) || start < 1 || end < start) return;
+    const selection = `${surah}:${start}:${end}`;
+    const requestId = ++translationLoadRequest;
+    const cachedLines = [];
+    for (let ayah = start; ayah <= end; ayah++) {
+      const text = englishTranslationByAyah.get(`${surah}:${ayah}`);
+      if (!text) break;
+      cachedLines.push(text);
+    }
+    if (cachedLines.length === end - start + 1) {
+      $('translation-text').value = cachedLines.join('\n');
+      $('translation-status').textContent = `Loaded ${cachedLines.length} ayah${cachedLines.length === 1 ? '' : 's'} from this page's cache · Saheeh International.`;
+      await updateCaptionPreview();
+      return;
+    }
+    $('translation-status').textContent = 'Loading the selected Saheeh International ayahs…';
+    const params = new URLSearchParams({surah:String(surah), start:String(start), end:String(end), edition:'en.sahih'});
+    try {
+      const response = await fetch('/api/translations?' + params);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Could not load the English translation.');
+      if (requestId !== translationLoadRequest || selection !== `${Number(surahSelect.value)}:${Number(startInput.value)}:${Number(endInput.value || startInput.value)}` || !$('show-translation').checked) return;
+      for (const row of data.ayahs || []) englishTranslationByAyah.set(`${surah}:${Number(row.ayah)}`, row.text);
+      const lines = Array.from({length:end - start + 1}, (_, index) => englishTranslationByAyah.get(`${surah}:${start + index}`) || '');
+      if (lines.some(line => !line)) throw new Error('The translation source did not return the full selected range.');
+      $('translation-text').value = lines.join('\n');
+      $('translation-status').textContent = `Loaded ${lines.length} ayah${lines.length === 1 ? '' : 's'} · ${data.translator || 'Saheeh International'} · ${data.cached ? 'server cache' : 'source fetched and cached'}.`;
+      hideRenderedVideo(); scheduleProjectAutosave();
+      await updateCaptionPreview();
+    } catch (error) {
+      if (requestId !== translationLoadRequest) return;
+      $('translation-status').textContent = error.message;
+      $('translation-status').classList.add('text-amber-700');
+    }
   }
 
   function localizeHeaderDigits(value) {
@@ -1168,17 +1217,6 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     $('viewer-title-icon').hidden = !$('viewer-title-icon-enabled').checked;
     title.style.top = $('viewer-title-position').value === 'upper' ? '10%' : '5.5%';
     title.style.fontSize = `${Math.max(8, frameWidth * Number($('viewer-title-size').value))}px`;
-
-    const translation = $('viewer-translation');
-    const translationText = activeTranslationText();
-    translation.textContent = translationText;
-    translation.classList.toggle('hidden', !translationText);
-    translation.style.color = $('translation-color').value;
-    translation.style.fontSize = `${Math.max(8, frameWidth * Number($('translation-size').value))}px`;
-    translation.style.background = $('translation-bg-enabled').checked
-      ? `color-mix(in srgb, ${$('translation-bg-color').value} ${Math.round(Number($('translation-bg-opacity').value)*100)}%, transparent)` : 'transparent';
-    translation.style.padding = $('translation-bg-enabled').checked ? '.22em .6em' : '0';
-    translation.style.borderRadius = $('translation-bg-enabled').checked ? '.5em' : '0';
 
     const reciterBadge = $('viewer-reciter-badge');
     reciterBadge.hidden = !$('show-reciter-badge').checked;
@@ -1720,6 +1758,22 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
   const recitersByGroupId = new Map();
   let selectedReciterGroupId = '';
 
+  function updateReciterSurahAvailability(reciter) {
+    const available = Array.isArray(reciter.available_surah_numbers)
+      ? new Set(reciter.available_surah_numbers.map(Number)) : null;
+    [...surahSelect.options].forEach(option => {
+      option.disabled = Boolean(available && !available.has(Number(option.value)));
+    });
+    const currentSurah = Number(surahSelect.value);
+    if (!available || available.has(currentSurah)) return false;
+    const firstAvailable = [...available].sort((a, b) => a - b)[0];
+    if (!Number.isInteger(firstAvailable)) return false;
+    surahSelect.value = String(firstAvailable);
+    startInput.value = '1'; endInput.value = '1';
+    updateSurahInfo();
+    return true;
+  }
+
   function updateSelectedReciterView(reciter) {
     if (!reciter) return;
     selectedReciterGroupId = reciter.group_id || reciter.id;
@@ -1727,7 +1781,8 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     $('selected-reciter-name').textContent = reciter.name;
     $('selected-reciter-style').textContent = reciter.style || 'Recording';
     $('selected-reciter-riwayah').textContent = reciter.riwayah || reciter.recording_name || '';
-    $('reciter-source-note').textContent = `Source: ${reciter.source || 'MP3Quran.net'} · ${reciter.available_surahs || 114} surahs · timing matched to this recording`;
+    const timingSource = reciter.timing_source || reciter.source || 'MP3Quran.net';
+    $('reciter-source-note').textContent = `Audio: ${reciter.source || 'MP3Quran.net'} · ${reciter.available_surahs || 114} surahs · timing: ${timingSource}`;
     reciterStyleSelect.replaceChildren();
     recordings.forEach(recording => {
       const option = document.createElement('option');
@@ -1750,11 +1805,13 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     selectedReciter = reciter.id;
     previewAyahTimingRows = []; previewTimings = [];
     playbackSceneText = null;
+    const surahChanged = updateReciterSurahAvailability(reciter);
     updateSelectedReciterView(reciter);
     refreshSceneLabels(); renderSceneTimeline();
     hideRenderedVideo();
     if (refreshAudio) {
-      loadRecitationTimings({quiet:true}).then(() => updateCaptionPreview()).catch(showError);
+      if (surahChanged) scheduleVerseLoad();
+      else loadRecitationTimings({quiet:true}).then(() => updateCaptionPreview()).catch(showError);
     }
   }
 
@@ -2354,7 +2411,19 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
                             surah_y_offset:Number($('surah-y-offset').value),
                             ayah_number_x_offset:Number($('ayah-number-x-offset').value),
                             ayah_number_y_offset:Number($('ayah-number-y-offset').value),
-                            translation:activeTranslationText(),
+                            translation:activeTranslationText(), show_translation:$('show-translation').checked,
+                            translation_edition:$('show-translation').checked ? 'en.sahih' : '',
+                            translation_color:$('translation-color').value,
+                            translation_size:Number($('translation-size').value),
+                            translation_font:$('translation-font').value,
+                            translation_opacity:Number($('translation-opacity').value),
+                            translation_line_spacing:Number($('translation-line-spacing').value),
+                            translation_gap:Number($('translation-gap').value),
+                            translation_align:$('translation-align').value,
+                            translation_wrap_width:Number($('translation-wrap-width').value),
+                            translation_bg_enabled:$('translation-bg-enabled').checked,
+                            translation_bg_color:$('translation-bg-color').value,
+                            translation_bg_opacity:Number($('translation-bg-opacity').value),
                             text_bg_enabled:$('text-bg-enabled').checked,
                             text_bg_color:$('text-bg-color').value,
                             text_bg_opacity:Number($('text-bg-opacity').value),
@@ -2375,7 +2444,6 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
       const sourceSize = currentOutputSize();
       const scale = frameBox.width / sourceSize[0];
       const outputHeight = sourceSize[1], captionHeight = caption.naturalHeight;
-      const hasTranslation = Boolean(activeTranslationText());
       const captionWidth = caption.naturalWidth;
       let minX = Math.trunc(sourceSize[0]*.03), maxX = sourceSize[0]-captionWidth-minX;
       if (maxX < minX) { minX=0; maxX=Math.max(0,sourceSize[0]-captionWidth); }
@@ -2389,11 +2457,6 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
       caption.style.left = `${x*scale}px`;
       caption.style.top = `${y*scale}px`;
       caption.style.display = 'block';
-      if (hasTranslation) {
-        const translation = $('viewer-translation');
-        const captionBottom = y*scale + captionHeight*scale;
-        translation.style.top = `${Math.min(.665, Math.max(.60, captionBottom/frameBox.height + .018))*100}%`;
-      }
       updateViewerLayerPreview();
       if (previousUrl) URL.revokeObjectURL(previousUrl);
     };
@@ -3321,6 +3384,12 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     $('show-translation').checked = Boolean(preset.show_translation);
     $('translation-color').value = preset.translation_color || '#ffffff';
     $('translation-size').value = preset.translation_size || .026;
+    $('translation-font').value = preset.translation_font || 'sans';
+    $('translation-opacity').value = preset.translation_opacity ?? .96;
+    $('translation-line-spacing').value = preset.translation_line_spacing || 1.35;
+    $('translation-gap').value = preset.translation_gap || .012;
+    $('translation-align').value = preset.translation_align || 'center';
+    $('translation-wrap-width').value = preset.translation_wrap_width || .85;
     $('translation-bg-enabled').checked = Boolean(preset.translation_bg_enabled);
     $('translation-bg-color').value = preset.translation_bg_color || '#10161d';
     $('translation-bg-opacity').value = preset.translation_bg_opacity || .4;
@@ -3492,6 +3561,9 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     if (requestId !== verseLoadRequest || selectionKey !== verseSelectionKey()) return previewAyahs;
     paintPreviewAyah(0);
     await loadRecitationTimings({quiet:true}).catch(() => null);
+    if (updateEditor && $('show-translation').checked) {
+      await loadEnglishTranslationsForSelection();
+    }
     return payload.ayahs;
   }
 
@@ -4141,11 +4213,16 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     scenePlanManual = false; updateScenePlan().then(updateCaptionPreview).catch(showError);
   });
   $('show-quran-text').addEventListener('change', () => {
+    if (!$('show-quran-text').checked && $('show-translation').checked) {
+      $('show-translation').checked = false;
+      translationLoadRequest++;
+      $('translation-status').textContent = 'Translation turned off because Quran text is hidden.';
+    }
     updateCaptionPreview().catch(showError); hideRenderedVideo(); scheduleProjectAutosave();
   });
   const viewerLayerControls = [
     'viewer-title-enabled','viewer-title-icon-enabled','viewer-header-surah-enabled','viewer-header-surah-language','viewer-header-range-enabled','viewer-header-range-language','viewer-header-range-format','viewer-header-qari-enabled','viewer-title-text','viewer-title-template','viewer-title-color','viewer-title-opacity','viewer-title-size','viewer-title-position',
-    'show-translation','translation-text','translation-color','translation-size','translation-bg-enabled','translation-bg-color','translation-bg-opacity',
+    'show-translation','translation-text','translation-color','translation-size','translation-font','translation-opacity','translation-line-spacing','translation-gap','translation-align','translation-wrap-width','translation-bg-enabled','translation-bg-color','translation-bg-opacity',
     'show-waveform','waveform-style','waveform-color','waveform-count','waveform-speed',
     'show-reciter-badge','reciter-label','reciter-color','reciter-background','reciter-opacity',
     'show-progress','progress-color','progress-track-color','progress-height',
@@ -4156,6 +4233,29 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
   viewerLayerControls.forEach(id => {
     $(id).addEventListener('input', refreshViewerLayerControls);
     $(id).addEventListener('change', refreshViewerLayerControls);
+  });
+  $('show-translation').addEventListener('change', () => {
+    if ($('show-translation').checked && !$('show-quran-text').checked) {
+      $('show-quran-text').checked = true;
+    }
+    if ($('show-translation').checked) {
+      $('translation-status').classList.remove('text-amber-700');
+      loadEnglishTranslationsForSelection().catch(showError);
+    } else {
+      translationLoadRequest++;
+      $('translation-status').textContent = 'Translation is off. Arabic captions remain unchanged.';
+      updateCaptionPreview().catch(showError);
+      hideRenderedVideo(); scheduleProjectAutosave();
+    }
+  });
+  [surahSelect, startInput, endInput].forEach(element => element.addEventListener('change', () => {
+    if ($('show-translation').checked) loadEnglishTranslationsForSelection().catch(showError);
+  }));
+  ['translation-color','translation-size','translation-font','translation-opacity','translation-line-spacing',
+   'translation-gap','translation-align','translation-wrap-width','translation-bg-enabled',
+   'translation-bg-color','translation-bg-opacity'].forEach(id => {
+    $(id).addEventListener('input', () => updateCaptionPreview().catch(showError));
+    $(id).addEventListener('change', () => updateCaptionPreview().catch(showError));
   });
   document.querySelectorAll('.caption-color-choice').forEach(button => button.addEventListener('click', () => {
     captionColor = button.dataset.color;
@@ -4329,6 +4429,9 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
         'viewer-title-size':'viewer_title_size','viewer-title-position':'viewer_title_position',
         'show-translation':'show_translation','translation-text':'translation_text',
         'translation-color':'translation_color','translation-size':'translation_size',
+        'translation-font':'translation_font','translation-opacity':'translation_opacity',
+        'translation-line-spacing':'translation_line_spacing','translation-gap':'translation_gap',
+        'translation-align':'translation_align','translation-wrap-width':'translation_wrap_width',
         'translation-bg-enabled':'translation_bg_enabled','translation-bg-color':'translation_bg_color','translation-bg-opacity':'translation_bg_opacity',
         'show-waveform':'show_waveform','waveform-style':'waveform_style','waveform-color':'waveform_color',
         'waveform-count':'waveform_count','waveform-speed':'waveform_speed',
@@ -4341,6 +4444,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
         const element = $(id);
         form.set(key, element.type === 'checkbox' ? String(element.checked) : element.value);
       });
+      form.set('translation_edition', $('show-translation').checked ? 'en.sahih' : '');
       form.set('surah_template', $('surah-name-template').value);
       form.set('ayah_number_template', $('ayah-number-template').value);
       form.set('surah_color', $('surah-color').value); form.set('ayah_color', $('ayah-color').value);
@@ -4486,7 +4590,9 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
   $('selected-reciter-name').textContent = reciterById.get(selectedReciter)?.name || 'Mishary Rashid Alafasy';
   updatePreviewReciterName($('selected-reciter-name').textContent);
   $('voice-preview-audio').volume = Number($('preview-volume').value);
-  initializeProjectWorkspace().catch(error => {
+  initializeProjectWorkspace().then(() => {
+    if ($('show-translation').checked) return loadEnglishTranslationsForSelection();
+  }).catch(error => {
     console.error('Could not initialize project workspace:', error);
     setProjectStatus(`Workspace could not initialize: ${error.message}`, true);
     applyVideoTemplate(selectedTemplateId); setWallpaperPreview(); updateSurahInfo();

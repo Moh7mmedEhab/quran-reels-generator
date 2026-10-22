@@ -240,6 +240,7 @@ def render_caption_image(text, *, aspect_ratio, font_path=None, caption_style="c
                          surah_font_path=None, ayah_number_font_path=None,
                          surah_opacity=None, ayah_number_opacity=None,
                          surah_placement=None, ayah_number_placement=None,
+                         translation_text="", translation_options=None,
                          max_height_ratio=.44,
                          output_size=None,
                          **custom_options):
@@ -249,6 +250,7 @@ def render_caption_image(text, *, aspect_ratio, font_path=None, caption_style="c
     if aspect_ratio not in SIZES:
         raise ValueError(f"Unsupported aspect ratio: {aspect_ratio}")
     width, height = output_size or SIZES[aspect_ratio]
+    translation_options = translation_options or {}
     text_color, options = caption_render_options(caption_style, caption_color, **custom_options)
     surah_rgba = _parse_color(surah_color, (235, 205, 110)) + (255,)
     from .design_templates import AYAH_NUMBER_TEMPLATES, SURAH_NAME_TEMPLATES
@@ -290,6 +292,19 @@ def render_caption_image(text, *, aspect_ratio, font_path=None, caption_style="c
         ayah_number_font_path=number_config.get("font_path"),
         surah_position_x=surah_position_x, surah_position_y=surah_position_y,
         ayah_number_position_x=ayah_number_position_x, ayah_number_position_y=ayah_number_position_y,
+        translation_text=translation_text,
+        translation_font=translation_options.get("translation_font", "sans"),
+        translation_font_size=max(6, int(width * float(translation_options.get("translation_size", .022)))),
+        translation_color=translation_options.get("translation_color", "#ffffff"),
+        translation_opacity=translation_options.get("translation_opacity", .96),
+        translation_line_spacing=translation_options.get("translation_line_spacing", 1.35),
+        translation_gap=int(width * float(translation_options.get("translation_gap", .012))),
+        translation_align=translation_options.get("translation_align", "center"),
+        translation_max_width=int(width * float(translation_options.get("translation_wrap_width", .84))),
+        translation_bg_enabled=translation_options.get("translation_bg_enabled", False),
+        translation_bg_color=translation_options.get("translation_bg_color", "#10161d"),
+        translation_bg_opacity=translation_options.get("translation_bg_opacity", .4),
+        translation_credit=translation_options.get("translation_credit", ""),
         output_size=(width, height),
     )
 
@@ -1180,6 +1195,9 @@ def render_reel(*, ayahs, output_path, aspect_ratio="9:16", audio_path=None,
             if scene_start < timeline - .001:
                 raise ValueError("Scene timing overlaps a previous caption interval.")
             translation = translation_for_ayah(translation_lines, current_ayah_num, ayah_start)
+            last_ayah_segment = int(scene.get("segment_index", 1)) >= int(scene.get("segment_count", 1))
+            scene_translation = (translation if last_ayah_segment
+                                 and viewer_options.get("show_translation") and show_quran_text else "")
             scene_caption_y = None
             caption_image = None
             if show_quran_text:
@@ -1193,7 +1211,9 @@ def render_reel(*, ayahs, output_path, aspect_ratio="9:16", audio_path=None,
                     ayah_color=ayah_color, surah_scale=surah_scale,
                     ayah_number_scale=ayah_number_scale, surah_align=surah_align,
                     ayah_number_align=ayah_number_align,
-                    max_height_ratio=.36 if translation and viewer_options.get("show_translation") else .44,
+                    translation_text=scene_translation,
+                    translation_options=viewer_options,
+                    max_height_ratio=.5 if scene_translation else .44,
                     output_size=(width, height), **custom_options,
                 )
                 caption_clip = ImageClip(np.asarray(caption_image))
@@ -1202,7 +1222,7 @@ def render_reel(*, ayahs, output_path, aspect_ratio="9:16", audio_path=None,
                 if transition == "crossfade" and index:
                     fade_in = getattr(vfx, "CrossFadeIn", None) or vfx.FadeIn
                     caption_clip = caption_clip.with_effects([fade_in(min(0.2, verse_duration * 0.15))])
-                anchor = {"upper": 0.34, "center": 0.43 if translation and viewer_options.get("show_translation") else 0.54,
+                anchor = {"upper": 0.34, "center": 0.43 if scene_translation else 0.54,
                           "lower": 0.72}[caption_position]
                 horizontal_center = int(width * caption_x / 100)
                 vertical_center = int(height * (caption_y / 100 if caption_y is not None else anchor))
@@ -1221,14 +1241,13 @@ def render_reel(*, ayahs, output_path, aspect_ratio="9:16", audio_path=None,
                 caption_clips.append(caption_clip)
 
             scene_viewer_options = dict(viewer_options)
-            if translation and viewer_options.get("show_translation") and caption_image is not None and scene_caption_y is not None:
-                scene_viewer_options["translation_y"] = max(
-                    .60, min(.665, scene_caption_y / height + caption_image.height / height + .018)
-                )
+            # English is part of the Arabic caption raster above; never repeat
+            # it in the separate viewer-layer translation panel.
+            scene_viewer_options["show_translation"] = False
             static_image = render_static_layer(
                 (width, height), surah_name=viewer_surah_name or str(surah_title or ""),
                 surah_number=int(viewer_surah_number or 1), ayah_number=current_ayah_num,
-                reciter_name=reciter_name, translation=translation, options=scene_viewer_options,
+                reciter_name=reciter_name, translation="", options=scene_viewer_options,
             )
             if static_image.getbbox():
                 static_clip = ImageClip(np.asarray(static_image))
