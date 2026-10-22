@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 from app import create_app
@@ -7,6 +8,7 @@ from app.quran_data import SURAHS
 
 class TestConfig:
     TESTING = True
+    RENDER_JOBS_INLINE = True
     SECRET_KEY = "test"
     OUTPUT_FOLDER = "/tmp/quran-reels-test-output"
     ARABIC_FONT = "/tmp/missing-font.ttf"
@@ -16,11 +18,56 @@ def test_studio_renders_light_template_with_all_surahs():
     response = create_app(TestConfig).test_client().get("/")
     assert response.status_code == 200
     assert b"Render High-Res Reel" in response.data
-    assert b"114 - An-Naas" in response.data
+    assert "114 · An-Naas".encode() in response.data
     assert b"id=\"rendered-video\"" in response.data
     assert b"id=\"audio-file\"" not in response.data
     assert b"data-theme=\"marble_arch\"" in response.data
     assert len(SURAHS) == 114
+    assert b"id=\"export-resolution\"" in response.data
+    assert b"id=\"background-clip-list\"" in response.data
+    assert b"id=\"sequence-enabled\"" in response.data
+    assert b"Enable Sequential Background Media" in response.data
+    assert b"id=\"transitions-enabled\"" in response.data
+    assert b"id=\"background-animation-enabled\"" in response.data
+    assert b"id=\"background-animation-start\"" in response.data
+    assert b"id=\"background-atmosphere-enabled\"" in response.data
+    assert b"id=\"background-atmosphere-start\"" in response.data
+    assert b"Ayah scene transition" in response.data
+    assert b"Camera Motion" not in response.data
+    assert b"Cinematic Background Sequences" in response.data
+    assert b"id=\"background-brightness\"" in response.data
+    assert b"id=\"background-contrast\"" in response.data
+    assert b"id=\"background-saturation\"" in response.data
+    assert b"id=\"project-manager\"" in response.data
+    assert b"id=\"save-project-btn\"" in response.data
+    assert b"id=\"undo-project-btn\"" in response.data
+    assert b"id=\"custom-template-manager\"" in response.data
+    assert b"id=\"save-custom-template-btn\"" in response.data
+    assert b"id=\"import-custom-template-btn\"" in response.data
+    assert b"id=\"export-custom-template-btn\"" in response.data
+    assert b"id=\"surah-name-template\"" in response.data
+    assert b"id=\"viewer-title-badge\"" in response.data
+    assert b"id=\"show-quran-text\"" in response.data
+    assert b"id=\"translation-text\"" in response.data
+    assert b"id=\"viewer-progress-track\"" in response.data
+
+
+def test_cinematic_background_sequence_template_has_five_credited_local_scenes():
+    client = create_app(TestConfig).test_client()
+    response = client.get("/api/background-sequence-templates")
+    assert response.status_code == 200
+    templates = response.json["templates"]
+    assert len(templates) >= 4
+    assert all(len(item["scenes"]) == 5 for item in templates.values())
+    available = {item["id"] for item in client.get("/api/backgrounds").json["backgrounds"]}
+    assert all(scene["theme"] in available for item in templates.values() for scene in item["scenes"])
+
+
+def test_footer_uses_runtime_year_and_requested_author():
+    from datetime import datetime
+    response = create_app(TestConfig).test_client().get("/")
+    assert f"© {datetime.now().year} Mohammed Ehab. All rights reserved.".encode() in response.data
+    assert b"Sacred Arts Studio" not in response.data
 
 
 def test_surah_endpoint_includes_all_114_chapters():
@@ -28,6 +75,39 @@ def test_surah_endpoint_includes_all_114_chapters():
     assert response.status_code == 200
     assert len(response.json["surahs"]) == 114
     assert sum(chapter["ayah_count"] for chapter in response.json["surahs"]) == 6236
+
+
+def test_design_template_api_exposes_independent_complete_presets():
+    response = create_app().test_client().get("/api/design-templates")
+    assert response.status_code == 200
+    assert len(response.json["quran_text"]) >= 10
+    assert len(response.json["surah_name"]) >= 6
+    assert len(response.json["ayah_number"]) >= 6
+    assert response.json["surah_name"]["emerald_ribbon"]["shape"] == "ribbon"
+    assert response.json["ayah_number"]["gold_medallion"]["shape"] == "medallion"
+    assert {"fade_black", "fade_color", "slide_left", "slide_right", "zoom"} <= set(response.json["transitions"])
+    assert {"static", "cinematic_zoom", "slow_pan_left", "parallax_depth"} <= set(response.json["image_animations"])
+
+
+def test_complete_video_presets_keep_surah_and_ayah_visibility_independent():
+    response = create_app(TestConfig).test_client().get("/api/video-templates")
+    assert response.status_code == 200
+    templates = response.json["templates"]
+    assert templates["minimal_cream"]["show_surah_title"] is False
+    assert templates["minimal_cream"]["show_ayah_number"] is True
+
+
+def test_reel_viewer_presets_define_ten_complete_compositions():
+    response = create_app(TestConfig).test_client().get("/api/video-templates")
+    assert response.status_code == 200
+    presets = response.json["viewer_templates"]
+    assert len(presets) == 10
+    required = {"show_viewer_title", "show_quran_text", "show_translation", "show_waveform",
+                "show_reciter_badge", "show_progress", "title_template", "waveform_style",
+                "progress_color", "caption_style", "theme"}
+    assert all(required <= preset.keys() for preset in presets.values())
+    assert presets["modern_translation"]["show_translation"] is True
+    assert presets["clean_arabic"]["show_reciter_badge"] is False
 
 
 def test_verse_endpoint_returns_arabic_range():
@@ -59,6 +139,9 @@ def test_background_endpoint_lists_twenty_presets():
     response = create_app(TestConfig).test_client().get("/api/backgrounds")
     assert response.status_code == 200
     assert len(response.json["backgrounds"]) == 20
+    assert {item["category"] for item in response.json["backgrounds"]} >= {
+        "Nature & Landscapes", "Islamic Architecture", "Night & Celestial"
+    }
 
 
 def test_background_preview_returns_image_and_rejects_bad_ratio():
@@ -67,6 +150,45 @@ def test_background_preview_returns_image_and_rejects_bad_ratio():
     assert response.status_code == 200
     assert response.mimetype == "image/jpeg"
     assert client.get("/api/backgrounds/midnight_blue/preview?ratio=4:3").status_code == 400
+    assert client.get("/api/backgrounds/midnight_blue/preview?fit=invalid").status_code == 400
+    assert client.get("/api/backgrounds/midnight_blue/preview?fit=contain&ratio=16:9").status_code == 200
+
+
+def test_video_template_preview_composes_the_arabic_and_viewer_layers():
+    from io import BytesIO
+    from PIL import Image
+
+    client = create_app(TestConfig).test_client()
+    golden = client.get("/api/video-templates/golden_quran/preview?ratio=9:16")
+    minimal = client.get("/api/video-templates/minimalist_white/preview?ratio=9:16")
+    assert golden.status_code == minimal.status_code == 200
+    assert golden.mimetype == "image/jpeg"
+    assert golden.data != minimal.data
+    with Image.open(BytesIO(golden.data)) as image:
+        assert image.size == (360, 640)
+        assert image.mode == "RGB"
+    assert client.get("/api/video-templates/not-a-template/preview").status_code == 404
+    assert client.get("/api/video-templates/golden_quran/preview?ratio=4:3").status_code == 400
+
+
+def test_font_catalog_lists_bundled_arabic_font_families():
+    response = create_app().test_client().get("/api/fonts")
+    assert response.status_code == 200
+    assert len(response.json["fonts"]) >= 4
+    assert response.json["default"] == "naskh"
+
+
+def test_scene_plan_endpoint_splits_long_ayah_and_marks_estimated_phrase_timing():
+    from app.quran_data import get_ayahs
+    response = create_app().test_client().post("/api/scenes/plan", json={
+        "ayahs": [get_ayahs(2, 282, 282)[0]], "ayah_start": 282,
+        "aspect_ratio": "9:16", "wrap_width": 85, "max_lines": 4,
+        "font_id": "naskh", "show_surah_title": True,
+    })
+    assert response.status_code == 200, response.json
+    assert response.json["count"] > 1
+    assert response.json["approximate_timing"] is True
+    assert "no word-level" in response.json["timing_note"]
 
 
 def test_caption_preview_returns_pillow_caption_for_selected_video_template():
@@ -85,6 +207,39 @@ def test_caption_preview_returns_pillow_caption_for_selected_video_template():
     assert image.mode == "RGBA"
     assert image.width <= 810
     assert image.height > 0
+
+
+def test_caption_preview_uses_arabic_only_surah_header_and_number(monkeypatch):
+    import app.routes as routes
+    from PIL import Image
+    captured = {}
+
+    def fake_renderer(text, **kwargs):
+        captured.update(kwargs)
+        return Image.new("RGBA", (320, 160), (0, 0, 0, 0))
+
+    monkeypatch.setattr(routes, "render_caption_image", fake_renderer)
+    response = create_app(TestConfig).test_client().post("/api/caption-preview", json={
+        "text": "فَبِأَيِّ آلَاءِ رَبِّكُمَا تُكَذِّبَانِ",
+        "show_surah_title": True, "surah": 55, "ayah": 13,
+        "surah_font_id": "kufi", "ayah_number_font_id": "sans_bold",
+        "surah_opacity": .72, "ayah_number_opacity": .84,
+        "surah_placement": "below", "ayah_number_placement": "above",
+    })
+    assert response.status_code == 200
+    assert captured["surah_title"] == routes._surah_caption_title(55)
+    assert "SURAH" not in captured["surah_title"]
+    assert captured["ayah_number"] == 13
+    assert captured["aspect_ratio"] == "9:16"
+    assert captured["caption_style"] == "golden_illuminated"
+    assert captured["caption_color"] == "gold"
+    assert captured["output_size"] == (1080, 1920)
+    assert captured["surah_font_path"].name == "NotoKufiArabic-Regular.ttf"
+    assert captured["ayah_number_font_path"].name == "NotoSansArabic-Bold.ttf"
+    assert captured["surah_opacity"] == .72
+    assert captured["ayah_number_opacity"] == .84
+    assert captured["surah_placement"] == "below"
+    assert captured["ayah_number_placement"] == "above"
 
 
 def test_timing_endpoint_returns_selected_ayah_sequence(monkeypatch):
@@ -110,6 +265,74 @@ def test_generate_rejects_invalid_range_before_audio_fetch():
     assert response.status_code == 400
 
 
+def test_generate_validates_export_fps_and_custom_dimensions_before_audio_fetch():
+    client = create_app(TestConfig).test_client()
+    base = {"surah": 55, "ayah_start": 13, "ayah_end": 13, "aspect_ratio": "9:16"}
+    bad_fps = client.post("/api/generate", json={**base, "fps": 50})
+    assert bad_fps.status_code == 400
+    assert "24, 25, 30, or 60" in bad_fps.json["error"]
+    bad_size = client.post("/api/generate", json={
+        **base, "resolution": "custom", "custom_width": 1280, "custom_height": 720,
+    })
+    assert bad_size.status_code == 400
+    assert "must match" in bad_size.json["error"]
+
+
+def test_generate_requires_translation_lines_to_match_selected_ayah_count():
+    response = create_app(TestConfig).test_client().post("/api/generate", json={
+        "surah": 55, "ayah_start": 13, "ayah_end": 14,
+        "translation_text": "Only one verse translation", "show_translation": True,
+    })
+    assert response.status_code == 400
+    assert "one translation line per selected ayah" in response.json["error"]
+
+
+def test_viewer_header_options_validate_language_and_range_format():
+    import pytest
+    import app.routes as routes
+
+    options = routes._viewer_layer_options({
+        "viewer_header_surah_enabled": "false",
+        "viewer_header_surah_language": "both",
+        "viewer_header_range_enabled": "true",
+        "viewer_header_range_language": "arabic",
+        "viewer_header_range_format": "compact",
+        "viewer_header_qari_enabled": "false",
+    })
+    assert options["show_header_surah"] is False
+    assert options["header_surah_language"] == "both"
+    assert options["show_ayah_range"] is True
+    assert options["ayah_range_language"] == "arabic"
+    assert options["ayah_range_format"] == "compact"
+    assert options["show_qari_in_header"] is False
+    with pytest.raises(ValueError, match="Choose English or Arabic"):
+        routes._viewer_layer_options({"viewer_header_range_language": "french"})
+
+
+def test_viewer_header_can_render_without_surah_range_or_qari():
+    from app.reel_viewer import render_static_layer
+
+    image = render_static_layer(
+        (540, 960), surah_name="Ar-Rahmaan", surah_number=55,
+        ayah_number=13, reciter_name="Mishary Alafasy",
+        options={"show_viewer_title": True, "show_header_surah": False,
+                 "show_ayah_range": False, "show_qari_in_header": False,
+                 "show_reciter_badge": False, "show_translation": False},
+    )
+    assert image.mode == "RGBA"
+    # The title icon remains visible with every dynamic header label hidden.
+    assert image.getbbox() is not None
+    no_icon = render_static_layer(
+        (540, 960), surah_name="Ar-Rahmaan", surah_number=55,
+        ayah_number=13, reciter_name="Mishary Alafasy",
+        options={"show_viewer_title": True, "show_header_surah": False,
+                 "show_ayah_range": False, "show_qari_in_header": False,
+                 "show_title_icon": False, "show_reciter_badge": False,
+                 "show_translation": False},
+    )
+    assert no_icon.getbbox() is None
+
+
 def test_generate_success_uses_local_ayah_text_and_selected_qari(monkeypatch, tmp_path):
     import app.routes as routes
     track_path = tmp_path / "recitation.mp3"
@@ -118,28 +341,458 @@ def test_generate_success_uses_local_ayah_text_and_selected_qari(monkeypatch, tm
 
     def fake_render(**kwargs):
         captured.update(kwargs)
+        Path(kwargs["output_path"]).write_bytes(b"complete-mp4" * 200)
         return {"path": str(kwargs["output_path"]), "duration": 4.16, "width": 1080,
-                "height": 1920, "has_audio": True}
+                "height": 1920, "has_audio": True, "scene_count": 1}
 
-    monkeypatch.setattr(routes, "download_recitation", lambda *args: SimpleNamespace(
+    monkeypatch.setattr(routes, "download_recitation", lambda *args, **kwargs: SimpleNamespace(
         path=track_path, start=1.0, end=5.16, ayah_durations=[4.16]))
     monkeypatch.setattr(routes, "render_reel", fake_render)
+    monkeypatch.setattr(routes, "validate_rendered_output", lambda *args, **kwargs: {"playable":True})
 
     class Config(TestConfig):
         OUTPUT_FOLDER = tmp_path / "outputs"
 
-    response = create_app(Config).test_client().post("/api/generate", json={
+    client = create_app(Config).test_client()
+    response = client.post("/api/generate", json={
         "surah": 55, "ayah_start": 13, "ayah_end": 13,
         "reciter_id": "mishary_alafasy", "aspect_ratio": "9:16", "theme": "desert_dawn"
-        , "caption_color": "gold", "wrap_width": 75
+        , "caption_color": "gold", "wrap_width": 75,
+        "show_quran_text": False, "viewer_title_enabled": False,
+        "viewer_title_icon_enabled": False, "show_translation": True,
+        "viewer_header_surah_enabled": True,
+        "viewer_header_surah_language": "both",
+        "viewer_header_range_enabled": True,
+        "viewer_header_range_language": "arabic",
+        "viewer_header_range_format": "compact",
+        "viewer_header_qari_enabled": True,
+        "reciter_label": "Sheikh Mishary",
+        "translation_text": "So which of the favors of your Lord would you deny?",
+        "show_waveform": False, "show_reciter_badge": False,
+        "show_progress": True, "progress_color": "#006aff",
     })
-    assert response.status_code == 201, response.json
-    assert response.json["has_audio"] is True
-    assert response.json["reciter"] == "Mishary Rashid Alafasy"
-    assert response.json["theme"] == "desert_dawn"
+    assert response.status_code == 202, response.json
+    job = client.get(response.json["status_url"])
+    assert job.json["status"] == "complete", job.json
+    result = job.json["result"]
+    assert result["has_audio"] is True
+    assert result["reciter"] == "Mishary Rashid Alafasy"
+    assert result["theme"] == "desert_dawn"
     assert "تُكَذِّبَانِ" in captured["ayahs"][0]
     assert captured["audio_start"] == 1.0
     assert captured["theme"] == "desert_dawn"
     assert captured["caption_color"] == "gold"
     assert captured["wrap_width"] == 75
+    assert captured["show_surah_title"] is True
+    assert captured["surah_title"] == routes._surah_caption_title(55)
+    assert captured["caption_position"] == "center"
+    assert captured["caption_style"] == "golden_illuminated"
+    assert captured["text_bg_enabled"] is True
+    assert captured["text_bg_color"] == "#090806"
+    assert captured["corner_radius"] == 28
+    assert captured["output_size"] == (1080, 1920)
+    assert captured["fps"] == 30
+    assert captured["quality"] == "balanced"
+    assert captured["show_quran_text"] is False
+    assert captured["viewer_options"]["show_viewer_title"] is False
+    assert captured["viewer_options"]["show_title_icon"] is False
+    assert captured["viewer_options"]["show_header_surah"] is True
+    assert captured["viewer_options"]["header_surah_language"] == "both"
+    assert captured["viewer_options"]["header_surah_arabic"] == routes.SURAHS_BY_NUMBER[55]["name_arabic"]
+    assert captured["viewer_options"]["show_ayah_range"] is True
+    assert captured["viewer_options"]["ayah_range_start"] == 13
+    assert captured["viewer_options"]["ayah_range_end"] == 13
+    assert captured["viewer_options"]["ayah_range_language"] == "arabic"
+    assert captured["viewer_options"]["ayah_range_format"] == "compact"
+    assert captured["viewer_options"]["show_qari_in_header"] is True
+    assert captured["viewer_options"]["reciter_label"] == "Sheikh Mishary"
+    assert captured["viewer_options"]["show_translation"] is True
+    assert captured["viewer_options"]["show_waveform"] is False
+    assert captured["viewer_options"]["show_reciter_badge"] is False
+    assert captured["viewer_options"]["progress_color"] == "#006aff"
+    assert captured["translation_lines"] == ["So which of the favors of your Lord would you deny?"]
+    assert captured["crf"] == 23
     assert not track_path.exists()
+
+
+def test_background_render_worker_builds_download_url_without_request_context(monkeypatch, tmp_path):
+    import time
+    import app.routes as routes
+
+    track_path = tmp_path / "recitation.mp3"
+    track_path.write_bytes(b"audio")
+
+    def fake_render(**kwargs):
+        Path(kwargs["output_path"]).write_bytes(b"complete-mp4" * 200)
+        return {"path": str(kwargs["output_path"]), "duration": 4.0,
+                "width": 1080, "height": 1920, "has_audio": True}
+
+    monkeypatch.setattr(routes, "download_recitation", lambda *args, **kwargs: SimpleNamespace(
+        path=track_path, start=0.0, end=4.0, ayah_durations=[4.0]))
+    monkeypatch.setattr(routes, "render_reel", fake_render)
+    monkeypatch.setattr(routes, "validate_rendered_output", lambda *args, **kwargs: {"playable": True})
+
+    class AsyncConfig(TestConfig):
+        RENDER_JOBS_INLINE = False
+        OUTPUT_FOLDER = tmp_path / "outputs"
+
+    client = create_app(AsyncConfig).test_client()
+    response = client.post("/api/generate", json={
+        "surah": 55, "ayah_start": 13, "ayah_end": 13,
+        "reciter_id": "mishary_alafasy", "aspect_ratio": "9:16",
+    })
+    assert response.status_code == 202, response.json
+
+    deadline = time.monotonic() + 3
+    job = None
+    while time.monotonic() < deadline:
+        job = client.get(response.json["status_url"]).json
+        if job["status"] in {"complete", "failed", "cancelled"}:
+            break
+        time.sleep(.01)
+
+    assert job["status"] == "complete", job
+    result = job["result"]
+    assert result["download_url"] == f"/outputs/{result['filename']}"
+    downloaded = client.get(result["download_url"])
+    assert downloaded.status_code == 200
+    assert downloaded.data.startswith(b"complete-mp4")
+
+
+def test_generate_applies_selected_complete_video_template(monkeypatch, tmp_path):
+    import app.routes as routes
+    track_path = tmp_path / "recitation.mp3"
+    track_path.write_bytes(b"audio")
+    captured = {}
+
+    def fake_render(**kwargs):
+        captured.update(kwargs)
+        Path(kwargs["output_path"]).write_bytes(b"complete-mp4" * 200)
+        return {"path": str(kwargs["output_path"]), "duration": 4.0, "width": 1080,
+                "height": 1920, "has_audio": True}
+
+    monkeypatch.setattr(routes, "download_recitation", lambda *args, **kwargs: SimpleNamespace(
+        path=track_path, start=0.0, end=4.0, ayah_durations=[4.0]))
+    monkeypatch.setattr(routes, "render_reel", fake_render)
+    monkeypatch.setattr(routes, "validate_rendered_output", lambda *args, **kwargs: {"playable":True})
+
+    class Config(TestConfig):
+        OUTPUT_FOLDER = tmp_path / "outputs"
+
+    client = create_app(Config).test_client()
+    response = client.post("/api/generate", json={
+        "surah": 55, "ayah_start": 13, "ayah_end": 13,
+        "reciter_id": "mishary_alafasy", "aspect_ratio": "9:16",
+        "template_id": "emerald_serenity",
+        "surah_font_id": "kufi_bold", "ayah_number_font_id": "sans",
+        "surah_opacity": ".7", "ayah_number_opacity": ".8",
+        "surah_placement": "below", "ayah_number_placement": "above",
+    })
+    assert response.status_code == 202, response.json
+    result = client.get(response.json["status_url"]).json["result"]
+    assert result["theme"] == "olive_garden"
+    assert result["template_id"] == "emerald_serenity"
+    assert captured["caption_style"] == "quranic"
+    assert captured["caption_color"] == "ivory"
+    assert captured["show_surah_title"] is True
+    assert captured["caption_position"] == "center"
+    assert captured["text_bg_color"] == "#061e16"
+    assert captured["glow_type"] == "emerald"
+    assert captured["surah_font_path"].name == "NotoKufiArabic-Bold.ttf"
+    assert captured["ayah_number_font_path"].name == "NotoSansArabic-Regular.ttf"
+    assert captured["surah_opacity"] == .7
+    assert captured["ayah_number_opacity"] == .8
+    assert captured["surah_placement"] == "below"
+    assert captured["ayah_number_placement"] == "above"
+
+
+def test_generate_accepts_ordered_background_video_clips_with_edit_settings(monkeypatch, tmp_path):
+    import io
+    import json
+    import app.routes as routes
+    track_path = tmp_path / "recitation.mp3"
+    track_path.write_bytes(b"audio")
+    captured = {}
+
+    def fake_render(**kwargs):
+        captured.update(kwargs)
+        assert [Path(item["path"]).read_bytes() for item in kwargs["background_clips"]] == [b"clip-a", b"clip-b"]
+        Path(kwargs["output_path"]).write_bytes(b"complete-mp4" * 200)
+        return {"path": str(kwargs["output_path"]), "duration": 4, "width": 1080, "height": 1920}
+
+    monkeypatch.setattr(routes, "validate_background_upload", lambda *args: {
+        "width": 96, "height": 54, "duration": 5.0,
+    })
+    monkeypatch.setattr(routes, "download_recitation", lambda *args, **kwargs: SimpleNamespace(
+        path=track_path, start=0, end=4, ayah_durations=[4]))
+    monkeypatch.setattr(routes, "render_reel", fake_render)
+    monkeypatch.setattr(routes, "validate_rendered_output", lambda *args, **kwargs: {"playable":True})
+
+    class Config(TestConfig):
+        OUTPUT_FOLDER = tmp_path / "outputs"
+
+    client = create_app(Config).test_client()
+    response = client.post("/api/generate", data={
+        "surah": "55", "ayah_start": "13", "ayah_end": "13", "aspect_ratio": "9:16",
+        "reciter_id": "mishary_alafasy",
+        "background_audio_enabled": "true", "background_audio_volume": ".12",
+        "sequence_enabled": "true", "transitions_enabled": "true",
+        "background_clip_settings": json.dumps([
+            {"start": .25, "end": 2.5, "speed": 1.25, "transition": "cut", "transition_duration": 0},
+            {"start": 1, "end": 4.5, "speed": .75, "transition": "crossfade", "transition_duration": .6},
+        ]),
+        "background_clips": [
+            (io.BytesIO(b"clip-a"), "clip-a.mp4", "video/mp4"),
+            (io.BytesIO(b"clip-b"), "clip-b.mp4", "video/mp4"),
+        ],
+    }, content_type="multipart/form-data")
+    assert response.status_code == 202, response.json
+    assert captured["background_path"] is None
+    assert len(captured["background_clips"]) == 2
+    assert captured["background_clips"][0]["start"] == .25
+    assert captured["background_clips"][0]["speed"] == 1.25
+    assert captured["background_clips"][1]["transition"] == "crossfade"
+    assert captured["transitions_enabled"] is True
+    assert captured["background_audio_enabled"] is True
+    assert captured["background_audio_volume"] == .12
+    snapshot = client.get(response.json["status_url"])
+    assert snapshot.json["status"] == "complete"
+    assert snapshot.json["result"]["background_clip_count"] == 2
+
+
+def test_generate_uses_only_one_custom_background_when_sequence_mode_is_off(monkeypatch, tmp_path):
+    import io
+    import app.routes as routes
+    track_path = tmp_path / "recitation.mp3"
+    track_path.write_bytes(b"audio")
+    captured = {}
+
+    def fake_render(**kwargs):
+        captured.update(kwargs)
+        assert Path(kwargs["background_path"]).read_bytes() == b"first-image"
+        assert not kwargs["background_clips"]
+        Path(kwargs["output_path"]).write_bytes(b"complete-mp4" * 200)
+        return {"path": str(kwargs["output_path"]), "duration": 4, "width": 1080, "height": 1920}
+
+    monkeypatch.setattr(routes, "validate_background_upload", lambda *args: {"width": 96, "height": 54})
+    monkeypatch.setattr(routes, "download_recitation", lambda *args, **kwargs: SimpleNamespace(
+        path=track_path, start=0, end=4, ayah_durations=[4]))
+    monkeypatch.setattr(routes, "render_reel", fake_render)
+    monkeypatch.setattr(routes, "validate_rendered_output", lambda *args, **kwargs: {"playable":True})
+
+    class Config(TestConfig):
+        OUTPUT_FOLDER = tmp_path / "outputs"
+
+    response = create_app(Config).test_client().post("/api/generate", data={
+        "surah":"55", "ayah_start":"13", "ayah_end":"13", "reciter_id":"mishary_alafasy",
+        "background_clips":[
+            (io.BytesIO(b"first-image"),"first.png","image/png"),
+            (io.BytesIO(b"ignored-image"),"second.png","image/png"),
+        ],
+    }, content_type="multipart/form-data")
+    assert response.status_code == 202, response.json
+    assert captured["background_animation_enabled"] is False
+    assert captured["background_animation_preset"] == "static"
+
+
+def test_generate_renders_selected_five_scene_background_template(monkeypatch, tmp_path):
+    import app.routes as routes
+    from app.background_sequence_templates import BACKGROUND_SEQUENCE_TEMPLATES
+    track_path = tmp_path / "recitation.mp3"
+    track_path.write_bytes(b"audio")
+    captured = {}
+
+    def fake_render(**kwargs):
+        captured.update(kwargs)
+        Path(kwargs["output_path"]).write_bytes(b"complete-mp4" * 200)
+        return {"path": str(kwargs["output_path"]), "duration": 4, "width": 480, "height": 852}
+
+    monkeypatch.setattr(routes, "download_recitation", lambda *args, **kwargs: SimpleNamespace(
+        path=track_path, start=0, end=4, ayah_durations=[4]))
+    monkeypatch.setattr(routes, "render_reel", fake_render)
+    monkeypatch.setattr(routes, "validate_rendered_output", lambda *args, **kwargs: {"playable":True})
+
+    class Config(TestConfig):
+        OUTPUT_FOLDER = tmp_path / "outputs"
+
+    template_id = "nature_in_motion"
+    client = create_app(Config).test_client()
+    response = client.post("/api/generate", data={
+        "surah":"55", "ayah_start":"13", "ayah_end":"13", "reciter_id":"mishary_alafasy",
+        "resolution":"480p", "quality":"fast", "sequence_enabled":"true",
+        "background_sequence_template":template_id, "transitions_enabled":"true",
+        "background_animation_enabled":"true", "background_animation_preset":"gentle_movement",
+        "background_animation_start":"1.5",
+        "background_atmosphere_enabled":"true", "background_atmosphere_intensity":".6",
+        "background_atmosphere_duration":"48", "background_atmosphere_speed":".9",
+        "background_atmosphere_start":"2.5",
+    })
+    assert response.status_code == 202, response.json
+    expected = BACKGROUND_SEQUENCE_TEMPLATES[template_id]["scenes"]
+    assert len(captured["background_clips"]) == 5
+    assert [Path(spec["path"]).stem for spec in captured["background_clips"]] == [scene["theme"] for scene in expected]
+    assert all(Path(spec["path"]).is_file() for spec in captured["background_clips"])
+    assert captured["transitions_enabled"] is True
+    assert captured["background_animation_enabled"] is True
+    assert captured["background_animation_start"] == 1.5
+    assert captured["background_atmosphere_enabled"] is True
+    assert captured["background_atmosphere_intensity"] == .6
+    assert captured["background_atmosphere_duration"] == 48
+    assert captured["background_atmosphere_speed"] == .9
+    assert captured["background_atmosphere_start"] == 2.5
+    status = client.get(response.json["status_url"])
+    assert status.json["status"] == "complete"
+    assert status.json["result"]["background_sequence_template"] == template_id
+
+
+def test_generate_accepts_mixed_sequential_images_and_videos_with_animation_settings(monkeypatch, tmp_path):
+    import io
+    import json
+    import app.routes as routes
+    track_path = tmp_path / "recitation.mp3"
+    track_path.write_bytes(b"audio")
+    captured = {}
+
+    def fake_render(**kwargs):
+        captured.update(kwargs)
+        assert [Path(item["path"]).read_bytes() for item in kwargs["background_clips"]] == [b"still", b"motion"]
+        Path(kwargs["output_path"]).write_bytes(b"complete-mp4" * 200)
+        return {"path": str(kwargs["output_path"]), "duration": 4, "width": 1080, "height": 1920}
+
+    monkeypatch.setattr(routes, "validate_background_upload", lambda path, extension: {
+        "width": 96, "height": 54, **({"duration":2.0} if extension == ".mp4" else {})})
+    monkeypatch.setattr(routes, "download_recitation", lambda *args, **kwargs: SimpleNamespace(
+        path=track_path, start=0, end=4, ayah_durations=[4]))
+    monkeypatch.setattr(routes, "render_reel", fake_render)
+    monkeypatch.setattr(routes, "validate_rendered_output", lambda *args, **kwargs: {"playable":True})
+
+    class Config(TestConfig):
+        OUTPUT_FOLDER = tmp_path / "outputs"
+
+    response = create_app(Config).test_client().post("/api/generate", data={
+        "surah":"55", "ayah_start":"13", "ayah_end":"13", "reciter_id":"mishary_alafasy",
+        "sequence_enabled":"true", "transitions_enabled":"true", "default_background_transition":"fade_black",
+        "background_animation_enabled":"true", "background_animation_preset":"cinematic_zoom",
+        "background_animation_intensity":".4", "background_animation_duration":"8", "background_animation_speed":"1.2",
+        "background_clip_settings":json.dumps([
+            {"duration":2,"transition":"fade_black","transition_duration":.6},
+            {"start":0,"end":2,"speed":1,"transition":"slide_left","transition_duration":.4},
+        ]),
+        "background_clips":[
+            (io.BytesIO(b"still"),"still.png","image/png"),
+            (io.BytesIO(b"motion"),"motion.mp4","video/mp4"),
+        ],
+    }, content_type="multipart/form-data")
+    assert response.status_code == 202, response.json
+    assert captured["background_clips"][0]["duration"] == 2
+    assert captured["background_clips"][1]["transition"] == "slide_left"
+    assert captured["background_animation_enabled"] is True
+    assert captured["background_animation_preset"] == "cinematic_zoom"
+    assert captured["transitions_enabled"] is True
+
+
+def test_caption_option_overrides_are_normalized_in_one_shared_merge():
+    from app.routes import _caption_options
+    from app.video_templates import VIDEO_TEMPLATES
+    template = VIDEO_TEMPLATES["golden_calligraphy"]
+    options = _caption_options(template, {
+        "text_bg_enabled": "false", "text_bg_opacity": "0.35",
+        "glow_type": "blue", "glow_radius": "9", "caption_style": "soft_white",
+    })
+    assert options["text_bg_enabled"] == "false"
+    assert options["text_bg_opacity"] == "0.35"
+    assert options["glow_type"] == "blue"
+    assert options["glow_radius"] == "9"
+    assert options["corner_radius"] == template["corner_radius"]
+    assert "caption_style" not in options
+
+
+def test_generate_accepts_valid_background_video_and_fit_controls(monkeypatch, tmp_path):
+    import io
+    import app.routes as routes
+    track_path = tmp_path / "recitation.mp3"
+    track_path.write_bytes(b"audio")
+    captured = {}
+
+    def fake_render(**kwargs):
+        captured.update(kwargs)
+        assert Path(kwargs["background_path"]).read_bytes() == b"video-data"
+        Path(kwargs["output_path"]).write_bytes(b"complete-mp4" * 200)
+        return {"path": str(kwargs["output_path"]), "duration": 4.0, "width": 1080,
+                "height": 1920, "has_audio": True}
+
+    monkeypatch.setattr(routes, "validate_background_upload", lambda *args: {"width": 64, "height": 32, "duration": 1})
+    monkeypatch.setattr(routes, "download_recitation", lambda *args, **kwargs: SimpleNamespace(
+        path=track_path, start=0.0, end=4.0, ayah_durations=[4.0]))
+    monkeypatch.setattr(routes, "render_reel", fake_render)
+    monkeypatch.setattr(routes, "validate_rendered_output", lambda *args, **kwargs: {"playable":True})
+
+    class Config(TestConfig):
+        OUTPUT_FOLDER = tmp_path / "outputs"
+
+    client = create_app(Config).test_client()
+    response = client.post("/api/generate", data={
+        "surah": "55", "ayah_start": "13", "ayah_end": "13", "aspect_ratio": "9:16",
+        "reciter_id": "mishary_alafasy", "background_fit": "blurred", "crop_x": "0.2",
+        "crop_y": "0.8", "background_speed": "1.25", "background_loop": "true",
+        "background_brightness": "1.2", "background_contrast": ".85",
+        "background_saturation": "1.4", "background_overlay_color": "#123456",
+        "background_overlay_opacity": ".2",
+        "background": (io.BytesIO(b"video-data"), "background.mp4", "video/mp4"),
+    }, content_type="multipart/form-data")
+    assert response.status_code == 202, response.json
+    assert client.get(response.json["status_url"]).json["status"] == "complete"
+    assert captured["background_fit"] == "blurred"
+    assert captured["crop_x"] == 0.2
+    assert captured["crop_y"] == 0.8
+    assert captured["background_speed"] == 1.25
+    assert captured["background_loop"] is True
+    assert captured["background_brightness"] == 1.2
+    assert captured["background_contrast"] == .85
+    assert captured["background_saturation"] == 1.4
+    assert captured["background_overlay_color"] == "#123456"
+    assert captured["background_overlay_opacity"] == .2
+
+
+def test_background_upload_is_decoded_before_job_acceptance(tmp_path):
+    from PIL import Image
+    import pytest
+    from app.routes import validate_background_upload
+    valid = tmp_path / "wallpaper.png"
+    Image.new("RGB", (64, 96), (12, 30, 42)).save(valid)
+    assert validate_background_upload(valid, ".png") == {"width": 64, "height": 96}
+    invalid = tmp_path / "broken.png"
+    invalid.write_bytes(b"not an image")
+    with pytest.raises(Exception):
+        validate_background_upload(invalid, ".png")
+
+
+def test_render_job_status_reports_real_progress_and_cancellation():
+    from threading import Event
+    import time
+    from app.job_errors import JobCancelled
+    from app.render_jobs import RenderJobManager
+
+    manager = RenderJobManager(max_workers=1)
+    started = Event()
+
+    def worker(update, cancel_event):
+        update(progress=31, phase="rendering", message="Encoding frames")
+        started.set()
+        while not cancel_event.wait(.01):
+            pass
+        raise JobCancelled()
+
+    try:
+        manager.submit("cancel-test", worker)
+        assert started.wait(1)
+        snapshot = manager.get("cancel-test")
+        assert snapshot["progress"] == 31
+        assert snapshot["phase"] == "rendering"
+        manager.cancel("cancel-test")
+        deadline = time.monotonic() + 1
+        while manager.get("cancel-test")["status"] not in {"cancelled", "failed"} and time.monotonic() < deadline:
+            time.sleep(.01)
+        assert manager.get("cancel-test")["status"] == "cancelled"
+    finally:
+        manager.shutdown(wait=True)

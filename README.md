@@ -19,6 +19,19 @@ A light-theme Flask studio for rendering the complete Quran in Arabic with a cho
    ```
 4. Open http://127.0.0.1:5000.
 
+The local launcher keeps Flask's debugger and reloader off by default. Set
+`FLASK_DEBUG=1` only for local development. `run.py` also exports the WSGI
+application as `run:app`; for a Linux deployment, set a stable, private
+`QURAN_REELS_SECRET_KEY` and run it behind a TLS-terminating reverse proxy:
+
+```bash
+gunicorn --workers 1 --threads 4 --timeout 600 run:app
+```
+
+The renderer uses one background worker by default so concurrent exports do
+not exhaust memory. Keep the output directory on persistent storage and apply
+the retention and access controls required by your deployment.
+
 The renderer uses `static/assets/NotoNaskhArabic-Regular.ttf`. Uthmani Arabic text for all 114 surahs (6,236 ayahs) is included in `static/data/quran_uthmani.json`. The app fetches the chosen qari's chapter recording and verse timing from MP3Quran.net, then advances one ayah at a time at its recitation boundary. This requires an internet connection. A live preview can audition the selected range and update the displayed ayah with the recitation. You can upload a custom wallpaper; audio always comes from the selected qari. The selected surah and ayah range must match the number of Arabic text lines entered when you edit the captions.
 
 Generated MP4s are saved in `static/outputs/` and downloaded through the app. Treat this folder as user data when deploying; add retention and access controls appropriate to your deployment.

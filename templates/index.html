@@ -5,7 +5,8 @@
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <meta content="web_standard" name="shell-type"/>
 <title>Quran Reels Generator - Studio</title>
-<link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+<link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='assets/favicon.svg') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app.css', v='studio-2026-10-22') }}">
 <link href="https://fonts.googleapis.com" rel="preconnect"/>
 <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Amiri:ital,wght@0,400;0,700;1,400&amp;family=Noto+Naskh+Arabic:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
@@ -21,7 +22,8 @@
     .font-quran { font-family: 'Amiri', 'Noto Naskh Arabic', serif; }
   </style>
 <script>
-tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2ff',200:'#99c5ff',300:'#66a8ff',400:'#338bff',500:'#1a7aff',600:'#006aff',700:'#0056cc',800:'#0046a8',900:'#003b8f',950:'#00265c'}}}}};
+window.tailwind = window.tailwind || {};
+window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2ff',200:'#99c5ff',300:'#66a8ff',400:'#338bff',500:'#1a7aff',600:'#006aff',700:'#0056cc',800:'#0046a8',900:'#003b8f',950:'#00265c'}}}}};
 </script>
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 </head>
@@ -37,15 +39,6 @@ tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2ff',200:
 <div class="flex items-center gap-2.5">
 <span class="text-base font-bold text-gray-900 tracking-tight">Quran Reels <span class="text-brand-600 font-medium">Generator</span></span>
 <span class="hidden sm:inline-flex items-center px-2 py-0.5 rounded-md bg-brand-50 text-brand-700 border border-brand-200 text-xs font-semibold tracking-wide">Studio v1.0</span>
-</div>
-</div>
-<!-- Right: Quick actions -->
-<div class="flex items-center gap-2.5">
-<button aria-label="Settings" class="p-2 rounded-xl text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors" type="button">
-<span class="material-symbols-outlined text-[20px]">tune</span>
-</button>
-<div class="w-9 h-9 rounded-full bg-brand-50 border border-brand-200 text-brand-700 flex items-center justify-center font-semibold text-sm shadow-sm cursor-pointer hover:bg-brand-100 transition-colors">
-<span class="material-symbols-outlined text-[20px]">account_circle</span>
 </div>
 </div>
 </div>
@@ -76,6 +69,21 @@ tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2ff',200:
 </button>
 </div>
 </div>
+<details class="mb-5 rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-sm" id="project-manager">
+<summary class="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 text-xs font-semibold text-gray-800">
+<span class="flex items-center gap-2"><span class="material-symbols-outlined text-[17px] text-brand-600" aria-hidden="true">folder_open</span>Project workspace</span>
+<span class="flex items-center gap-2 text-[10px] font-medium text-gray-500"><span id="project-save-status" role="status" aria-live="polite">Autosaves in this browser</span><span class="material-symbols-outlined" aria-hidden="true">expand_more</span></span>
+</summary>
+<div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-5">
+<label class="flex min-w-0 flex-col gap-1 text-[10px] font-semibold text-gray-600">Project name<input id="project-name" maxlength="64" value="Untitled Reel" class="min-w-0 rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-xs font-normal text-gray-800"></label>
+<button id="save-project-btn" type="button" class="self-end rounded-lg bg-brand-600 px-3 py-2 text-xs font-semibold text-white hover:bg-brand-700">Save project</button>
+<label class="flex min-w-0 flex-col gap-1 text-[10px] font-semibold text-gray-600">Saved projects<select id="saved-projects" class="min-w-0 rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-xs font-normal text-gray-800"><option value="">Choose a saved project…</option></select></label>
+<button id="open-project-btn" type="button" class="self-end rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:border-brand-300" disabled>Open project</button>
+<div class="flex items-end gap-2"><button id="undo-project-btn" type="button" class="flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:border-brand-300" title="Undo last editor change" disabled>Undo</button><button id="redo-project-btn" type="button" class="flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:border-brand-300" title="Redo editor change" disabled>Redo</button></div>
+<button id="delete-project-btn" type="button" class="rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 sm:col-start-2 lg:col-start-5" disabled>Delete saved project</button>
+</div>
+<p class="mt-2 text-[10px] text-gray-500">Editor settings and uploaded background media are stored on this browser. Large videos may use significant browser storage.</p>
+</details>
 <!-- Main Studio Split Workbench Grid -->
 <div class="studio-workbench gap-8 items-start">
 <!-- LEFT COLUMN: Generation Settings & Script Controls (5 cols) -->
@@ -150,7 +158,7 @@ tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2ff',200:
 <div class="relative">
 <select class="w-full appearance-none rounded-xl border border-gray-200 bg-white text-gray-900 px-4 py-3 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none transition-all shadow-sm font-medium cursor-pointer" id="surah-select">
 {% for surah in surahs %}
-<option value="{{ surah.number }}" data-ayah-count="{{ surah.ayah_count }}" {% if surah.number == 55 %}selected{% endif %}>{{ "%03d"|format(surah.number) }} - {{ surah.english_name }} ({{ surah.english_translation }} • {{ surah.name_arabic }})</option>
+<option value="{{ surah.number }}" data-ayah-count="{{ surah.ayah_count }}" {% if surah.number == 55 %}selected{% endif %}>{{ "%03d"|format(surah.number) }} · {{ surah.english_name }} · {{ surah.name_arabic }}</option>
 {% endfor %}
 </select>
 <span class="material-symbols-outlined pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-[20px]">unfold_more</span>
@@ -194,18 +202,77 @@ tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2ff',200:
 <div class="flex flex-col gap-2 rounded-xl border border-gray-200 bg-slate-50 p-3">
 <label class="text-xs font-semibold text-gray-700" for="ayah-text">Arabic Ayah Text <span class="text-gray-400 font-normal">(one ayah per line)</span></label>
 <textarea id="ayah-text" rows="3" dir="rtl" class="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-right font-quran text-lg text-gray-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20">{{ initial_ayah }}</textarea>
-<p class="text-[11px] text-gray-500">Uthmani text loads automatically for the selected surah and ayah range. You may edit the captions.</p>
+<p id="ayah-text-status" class="text-[11px] text-gray-500" role="status" aria-live="polite">Uthmani text loads automatically for the selected surah and ayah range. You may edit the captions.</p>
+<section class="scene-timeline rounded-lg border border-gray-200 bg-white p-3" aria-labelledby="scene-timeline-title">
+<div class="mb-2 flex items-center justify-between gap-2"><strong class="text-[11px] text-gray-700" id="scene-timeline-title">Caption scenes</strong><span class="text-[10px] text-gray-500" id="scene-summary">Loading scene plan…</span></div>
+<div class="scene-timeline-list" id="scene-timeline" aria-live="polite"></div>
+<p class="mt-2 text-[10px] text-gray-500" id="scene-timing-note">Long-ayah scene timing is estimated by text length when word-level timestamps are unavailable.</p>
+</section>
 <div class="grid grid-cols-1 gap-2">
 <div class="wallpaper-upload-wrap">
-<span class="wallpaper-upload-label">Custom wallpaper <span>(optional)</span></span>
+<span class="wallpaper-upload-label">Custom background <span>(image or video · optional)</span></span>
 <label class="wallpaper-dropzone" for="background-file" id="background-dropzone">
-<input id="background-file" type="file" accept="image/png,image/jpeg,image/webp" aria-describedby="background-file-name">
+<input id="background-file" type="file" multiple accept="image/png,image/jpeg,image/webp,video/mp4,video/quicktime,video/webm,video/x-m4v" aria-describedby="background-file-name">
 <span class="wallpaper-upload-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5"/><path d="M5 14v5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5"/></svg></span>
-<span class="wallpaper-upload-copy"><strong>Choose an image</strong><small id="background-file-name">PNG, JPG or WEBP · click to browse</small></span>
+<span class="wallpaper-upload-copy"><strong>Choose image or video</strong><small id="background-file-name">One selected item is used. Enable a sequence to use more.</small></span>
 <span class="wallpaper-browse">Browse</span>
 </label>
+<div class="grid gap-2 rounded-lg border border-gray-200 bg-white p-2.5">
+<div class="flex items-center gap-2 border-b border-gray-100 pb-2 text-[11px] font-bold text-gray-700"><span class="material-symbols-outlined text-[16px] text-brand-600" aria-hidden="true">movie</span><span>Media Sequence</span></div>
+<label class="flex items-start gap-2 text-[11px] font-semibold text-gray-700"><input id="sequence-enabled" type="checkbox"><span>Enable Sequential Background Media<small class="mt-0.5 block font-normal text-gray-500">Off by default. Uploaded images and videos play in order when enabled. The sequence is kept when disabled.</small></span></label>
+<div class="flex items-center gap-2 border-b border-gray-100 pb-2 pt-1 text-[11px] font-bold text-gray-700"><span class="material-symbols-outlined text-[16px] text-brand-600" aria-hidden="true">transition_fade</span><span>Transitions</span></div>
+<label class="flex items-start gap-2 text-[11px] font-semibold text-gray-700"><input id="transitions-enabled" type="checkbox"><span>Enable Transitions<small class="mt-0.5 block font-normal text-gray-500">Off by default for manual sequences. Items cut directly until enabled.</small></span></label>
+<div class="grid grid-cols-2 gap-2" id="sequence-transition-options">
+<label class="flex flex-col gap-1 text-[10px] font-medium text-gray-600">Default transition<select id="default-background-transition" class="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs"><option value="crossfade">Crossfade</option><option value="dissolve">Smooth dissolve</option><option value="fade_black">Fade through black</option><option value="fade_color">Fade through color</option><option value="slide_left">Slide left</option><option value="slide_right">Slide right</option><option value="zoom">Gentle zoom</option><option value="cut">Hard cut</option></select></label>
+<label class="flex items-center justify-between gap-2 text-[10px] text-gray-600">Transition color<input id="background-transition-color" type="color" value="#000000" class="h-7 w-9 rounded border border-gray-200"></label>
+<label class="col-span-2 flex flex-col gap-1 text-[10px] text-gray-600">Transition duration · seconds<input id="background-transition-duration" type="range" min="0" max="2" step="0.05" value="0.45" class="preview-range"></label>
+</div>
+<label class="flex items-start gap-2 text-[11px] font-medium text-gray-700"><input id="sequence-loop" type="checkbox" checked><span>Loop the sequence to cover the recitation</span></label>
+</div>
+<div class="background-clip-list" id="background-clip-list" aria-label="Background media sequence"></div>
+<p class="text-[10px] text-gray-500">Choose one background for a still image or video. Turn on the sequence to use mixed images and videos in order. Background clip audio is muted by default.</p>
+<div class="grid grid-cols-2 gap-3 rounded-lg border border-gray-200 bg-white p-2.5">
+<label class="col-span-2 flex items-center gap-2 text-[11px] font-medium text-gray-700"><input id="background-audio-enabled" type="checkbox"> Mix background video audio (off by default)</label>
+<label class="col-span-2 flex flex-col gap-1 text-[10px] text-gray-600">Background audio volume <input id="background-audio-volume" type="range" min="0" max="0.5" step="0.01" value="0.08" class="preview-range"><span id="background-audio-volume-label">8% · Quran recitation remains primary</span></label>
 </div>
 </div>
+</div>
+<div class="grid grid-cols-2 gap-3">
+<label class="flex flex-col gap-1 text-[11px] font-semibold text-gray-600" for="background-fit">Background fitting
+<select id="background-fit" class="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-normal text-gray-800"><option value="cover">Cover · crop to fill</option><option value="contain">Contain · show all</option><option value="blurred">Blurred fill</option><option value="stretch">Stretch · may distort</option></select></label>
+<label class="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-[11px] text-gray-700"><input id="background-loop" type="checkbox" checked> Loop background video</label>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Horizontal crop <input id="background-crop-x" type="range" min="0" max="1" step="0.01" value="0.5"></label>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Vertical crop <input id="background-crop-y" type="range" min="0" max="1" step="0.01" value="0.5"></label>
+<label class="col-span-2 flex flex-col gap-1 text-[10px] text-gray-600">Background playback speed <input id="background-speed" type="range" min="0.5" max="2" step="0.05" value="1"></label>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Brightness <span id="background-brightness-value">100%</span><input id="background-brightness" type="range" min="0.5" max="1.5" step="0.01" value="1"></label>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Contrast <span id="background-contrast-value">100%</span><input id="background-contrast" type="range" min="0.5" max="1.5" step="0.01" value="1"></label>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Saturation <span id="background-saturation-value">100%</span><input id="background-saturation" type="range" min="0" max="2" step="0.01" value="1"></label>
+<label class="flex items-center justify-between gap-2 text-[10px] text-gray-600">Overlay color <input id="background-overlay-color" type="color" value="#0b1626" class="h-7 w-9 rounded border border-gray-200"></label>
+<label class="col-span-2 flex flex-col gap-1 text-[10px] text-gray-600">Overlay strength <span id="background-overlay-opacity-value">0%</span><input id="background-overlay-opacity" type="range" min="0" max="0.5" step="0.01" value="0"></label>
+</div>
+<details class="rounded-xl border border-gray-200 bg-white p-3" id="background-animation-panel">
+<summary class="cursor-pointer text-[11px] font-semibold text-gray-700">Background Animation</summary>
+<p class="mt-2 text-[10px] text-gray-500">Uploaded images stay still unless a camera move is enabled. Presets use the same crop motion in the rendered video.</p>
+<div class="mt-3 grid grid-cols-2 gap-3">
+<label class="col-span-2 flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-[11px] font-semibold text-gray-700"><input id="background-animation-enabled" type="checkbox"> Enable Background Animation</label>
+<label class="col-span-2 flex flex-col gap-1 text-[10px] text-gray-600">Animation preset<select id="background-animation-preset" class="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs">{% for preset_id, preset in image_animation_presets.items() %}<option value="{{ preset_id }}">{{ preset.name }} · {{ preset.description }}</option>{% endfor %}</select></label>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Intensity <span id="background-animation-intensity-label">60%</span><input id="background-animation-intensity" type="range" min="0" max="1" step="0.05" value="0.6" class="preview-range"></label>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Cycle duration · seconds <input id="background-animation-duration" type="number" min="1" max="120" step="1" value="12" class="rounded-lg border border-gray-200 px-2 py-1.5 text-xs"></label>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Start after · seconds <input id="background-animation-start" type="number" min="0" max="600" step="0.5" value="0" class="rounded-lg border border-gray-200 px-2 py-1.5 text-xs"></label>
+<label class="col-span-2 flex flex-col gap-1 text-[10px] text-gray-600">Movement speed · × <input id="background-animation-speed" type="range" min="0.25" max="3" step="0.05" value="1" class="preview-range"><span id="background-animation-speed-label">1.00×</span></label>
+</div>
+</details>
+<details class="rounded-xl border border-gray-200 bg-white p-3" id="background-atmosphere-panel">
+<summary class="cursor-pointer text-[11px] font-semibold text-gray-700">Atmosphere &amp; Lighting</summary>
+<p class="mt-2 text-[10px] text-gray-500">A low-contrast golden light bloom drifts slowly over any still or video background. It stays off until enabled.</p>
+<div class="mt-3 grid grid-cols-2 gap-3">
+<label class="col-span-2 flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-[11px] font-semibold text-gray-700"><input id="background-atmosphere-enabled" type="checkbox"> Enable Ambient Light Drift</label>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Light strength <span id="background-atmosphere-intensity-label">35%</span><input id="background-atmosphere-intensity" type="range" min="0" max="1" step="0.05" value="0.35" class="preview-range"></label>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Cycle duration · seconds<input id="background-atmosphere-duration" type="number" min="8" max="120" step="1" value="36" class="rounded-lg border border-gray-200 px-2 py-1.5 text-xs"></label>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Start after · seconds<input id="background-atmosphere-start" type="number" min="0" max="600" step="0.5" value="0" class="rounded-lg border border-gray-200 px-2 py-1.5 text-xs"></label>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Movement speed · × <input id="background-atmosphere-speed" type="range" min="0.25" max="3" step="0.05" value="0.7" class="preview-range"><span id="background-atmosphere-speed-label">0.70×</span></label>
+</div>
+</details>
 </div>
 <!-- Recitation Speed & Silence Trimmer Toggles -->
 <div class="grid grid-cols-2 gap-3 pt-0.5">
@@ -220,13 +287,10 @@ tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2ff',200:
 </div>
 <div class="flex items-center justify-between px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl">
 <div class="flex flex-col">
-<span class="text-xs font-semibold text-gray-800">Timed Recitation</span>
-<span class="text-[11px] text-emerald-600 font-medium">Selected ayahs only</span>
+<span class="text-xs font-semibold text-gray-800">Recitation timing</span>
+<span class="text-[11px] text-emerald-700 font-medium">Audio and selected ayahs stay synchronized</span>
 </div>
-<label class="relative inline-flex items-center cursor-pointer">
-<input checked="" class="sr-only peer" type="checkbox"/>
-<div class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-brand-600"></div>
-</label>
+<span class="material-symbols-outlined text-emerald-600" aria-hidden="true">check_circle</span>
 </div>
 </div>
 </div>
@@ -263,6 +327,28 @@ tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2ff',200:
 </button>
 </div>
 </div>
+<details class="rounded-xl border border-gray-200 bg-slate-50 p-3" id="export-settings">
+<summary class="cursor-pointer text-xs font-bold text-gray-700">Export settings <span class="font-normal text-gray-500">· MP4 / H.264 / AAC</span></summary>
+<div class="mt-3 grid grid-cols-2 gap-3">
+<label class="flex flex-col gap-1 text-[11px] font-semibold text-gray-600" for="export-resolution">Resolution
+<select id="export-resolution" class="w-full rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-xs font-normal text-gray-800"><option value="480p">480p · faster, smaller</option><option value="720p">720p · standard</option><option value="1080p" selected>1080p · social HD</option><option value="1440p">1440p · higher detail</option><option value="4k">4K · largest output</option><option value="custom">Custom dimensions</option></select></label>
+<label class="flex flex-col gap-1 text-[11px] font-semibold text-gray-600" for="export-fps">Frame rate
+<select id="export-fps" class="w-full rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-xs font-normal text-gray-800"><option value="24">24 FPS · cinematic</option><option value="25">25 FPS</option><option value="30" selected>30 FPS · social</option><option value="60">60 FPS · smoother, slower</option></select></label>
+<div id="custom-resolution-fields" class="hidden col-span-2 grid grid-cols-2 gap-3">
+<label class="flex flex-col gap-1 text-[11px] font-semibold text-gray-600" for="custom-width">Width (240–3840 px)<input id="custom-width" type="number" min="240" max="3840" step="2" value="1080" class="rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-xs font-normal"></label>
+<label class="flex flex-col gap-1 text-[11px] font-semibold text-gray-600" for="custom-height">Height (240–3840 px)<input id="custom-height" type="number" min="240" max="3840" step="2" value="1920" class="rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-xs font-normal"></label>
+</div>
+<label class="flex flex-col gap-1 text-[11px] font-semibold text-gray-600" for="export-quality">Encoding mode
+<select id="export-quality" class="w-full rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-xs font-normal text-gray-800"><option value="fast">Fast · quickest, larger file</option><option value="balanced" selected>Balanced · recommended</option><option value="high">High quality · slower</option><option value="maximum">Maximum · slowest</option></select></label>
+<label class="flex flex-col gap-1 text-[11px] font-semibold text-gray-600" for="export-crf">H.264 quality (CRF <span id="export-crf-value">23</span>)<input id="export-crf" type="range" min="16" max="34" step="1" value="23" class="preview-range"></label>
+<label class="flex flex-col gap-1 text-[11px] font-semibold text-gray-600" for="audio-bitrate">Audio bitrate
+<select id="audio-bitrate" class="w-full rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-xs font-normal text-gray-800"><option value="128k">128 kbps · smaller</option><option value="192k" selected>192 kbps · recommended</option><option value="256k">256 kbps</option><option value="320k">320 kbps · largest</option></select></label>
+<label class="flex flex-col gap-1 text-[11px] font-semibold text-gray-600" for="audio-sample-rate">Audio sample rate
+<select id="audio-sample-rate" class="w-full rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-xs font-normal text-gray-800"><option value="44100">44.1 kHz</option><option value="48000" selected>48 kHz · video standard</option></select></label>
+<p class="col-span-2 text-[10px] leading-relaxed text-gray-500" id="export-quality-help">Balanced uses x264 veryfast with CRF 23. Lower CRF improves quality and increases file size; higher CRF reduces quality and file size. The mode controls encoding speed.</p>
+<p class="col-span-2 text-[10px] text-gray-500" id="render-estimate">Render estimate: Estimating. The estimate will use measured encoding speed for this export.</p>
+</div>
+</details>
 <!-- 4. Video & Visual Styling Controls -->
 <div class="flex flex-col gap-3">
 <div class="flex items-center justify-between">
@@ -272,16 +358,59 @@ tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2ff',200:
               </span>
 <span class="text-xs text-gray-500 font-medium">HD B-Roll Preset</span>
 </div>
+<div class="flex flex-col gap-2">
+<div class="flex items-center justify-between"><span class="text-[11px] font-semibold text-gray-600">Video Templates</span><span class="text-[10px] text-gray-400">Complete scene presets</span></div>
+<div class="video-template-grid" id="video-template-options">
+{% for template_id, video_template in viewer_templates.items() %}
+<button class="video-template-choice{% if loop.first %} selected-video-template{% endif %}" data-template-id="{{ template_id }}" type="button" aria-pressed="{{ 'true' if loop.first else 'false' }}">
+<img src="/api/video-templates/{{ template_id }}/preview?ratio=9:16" alt="{{ video_template.name }} example composition" loading="lazy">
+<span class="video-template-shade"></span><span class="video-template-copy"><strong>{{ video_template.name }}</strong><small>{{ video_template.description|default('Coordinated background, typography and playback layers') }}</small></span>
+</button>
+{% endfor %}
+</div>
+<button id="reset-viewer-template-btn" type="button" class="self-start rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-[10px] font-semibold text-gray-600 hover:border-brand-300 hover:text-brand-700">Reset selected viewer template</button>
+</div>
+<section class="mt-3" aria-labelledby="background-sequence-gallery-title">
+<div class="mb-2 flex items-center justify-between gap-2"><strong class="text-[11px] font-semibold text-gray-700" id="background-sequence-gallery-title">Cinematic Background Sequences</strong><span class="text-[10px] text-gray-400">Five photo scenes</span></div>
+<p class="mb-2 text-[10px] leading-relaxed text-gray-500">These presets turn distinct bundled, credited photographs into short motion scenes. Selecting one explicitly enables its camera motion, sequence, and transitions; uploaded video clips can replace the preset.</p>
+<input id="background-sequence-template" type="hidden" value="">
+<div class="grid grid-cols-2 gap-2" id="background-sequence-template-options">
+{% for sequence_id, preset in background_sequence_templates.items() %}
+<button type="button" class="background-sequence-choice" data-sequence-id="{{ sequence_id }}" aria-pressed="false">
+<img src="/api/backgrounds/{{ preset.scenes[0].theme }}/preview?ratio=9:16&amp;v=sequence-template" alt="" loading="lazy">
+<span class="background-sequence-badge">5 scenes · {{ preset.transition|replace('_',' ')|title }}</span>
+<strong>{{ preset.name }}</strong><small>{{ preset.description }}</small>
+</button>
+{% endfor %}
+</div>
+</section>
+<details class="rounded-xl border border-gray-200 bg-white p-3" id="custom-template-manager">
+<summary class="cursor-pointer text-[11px] font-semibold text-gray-700">My reusable templates</summary>
+<div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+<label class="flex min-w-0 flex-col gap-1 text-[10px] font-semibold text-gray-600">Template name<input id="custom-template-name" maxlength="48" placeholder="e.g. Dawn reflections" class="min-w-0 rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-xs font-normal"></label>
+<button id="save-custom-template-btn" type="button" class="self-end rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-xs font-semibold text-brand-700 hover:bg-brand-100">Save current design</button>
+<label class="flex min-w-0 flex-col gap-1 text-[10px] font-semibold text-gray-600">Saved designs<select id="custom-template-list" class="min-w-0 rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-xs font-normal"><option value="">Choose a saved design…</option></select></label>
+<div class="flex items-end gap-2"><button id="apply-custom-template-btn" type="button" class="flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700" disabled>Apply</button><button id="delete-custom-template-btn" type="button" class="flex-1 rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-700" disabled>Delete</button></div>
+<div class="flex items-center gap-2 sm:col-span-2"><button id="export-custom-template-btn" type="button" class="rounded-lg border border-gray-200 bg-white px-3 py-2 text-[10px] font-semibold text-gray-700" disabled>Export JSON</button><button id="import-custom-template-btn" type="button" class="rounded-lg border border-gray-200 bg-white px-3 py-2 text-[10px] font-semibold text-gray-700">Import JSON</button><input id="custom-template-import-file" type="file" accept="application/json,.json" class="sr-only" aria-label="Import a Quran Reels template JSON file"></div>
+</div>
+<p class="mt-2 text-[10px] text-gray-500">Save a copy of the current visual settings. Saving another design with the same name updates it; use a new name to duplicate. Imported files are validated before they are applied.</p>
+</details>
 <!-- Renderable background presets -->
+<div class="grid grid-cols-2 gap-2.5">
+<input id="background-search" type="search" placeholder="Search backgrounds…" aria-label="Search backgrounds" class="min-w-0 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs">
+<select id="background-category" aria-label="Filter backgrounds by category" class="min-w-0 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs"><option value="all">All backgrounds</option>{% for category in theme_categories.values()|unique|sort %}<option value="{{ category }}">{{ category }}</option>{% endfor %}</select>
+</div>
 <div class="grid grid-cols-2 gap-2.5" id="background-options">
 {% for theme_id, wallpaper in themes.items() %}
-<button class="background-choice{% if loop.first %} selected-background{% endif %}" data-theme="{{ theme_id }}" data-top="{{ wallpaper.top|join(',') }}" data-bottom="{{ wallpaper.bottom|join(',') }}" type="button"><img class="background-swatch" loading="lazy" alt="" src="/api/backgrounds/{{ theme_id }}/preview?ratio=9:16"><span><strong>{{ wallpaper.name }}</strong><small>Quran wallpaper</small></span></button>
+<button class="background-choice{% if loop.first %} selected-background{% endif %}" data-theme="{{ theme_id }}" data-category="{{ theme_categories.get(theme_id, 'Other') }}" data-top="{{ wallpaper.top|join(',') }}" data-bottom="{{ wallpaper.bottom|join(',') }}" type="button"><img class="background-swatch" loading="lazy" alt="" src="/api/backgrounds/{{ theme_id }}/preview?ratio=9:16&amp;v=cinematic-1"><span><strong>{{ wallpaper.name }}</strong><small>{{ theme_categories.get(theme_id, 'Other') }}</small></span></button>
 {% endfor %}
 </div>
 <!-- Fine visual dropdown selectors -->
 <div class="grid grid-cols-2 gap-3">
+<label class="col-span-2 flex flex-col gap-1 text-[11px] font-semibold text-gray-600" for="quran-text-template">Quran text template
+<select id="quran-text-template" class="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-normal text-gray-800">{% for template_id, item in text_templates.items() %}<option value="{{ template_id }}" {% if loop.first %}selected{% endif %}>{{ item.name }} · {{ item.description }}</option>{% endfor %}</select></label>
 <div class="flex flex-col gap-1">
-<label class="text-[11px] font-semibold text-gray-600" for="transition-style">Camera Motion</label>
+<label class="text-[11px] font-semibold text-gray-600" for="transition-style">Ayah scene transition</label>
 <select class="w-full rounded-xl border border-gray-200 bg-white text-gray-900 px-3 py-2 text-xs focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none transition-all shadow-xs" id="transition-style">
 <option value="crossfade">Smooth Cross Dissolve</option>
 <option value="cut">Cut</option>
@@ -290,10 +419,16 @@ tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2ff',200:
 <div class="flex flex-col gap-1">
 <label class="text-[11px] font-semibold text-gray-600" for="caption-style">Captions Style</label>
 <select class="w-full rounded-xl border border-gray-200 bg-white text-gray-900 px-3 py-2 text-xs focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none transition-all shadow-xs" id="caption-style">
-<option value="Dynamic Karaoke (Glow)">Dynamic Karaoke (Glow)</option>
-<option value="Minimalist Subtitle Fade">Minimalist Subtitle Fade</option>
-<option value="Classic Calligraphic">Classic Calligraphic</option>
-<option value="Arabic Only (No Translation)">Arabic Only (No Translation)</option>
+<option value="golden_illuminated">Golden Illuminated</option>
+<option value="quranic">Quranic Calligraphy</option>
+<option value="soft_white">Soft White Glow</option>
+<option value="classic">Classic Calligraphic</option>
+<option value="minimal">Minimal</option>
+<option value="bold_modern">Bold Modern</option>
+<option value="frosted">Frosted Glass</option>
+<option value="clean_subtitle">Clean Subtitle</option>
+<option value="subtle_outline">Outline Only</option>
+<option value="arabic_only">Arabic Only</option>
 </select>
 </div>
 </div>
@@ -305,6 +440,18 @@ tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2ff',200:
 </select>
 </div>
 <div class="flex flex-col gap-1">
+<label class="text-[11px] font-semibold text-gray-600" for="arabic-font">Arabic font</label>
+<select class="w-full rounded-xl border border-gray-200 bg-white text-gray-900 px-3 py-2 text-xs focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none" id="arabic-font">
+{% for font_id, font in font_catalog.items() %}<option value="{{ font_id }}" {% if font_id == default_font_id %}selected{% endif %}>{{ font.name }}</option>{% endfor %}
+</select>
+</div>
+<div class="flex flex-col gap-1">
+<label class="text-[11px] font-semibold text-gray-600" for="max-lines">Maximum lines per scene</label>
+<select class="w-full rounded-xl border border-gray-200 bg-white text-gray-900 px-3 py-2 text-xs focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none" id="max-lines">
+{% for line_count in range(2, 9) %}<option value="{{ line_count }}" {% if line_count == 5 %}selected{% endif %}>{{ line_count }} lines</option>{% endfor %}
+</select>
+</div>
+<div class="flex flex-col gap-1">
 <span class="text-[11px] font-semibold text-gray-600">Caption color</span>
 <div class="caption-colors" id="caption-colors" role="group" aria-label="Caption color">
 {% for color_id, color_value in caption_colors.items() %}
@@ -312,6 +459,103 @@ tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2ff',200:
 {% endfor %}
 </div>
 </div>
+<div class="grid grid-cols-2 gap-3">
+<label class="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-[11px] font-medium text-gray-700"><input id="show-surah-title" type="checkbox" checked> Show Surah name</label>
+<label class="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-[11px] font-medium text-gray-700"><input id="show-ayah-number" type="checkbox" checked> Show ayah number</label>
+<label class="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-[11px] font-medium text-gray-700"><input id="show-quran-text" type="checkbox" checked> Show Quran text</label>
+<div class="flex flex-col gap-1"><label class="text-[11px] font-semibold text-gray-600" for="caption-position">Caption placement</label><select id="caption-position" class="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs"><option value="upper">Upper</option><option value="center" selected>Center</option><option value="lower">Lower third</option></select></div>
+</div>
+<details class="rounded-xl border border-gray-200 bg-white p-3" id="independent-label-templates">
+<summary class="cursor-pointer text-[11px] font-semibold text-gray-700">Independent Surah name and ayah number styles</summary>
+<div class="mt-3 grid grid-cols-2 gap-3">
+<label class="flex flex-col gap-1 text-[11px] font-semibold text-gray-600" for="surah-name-template">Surah template<select id="surah-name-template" class="rounded-lg border border-gray-200 bg-white px-2 py-2 text-xs font-normal">{% for template_id, item in surah_templates.items() %}<option value="{{ template_id }}">{{ item.name }}</option>{% endfor %}</select></label>
+<label class="flex flex-col gap-1 text-[11px] font-semibold text-gray-600" for="ayah-number-template">Ayah number template<select id="ayah-number-template" class="rounded-lg border border-gray-200 bg-white px-2 py-2 text-xs font-normal">{% for template_id, item in ayah_templates.items() %}<option value="{{ template_id }}">{{ item.name }}</option>{% endfor %}</select></label>
+<label class="flex items-center justify-between gap-2 text-[11px] text-gray-600">Surah color<input id="surah-color" type="color" value="#ffd166" class="h-7 w-10 rounded border border-gray-200"></label>
+<label class="flex items-center justify-between gap-2 text-[11px] text-gray-600">Ayah number color<input id="ayah-color" type="color" value="#ffdf8e" class="h-7 w-10 rounded border border-gray-200"></label>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Surah font<select id="surah-font-id" class="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs">{% for font_id, font in font_catalog.items() %}<option value="{{ font_id }}" {% if font_id == default_font_id %}selected{% endif %}>{{ font.name }}</option>{% endfor %}</select></label>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Ayah number font<select id="ayah-number-font-id" class="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs">{% for font_id, font in font_catalog.items() %}<option value="{{ font_id }}" {% if font_id == default_font_id %}selected{% endif %}>{{ font.name }}</option>{% endfor %}</select></label>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Surah name size <input id="surah-scale" type="range" min="0.25" max="0.7" step="0.01" value="0.46" class="preview-range"></label>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Ayah number size <input id="ayah-number-scale" type="range" min="0.2" max="0.6" step="0.01" value="0.38" class="preview-range"></label>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Surah name opacity <input id="surah-opacity" type="range" min="0" max="1" step="0.05" value="0.9" class="preview-range"></label>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Ayah number opacity <input id="ayah-number-opacity" type="range" min="0" max="1" step="0.05" value="0.96" class="preview-range"></label>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Surah alignment <select id="surah-align" class="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs"><option value="left">Left</option><option value="center" selected>Center</option><option value="right">Right</option></select></label>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Ayah alignment <select id="ayah-number-align" class="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs"><option value="left">Left</option><option value="center" selected>Center</option><option value="right">Right</option></select></label>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Surah name position <select id="surah-placement" class="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs"><option value="above">Above Quran text</option><option value="below">Below Quran text</option></select></label>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Ayah number position <select id="ayah-number-placement" class="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs"><option value="above">Above Quran text</option><option value="below">Below Quran text</option></select></label>
+</div>
+</details>
+<details class="rounded-xl border border-gray-200 bg-white p-3" id="viewer-title-controls">
+<summary class="cursor-pointer text-[11px] font-semibold text-gray-700">Video Header</summary>
+<div class="mt-3 grid grid-cols-2 gap-3">
+<label class="col-span-2 flex items-center gap-2 text-[11px] text-gray-700"><input id="viewer-title-enabled" type="checkbox" checked> Show video header</label>
+<label class="col-span-2 flex items-center gap-2 text-[11px] text-gray-700"><input id="viewer-title-icon-enabled" type="checkbox" checked> Show Quran book icon</label>
+<label class="flex items-center gap-2 text-[10px] text-gray-700"><input id="viewer-header-surah-enabled" type="checkbox" checked> Show Surah name</label>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Surah name language<select id="viewer-header-surah-language" class="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs"><option value="english">English</option><option value="arabic">Arabic</option><option value="both">English + Arabic</option></select></label>
+<label class="flex items-center gap-2 text-[10px] text-gray-700"><input id="viewer-header-range-enabled" type="checkbox" checked> Show ayah range</label>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Range language<select id="viewer-header-range-language" class="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs"><option value="english">English</option><option value="arabic">Arabic</option></select></label>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Range format<select id="viewer-header-range-format" class="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs"><option value="label">Ayahs 1–10</option><option value="compact">1–10</option></select></label>
+<label class="col-span-2 flex items-center gap-2 text-[10px] text-gray-700"><input id="viewer-header-qari-enabled" type="checkbox" checked> Show selected Qari in the header</label>
+<label class="col-span-2 flex flex-col gap-1 text-[10px] text-gray-600">Custom Surah heading · blank follows selected Surah<input id="viewer-title-text" maxlength="48" placeholder="Uses selected Surah" class="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs font-normal"></label>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Badge design<select id="viewer-title-template" class="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs"><option value="dark_pill">Dark translucent pill</option><option value="gold_ornament">Gold ornamental</option><option value="minimal_white">Minimal white</option></select></label>
+<label class="flex items-center justify-between gap-2 text-[10px] text-gray-600">Accent color<input id="viewer-title-color" type="color" value="#edc85f" class="h-7 w-9 rounded border border-gray-200"></label>
+<label class="col-span-2 flex flex-col gap-1 text-[10px] text-gray-600">Badge opacity<input id="viewer-title-opacity" type="range" min="0.25" max="1" step="0.05" value="0.88"></label>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Badge size<input id="viewer-title-size" type="range" min="0.018" max="0.034" step="0.001" value="0.027"></label>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Placement<select id="viewer-title-position" class="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs"><option value="top">Top safe area</option><option value="upper">Upper safe area</option></select></label>
+</div>
+</details>
+<details class="rounded-xl border border-gray-200 bg-white p-3" id="translation-controls">
+<summary class="cursor-pointer text-[11px] font-semibold text-gray-700">English Translation</summary>
+<div class="mt-3 grid grid-cols-2 gap-3">
+<label class="col-span-2 flex items-center gap-2 text-[11px] text-gray-700"><input id="show-translation" type="checkbox"> Show supplied translation</label>
+<label class="col-span-2 flex flex-col gap-1 text-[10px] text-gray-600">One translation per selected ayah, in range order<textarea id="translation-text" rows="3" dir="auto" placeholder="Translations are not included. Add your chosen translation here, one ayah per line." class="rounded-lg border border-gray-200 bg-white px-2 py-2 text-xs font-normal"></textarea></label>
+<label class="flex items-center justify-between gap-2 text-[10px] text-gray-600">Text color<input id="translation-color" type="color" value="#ffffff" class="h-7 w-9 rounded border border-gray-200"></label>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Text size<input id="translation-size" type="range" min="0.020" max="0.036" step="0.001" value="0.026"></label>
+<label class="col-span-2 flex items-center gap-2 text-[10px] text-gray-600"><input id="translation-bg-enabled" type="checkbox"> Add a translucent translation plate</label>
+<label class="flex items-center justify-between gap-2 text-[10px] text-gray-600">Plate color<input id="translation-bg-color" type="color" value="#10161d" class="h-7 w-9 rounded border border-gray-200"></label>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Plate opacity<input id="translation-bg-opacity" type="range" min="0.1" max="0.9" step="0.05" value="0.4"></label>
+<p class="col-span-2 text-[10px] leading-relaxed text-gray-500">This build has no licensed translation catalog; only text you enter is shown or exported.</p>
+</div>
+</details>
+<details class="rounded-xl border border-gray-200 bg-white p-3" id="waveform-controls">
+<summary class="cursor-pointer text-[11px] font-semibold text-gray-700">Audio animation · playback-synced bars</summary>
+<div class="mt-3 grid grid-cols-2 gap-3">
+<label class="col-span-2 flex items-center gap-2 text-[11px] text-gray-700"><input id="show-waveform" type="checkbox" checked> Show waveform while playback runs</label>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Waveform style<select id="waveform-style" class="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs"><option value="gold">Gold</option><option value="white">White</option><option value="glow">Glow</option><option value="minimal">Minimal</option></select></label>
+<label class="flex items-center justify-between gap-2 text-[10px] text-gray-600">Waveform color<input id="waveform-color" type="color" value="#f0c64b" class="h-7 w-9 rounded border border-gray-200"></label>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Bar count<select id="waveform-count" class="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs"><option value="9">9 bars</option><option value="13" selected>13 bars</option><option value="17">17 bars</option></select></label>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Animation speed<input id="waveform-speed" type="range" min="0.5" max="2" step="0.1" value="1"></label>
+<p class="col-span-2 text-[10px] leading-relaxed text-gray-500">Bars animate only while the audio or exported video plays. They are not measured audio amplitudes.</p>
+</div>
+</details>
+<details class="rounded-xl border border-gray-200 bg-white p-3" id="reciter-badge-controls">
+<summary class="cursor-pointer text-[11px] font-semibold text-gray-700">Reciter badge</summary>
+<div class="mt-3 grid grid-cols-2 gap-3">
+<label class="col-span-2 flex items-center gap-2 text-[11px] text-gray-700"><input id="show-reciter-badge" type="checkbox"> Also show a separate reciter badge</label>
+<label class="col-span-2 flex flex-col gap-1 text-[10px] text-gray-600">Badge label · blank uses selected reciter<input id="reciter-label" maxlength="60" placeholder="Sheikh Mishary Rashid Alafasy" class="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs font-normal"></label>
+<label class="flex items-center justify-between gap-2 text-[10px] text-gray-600">Text color<input id="reciter-color" type="color" value="#ffffff" class="h-7 w-9 rounded border border-gray-200"></label>
+<label class="flex items-center justify-between gap-2 text-[10px] text-gray-600">Badge color<input id="reciter-background" type="color" value="#10161d" class="h-7 w-9 rounded border border-gray-200"></label>
+<label class="col-span-2 flex flex-col gap-1 text-[10px] text-gray-600">Badge opacity<input id="reciter-opacity" type="range" min="0.25" max="1" step="0.05" value="0.88"></label>
+</div>
+</details>
+<details class="rounded-xl border border-gray-200 bg-white p-3" id="progress-bar-controls">
+<summary class="cursor-pointer text-[11px] font-semibold text-gray-700">Progress bar · true video timeline</summary>
+<div class="mt-3 grid grid-cols-2 gap-3">
+<label class="col-span-2 flex items-center gap-2 text-[11px] text-gray-700"><input id="show-progress" type="checkbox" checked> Show playback progress in video</label>
+<label class="flex items-center justify-between gap-2 text-[10px] text-gray-600">Progress color<input id="progress-color" type="color" value="#edbd36" class="h-7 w-9 rounded border border-gray-200"></label>
+<label class="flex items-center justify-between gap-2 text-[10px] text-gray-600">Track color<input id="progress-track-color" type="color" value="#d1d5db" class="h-7 w-9 rounded border border-gray-200"></label>
+<label class="col-span-2 flex flex-col gap-1 text-[10px] text-gray-600">Bar height<input id="progress-height" type="range" min="2" max="12" step="1" value="6"></label>
+</div>
+</details>
+<details class="rounded-xl border border-gray-200 bg-white p-3">
+<summary class="cursor-pointer text-[11px] font-semibold text-gray-700">Caption background and glow</summary>
+<div class="mt-3 grid grid-cols-2 gap-3">
+<label class="flex items-center gap-2 text-[11px] text-gray-700"><input id="text-bg-enabled" type="checkbox" checked> Show caption panel (disable to remove text background)</label>
+<label class="flex items-center gap-2 text-[11px] text-gray-700">Backdrop color <input id="text-bg-color" type="color" value="#090806" class="h-7 w-9 rounded border border-gray-200"></label>
+<label class="flex flex-col gap-1 text-[11px] text-gray-600">Backdrop opacity <input id="text-bg-opacity" type="range" min="0" max="1" step="0.05" value="0.68"></label>
+<label class="flex flex-col gap-1 text-[11px] text-gray-600">Glow <select id="glow-type" class="rounded-lg border border-gray-200 bg-white px-2 py-1"><option value="none">None</option><option value="gold" selected>Gold</option><option value="white">White</option><option value="blue">Blue</option><option value="emerald">Emerald</option></select></label>
+<label class="col-span-2 flex flex-col gap-1 text-[11px] text-gray-600">Glow strength <input id="glow-radius" type="range" min="0" max="30" step="1" value="14"></label>
+</div>
+</details>
 </div>
 </div>
 <!-- Diacritics row -->
@@ -328,21 +572,25 @@ tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2ff',200:
 <span class="material-symbols-outlined text-[22px]">auto_awesome</span>
 <span>Render High-Res Reel (1080x1920)</span>
 </button>
-<div id="render-status" class="hidden rounded-lg px-3 py-2 text-sm" role="status" aria-live="polite"></div>
+<div id="render-status" class="hidden rounded-lg px-3 py-2 text-sm" role="status" aria-live="polite">
+<div id="render-status-message"></div>
+<div id="render-progress-row" class="hidden mt-2 flex items-center gap-2">
+  <progress id="render-progress" class="render-progress" max="100" value="0" aria-label="Video rendering progress"></progress>
+  <span id="render-progress-percent" class="shrink-0 text-[11px] font-semibold tabular-nums">0%</span>
+  <span id="render-phase" class="sr-only">queued</span>
+</div>
+<button id="render-cancel-btn" class="hidden mt-2 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:border-red-300 hover:text-red-700" type="button">Cancel render</button>
+</div>
 <div class="flex items-center justify-between px-1 text-xs text-gray-500">
 <span class="flex items-center gap-1">
 <span class="material-symbols-outlined text-[15px] text-emerald-600">bolt</span>
-                Est. Render: ~12s on RTX Node
+                Live frame progress · 1080 × 1920 · 30 FPS
               </span>
-<button class="text-brand-600 hover:text-brand-700 font-medium transition-colors flex items-center gap-1" type="button">
-<span class="material-symbols-outlined text-[15px]">bookmark</span>
-<span>Save Preset</span>
-</button>
 </div>
 </div>
 </div>
 <!-- RIGHT COLUMN: Immersive Canvas Stage Preview (7 cols) -->
-<div class="flex flex-col gap-4">
+<div class="studio-preview-column flex flex-col gap-4">
 <!-- Preview Control Header -->
 <div class="flex flex-wrap items-center justify-between gap-3 bg-white border border-gray-200 text-gray-700 shadow-sm px-4 py-2.5 rounded-xl text-xs font-medium">
 <div class="flex items-center gap-2.5">
@@ -350,7 +598,7 @@ tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2ff',200:
 <span class="material-symbols-outlined text-[14px]">smart_display</span>
                 Live Canvas
               </span>
-<span class="text-xs text-gray-700 font-semibold"><span id="canvas-resolution">1080 × 1920 (9:16) • 24 FPS</span></span>
+<span class="text-xs text-gray-700 font-semibold"><span id="canvas-resolution">1080 × 1920 (9:16) • 30 FPS</span></span>
 </div>
 <div class="flex items-center gap-2">
 <button class="px-2.5 py-1.5 text-gray-600 hover:text-brand-600 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-1" id="wallpaper-jump" title="Change Background" type="button">
@@ -375,14 +623,31 @@ tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2ff',200:
 <!-- Phone Bezel / Reel Container -->
 <div class="preview-phone relative w-full max-w-[340px] bg-white p-3 rounded-[38px] shadow-2xl border-4 border-gray-100" id="reel-mockup">
 <!-- Live output frame: same wallpaper and single verse caption used by the renderer -->
-<div class="preview-frame relative w-full aspect-[9/16] aspect-screen rounded-[28px] overflow-hidden flex items-center justify-center shadow-inner bg-black">
-<div class="absolute inset-0 bg-cover bg-center preview-background" id="preview-background"></div>
+<div class="preview-frame relative w-full aspect-[9/16] aspect-screen rounded-[28px] overflow-hidden flex items-center justify-center shadow-inner bg-black" id="preview-frame">
+<div class="absolute inset-0 bg-cover bg-center preview-background" id="preview-background">
+<img class="absolute inset-0 z-0 h-full w-full object-cover" id="preview-wallpaper" alt="Selected Quran reel background">
+<div class="preview-background-blur" id="preview-background-blur"></div>
+<img class="hidden preview-background-image preview-background-previous" id="preview-background-image-previous" alt="">
+<video class="hidden preview-background-video preview-background-previous" id="preview-background-video-previous" muted playsinline></video>
+<img class="hidden preview-background-image" id="preview-background-image" alt="">
+<video class="hidden preview-background-video" id="preview-background-video-blur" muted loop playsinline></video>
+<video class="hidden preview-background-video" id="preview-background-video" muted playsinline></video>
+<div class="preview-background-shade" aria-hidden="true"></div>
+<div class="preview-background-overlay" id="preview-background-overlay"></div>
+<div class="preview-atmosphere-overlay" id="preview-atmosphere-overlay" aria-hidden="true"></div>
+<div class="preview-transition-overlay" id="preview-transition-overlay" aria-hidden="true"></div>
+</div>
 <video class="hidden absolute inset-0 z-30 h-full w-full object-cover bg-black" id="rendered-video" controls playsinline></video>
 <div class="hidden absolute inset-0 pointer-events-none p-4 flex flex-col justify-between z-20" id="safezone-overlay">
 <div class="w-full pt-10 pb-2 px-2 text-[10px] text-amber-300 font-bold tracking-wider uppercase flex justify-between bg-black/20 rounded border border-amber-300/40"><span>Safe Header Bound</span><span>12% Margin</span></div>
 <div class="w-full pb-12 px-2 text-[10px] text-amber-300 font-bold tracking-wider uppercase flex justify-between bg-black/20 rounded border border-amber-300/40"><span>Controls UI Safe Zone</span><span>Bottom 20%</span></div>
 </div>
 <img id="preview-ayah-text" class="caption-preview-overlay" alt="Arabic Ayah caption preview" draggable="false">
+<div class="viewer-title-badge" id="viewer-title-badge"><span class="material-symbols-outlined viewer-title-icon" id="viewer-title-icon" aria-hidden="true">menu_book</span><span class="viewer-title-copy"><span id="viewer-title-name">Surah Ar-Rahmaan</span><span id="viewer-title-surah-arabic" dir="rtl" hidden></span><span class="viewer-title-reference" id="viewer-title-reference"></span><span class="viewer-title-qari" id="viewer-title-qari"></span></span></div>
+<div class="viewer-translation hidden" id="viewer-translation" dir="auto"></div>
+<div class="viewer-waveform" id="viewer-waveform" aria-label="Playback animation, not measured audio amplitude" title="Playback animation · not measured audio amplitude">{% for _ in range(13) %}<span></span>{% endfor %}</div>
+<div class="viewer-reciter-badge" id="viewer-reciter-badge"><span class="material-symbols-outlined" aria-hidden="true">auto_awesome</span><span id="preview-reciter-name">Sheikh Mishary Rashid Alafasy</span></div>
+<div class="viewer-progress-track" id="viewer-progress-track" aria-label="Recitation playback progress"><span id="viewer-progress-fill"></span></div>
 </div>
 </div>
 <!-- Media Timeline & Controls underneath phone -->
@@ -409,7 +674,7 @@ tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2ff',200:
 <input aria-label="Preview volume" class="preview-range w-20" id="preview-volume" type="range" min="0" max="1" value="0.8" step="0.01">
 </div>
 <!-- Resolution Pill -->
-<span class="px-2 py-0.5 rounded-md bg-gray-100 border border-gray-200 text-[11px] font-bold text-gray-700">1080p</span>
+<span class="px-2 py-0.5 rounded-md bg-gray-100 border border-gray-200 text-[11px] font-bold text-gray-700" id="resolution-pill">1080P</span>
 </div>
 </div>
 </div>
@@ -441,7 +706,7 @@ tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2ff',200:
 <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-gray-500">
 <div class="flex items-center gap-2">
 <span class="font-bold text-gray-900">Quran Reels Generator</span>
-<span>© 2024 Sacred Arts Studio. All rights reserved.</span>
+<span>© {{ copyright_year }} Mohammed Ehab. All rights reserved.</span>
 </div>
 
 </div>
@@ -449,27 +714,729 @@ tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2ff',200:
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
+  const videoTemplates = {{ video_templates|tojson }};
+  const textTemplates = {{ text_templates|tojson }};
+  const fontCatalog = {{ font_catalog|tojson }};
+  const imageAnimationPresets = {{ image_animation_presets|tojson }};
+  const backgroundSequenceTemplates = {{ background_sequence_templates|tojson }};
+  let selectedTemplateId = videoTemplates.cinematic_nature ? 'cinematic_nature' : Object.keys(videoTemplates)[0];
+  const initialTemplate = videoTemplates[selectedTemplateId];
   let selectedReciter = 'mishary_alafasy';
   let ratio = '9:16';
-  let theme = 'misty_forest';
-  let captionColor = 'white';
+  const qualityProfiles = {{ quality_presets|tojson }};
+  let theme = initialTemplate.theme;
+  let captionColor = initialTemplate.caption_color;
   let wrapWidth = 85;
   let speed = 1.0;
   let verseLoadTimer;
+  let verseLoadRequest = 0;
+  let activeRenderJobId = null;
   let previewAyahs = [];
+  let previewScenes = [];
   let previewTimings = [];
   let previewIndex = 0;
-  let previewObjectUrl = null;
+  let previewObjectUrls = [];
+  let selectedBackgroundFiles = [];
+  let backgroundClipRows = [];
+  let previewClipIndex = 0;
+  let previewClipAdvancing = false;
+  let currentBackgroundKind = null;
+  let backgroundPreviewTimer;
+  let sequencePreviewTimer = null;
+  let sequencePreviewFadeTimer = null;
+  let sequencePreviewCleanupTimer = null;
+  let builtinSequencePreviewTimer = null;
+  let builtinSequenceIndex = 0;
+  let animationPreviewFrame = null;
+  let animationPreviewStartedAt = performance.now();
   let loadedVerseSelection = '';
+  let scenePlanRequest = 0;
+  let scenePlanManual = false;
+  let scenePlanTimer;
   const surahSelect = $('surah-select');
   const startInput = $('start-ayah');
   const endInput = $('end-ayah');
   const ayahText = $('ayah-text');
   const reciterList = $('reciters-list');
+  const PROJECT_DRAFT_KEY = 'quran-reels-studio-draft-v1';
+  const SAVED_PROJECTS_KEY = 'quran-reels-studio-projects-v1';
+  const CUSTOM_DESIGNS_KEY = 'quran-reels-studio-custom-designs-v1';
+  const PROJECT_TEMPLATE_FIELDS = [
+    'caption-style','arabic-font','max-lines','show-surah-title','show-ayah-number',
+    'show-quran-text','viewer-title-enabled','viewer-title-icon-enabled','viewer-header-surah-enabled','viewer-header-surah-language','viewer-header-range-enabled','viewer-header-range-language','viewer-header-range-format','viewer-header-qari-enabled','viewer-title-text','viewer-title-template','viewer-title-color','viewer-title-opacity','viewer-title-size','viewer-title-position',
+    'show-translation','translation-text','translation-color','translation-size','translation-bg-enabled','translation-bg-color','translation-bg-opacity','show-waveform','waveform-style','waveform-color','waveform-count','waveform-speed',
+    'show-reciter-badge','reciter-label','reciter-color','reciter-background','reciter-opacity','show-progress','progress-color','progress-track-color','progress-height',
+    'surah-name-template','ayah-number-template','surah-color','ayah-color','surah-scale',
+    'ayah-number-scale','surah-align','ayah-number-align','surah-font-id','ayah-number-font-id',
+    'surah-opacity','ayah-number-opacity','surah-placement','ayah-number-placement','caption-position','text-bg-enabled',
+    'text-bg-color','text-bg-opacity','glow-type','glow-radius','quran-text-template','wrap-width',
+    'transition-style','background-fit','background-crop-x','background-crop-y','background-speed',
+    'background-animation-enabled','background-animation-preset','background-animation-intensity',
+    'background-animation-duration','background-animation-speed','background-animation-start',
+    'background-atmosphere-enabled','background-atmosphere-intensity','background-atmosphere-duration',
+    'background-atmosphere-speed','background-atmosphere-start','transitions-enabled',
+    'background-sequence-template','sequence-enabled','transitions-enabled',
+    'default-background-transition','background-transition-color','background-transition-duration',
+    'background-loop','background-brightness','background-contrast','background-saturation',
+    'background-overlay-color','background-overlay-opacity','background-audio-enabled',
+    'background-audio-volume','export-resolution','custom-width','custom-height','export-fps',
+    'export-quality','export-crf','audio-bitrate','audio-sample-rate',
+    'sequence-enabled','transitions-enabled','default-background-transition','background-transition-color',
+    'background-transition-duration','sequence-loop','background-animation-enabled',
+    'background-animation-preset','background-animation-intensity','background-animation-duration',
+    'background-animation-speed',
+  ];
+  const EXCLUDED_PROJECT_FIELDS = new Set([
+    'reciter-filter-input','background-search','background-category','preview-scrubber',
+    'preview-volume','saved-projects','custom-template-list','custom-template-name',
+  ]);
+  let activeProjectId = 'draft';
+  let projectDatabasePromise = null;
+  let mediaSignatures = new Map();
+  let undoHistory = [];
+  let redoHistory = [];
+  let historyApplying = false;
+  let autosaveTimer = null;
+  let autosaveQueue = Promise.resolve();
+  let lastPersistedSignature = '';
+
+  function makeEditorSnapshot() {
+    const fields = {};
+    document.querySelectorAll('input[id],select[id],textarea[id]').forEach(element => {
+      if (element.type === 'file' || EXCLUDED_PROJECT_FIELDS.has(element.id)) return;
+      fields[element.id] = element.type === 'checkbox' ? element.checked : element.value;
+    });
+    return {
+      version: 1, fields, projectName: $('project-name').value.trim() || 'Untitled Reel',
+      videoTemplate: selectedTemplateId, reciter: selectedReciter, ratio, theme,
+      captionColor, wrapWidth, speed, scenePlanManual,
+      scenes: scenePlanManual ? previewScenes.map(scene => ({
+        ayah_number:scene.ayah_number, text:scene.text,
+        ...(scene.manual_duration_fraction ? {duration_fraction:scene.duration_fraction} : {}),
+      })) : [],
+      mediaClips: backgroundClipRows.map(row => ({
+        file:row.file, name:row.file?.name || '', size:row.file?.size || 0,
+        type:row.file?.type || '', lastModified:row.file?.lastModified || 0,
+        start:row.start, end:row.end, speed:row.speed, transition:row.transition,
+        transition_duration:row.transition_duration, duration:row.duration,
+      })),
+    };
+  }
+
+  function serializableProjectSnapshot(snapshot) {
+    return {...snapshot, mediaClips:(snapshot.mediaClips || []).map(({file, ...clip}) => clip)};
+  }
+
+  function snapshotSignature(snapshot) {
+    return JSON.stringify(serializableProjectSnapshot(snapshot));
+  }
+
+  function safeReadStorage(key, fallback) {
+    try { return JSON.parse(localStorage.getItem(key) || 'null') ?? fallback; }
+    catch (_) { return fallback; }
+  }
+
+  function savedProjectRecords() {
+    const records = safeReadStorage(SAVED_PROJECTS_KEY, []);
+    return Array.isArray(records) ? records.filter(item => item && item.id && item.state) : [];
+  }
+
+  function customDesignRecords() {
+    const records = safeReadStorage(CUSTOM_DESIGNS_KEY, []);
+    return Array.isArray(records) ? records.filter(item => item && item.id && item.name && item.design) : [];
+  }
+
+  function newLocalId(prefix) {
+    return `${prefix}-${window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2,10)}`}`;
+  }
+
+  function openProjectDatabase() {
+    if (!window.indexedDB) return Promise.reject(new Error('This browser does not provide local media storage.'));
+    if (!projectDatabasePromise) {
+      projectDatabasePromise = new Promise((resolve, reject) => {
+        const request = indexedDB.open('QuranReelsStudio', 1);
+        request.onupgradeneeded = () => {
+          if (!request.result.objectStoreNames.contains('background_media')) {
+            request.result.createObjectStore('background_media', {keyPath:'key'});
+          }
+        };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error || new Error('Could not open browser media storage.'));
+        request.onblocked = () => reject(new Error('Close another Quran Reels tab to enable local media storage.'));
+      });
+    }
+    return projectDatabasePromise;
+  }
+
+  function mediaSignature(projectId, clips) {
+    return `${projectId}|${(clips || []).map(item => `${item.name}:${item.size}:${item.lastModified}:${item.type}`).join('|')}`;
+  }
+
+  async function persistProjectMedia(projectId, clips) {
+    const signature = mediaSignature(projectId, clips);
+    if (mediaSignatures.get(projectId) === signature) return;
+    const db = await openProjectDatabase();
+    await new Promise((resolve, reject) => {
+      const transaction = db.transaction('background_media', 'readwrite');
+      const store = transaction.objectStore('background_media');
+      const prefix = `${projectId}:`;
+      const keys = store.getAllKeys();
+      keys.onsuccess = () => {
+        keys.result.filter(key => String(key).startsWith(prefix)).forEach(key => store.delete(key));
+        (clips || []).forEach((clip, index) => {
+          if (clip.file instanceof Blob) store.put({key:`${prefix}${index}`, file:clip.file, size:clip.size,
+                                                    name:clip.name, type:clip.type, lastModified:clip.lastModified});
+        });
+      };
+      keys.onerror = () => reject(keys.error || new Error('Could not update saved background media.'));
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error || new Error('Could not save background media in this browser.'));
+      transaction.onabort = () => reject(transaction.error || new Error('Browser storage rejected the uploaded media.'));
+    });
+    mediaSignatures.set(projectId, signature);
+  }
+
+  async function readProjectMedia(projectId, clipSettings = []) {
+    const db = await openProjectDatabase();
+    const rows = await new Promise((resolve, reject) => {
+      const transaction = db.transaction('background_media', 'readonly');
+      const request = transaction.objectStore('background_media').getAll();
+      request.onsuccess = () => resolve(request.result.filter(item => String(item.key).startsWith(`${projectId}:`))
+        .sort((a,b) => Number(a.key.split(':').at(-1)) - Number(b.key.split(':').at(-1))));
+      request.onerror = () => reject(request.error || new Error('Could not read saved background media.'));
+    });
+    mediaSignatures.set(projectId, mediaSignature(projectId, rows.map(row => row)));
+    return rows.map((row,index) => {
+      const saved = clipSettings[index] || {};
+      const file = new File([row.file], row.name || saved.name || 'background', {
+        type:row.type || saved.type || 'application/octet-stream',
+        lastModified:row.lastModified || saved.lastModified || Date.now(),
+      });
+      return {...saved, file};
+    });
+  }
+
+  async function removeProjectMedia(projectId) {
+    mediaSignatures.delete(projectId);
+    const db = await openProjectDatabase();
+    await new Promise((resolve,reject) => {
+      const transaction = db.transaction('background_media','readwrite');
+      const store = transaction.objectStore('background_media');
+      const keys = store.getAllKeys();
+      keys.onsuccess = () => keys.result.filter(key => String(key).startsWith(`${projectId}:`)).forEach(key => store.delete(key));
+      keys.onerror = () => reject(keys.error || new Error('Could not remove saved project media.'));
+      transaction.oncomplete = resolve;
+      transaction.onerror = () => reject(transaction.error || new Error('Could not remove saved project media.'));
+    });
+  }
+
+  function refreshSavedProjects(selectedId = activeProjectId) {
+    const select = $('saved-projects');
+    if (!select) return;
+    select.replaceChildren(new Option('Choose a saved project…',''));
+    savedProjectRecords().sort((a,b) => b.updatedAt - a.updatedAt).forEach(project => {
+      select.add(new Option(`${project.name} · ${new Date(project.updatedAt).toLocaleDateString()}`, project.id));
+    });
+    select.value = selectedId === 'draft' ? '' : selectedId;
+    $('open-project-btn').disabled = !select.value;
+    $('delete-project-btn').disabled = !select.value;
+  }
+
+  function refreshCustomDesigns(selectedId = '') {
+    const select = $('custom-template-list');
+    if (!select) return;
+    select.replaceChildren(new Option('Choose a saved design…',''));
+    customDesignRecords().sort((a,b) => a.name.localeCompare(b.name)).forEach(item => select.add(new Option(item.name,item.id)));
+    select.value = selectedId;
+    $('apply-custom-template-btn').disabled = !select.value;
+    $('delete-custom-template-btn').disabled = !select.value;
+    $('export-custom-template-btn').disabled = !select.value;
+  }
+
+  function setProjectStatus(message, warning = false) {
+    const status = $('project-save-status');
+    if (!status) return;
+    status.textContent = message;
+    status.classList.toggle('text-amber-700', warning);
+    status.classList.toggle('text-gray-500', !warning);
+  }
+
+  function updateHistoryButtons() {
+    $('undo-project-btn').disabled = undoHistory.length < 2;
+    $('redo-project-btn').disabled = redoHistory.length === 0;
+  }
+
+  function updatePreviewReciterName(name) {
+    const previewLabel = $('preview-reciter-name');
+    if (previewLabel) previewLabel.textContent = $('reciter-label')?.value.trim() || `Sheikh ${name}`;
+    updateViewerLayerPreview();
+  }
+
+  function currentPreviewAyahNumber() {
+    return Number(previewScenes[previewIndex]?.ayah_number || startInput.value || 1);
+  }
+
+  function activeTranslationText() {
+    if (!$('show-translation').checked) return '';
+    const lines = $('translation-text').value.split(/\r?\n/);
+    const index = currentPreviewAyahNumber() - Number(startInput.value || 1);
+    return index >= 0 && index < lines.length ? lines[index].trim() : '';
+  }
+
+  function localizeHeaderDigits(value) {
+    return String(value).replace(/\d/g, digit => '٠١٢٣٤٥٦٧٨٩'[Number(digit)]);
+  }
+
+  function currentHeaderAyahRange() {
+    const included = [...new Set(previewScenes.map(scene => Number(scene.ayah_number)).filter(Number.isFinite))];
+    return [included[0] || Number(startInput.value || 1), included.at(-1) || Number(endInput.value || startInput.value || 1)];
+  }
+
+  function updateViewerLayerPreview() {
+    const selectedSurah = surahSelect?.selectedOptions?.[0]?.textContent || '';
+    const surahParts = selectedSurah.split('·').map(part => part.trim());
+    const englishName = surahParts[1] || 'Selected Surah';
+    const arabicName = surahParts[2] || '';
+    const range = currentHeaderAyahRange();
+    const rangeStart = Math.min(...range), rangeEnd = Math.max(...range);
+    const frameWidth = $('preview-frame')?.getBoundingClientRect().width || document.querySelector('.preview-frame').getBoundingClientRect().width;
+    const title = $('viewer-title-badge');
+    title.hidden = !$('viewer-title-enabled').checked;
+    const customTitle = $('viewer-title-text').value.trim();
+    const language = $('viewer-header-surah-language').value;
+    const name = $('viewer-title-name');
+    name.textContent = customTitle || (language === 'arabic' ? arabicName : `Surah ${englishName}`);
+    name.hidden = !$('viewer-header-surah-enabled').checked;
+    const arabicHeading = $('viewer-title-surah-arabic');
+    arabicHeading.textContent = language === 'both' && !customTitle ? arabicName : '';
+    arabicHeading.hidden = !arabicHeading.textContent || !$('viewer-header-surah-enabled').checked;
+    name.dir = !customTitle && language === 'arabic' ? 'rtl' : 'auto';
+    const rangeLabel = $('viewer-title-reference');
+    const rangeLanguage = $('viewer-header-range-language').value;
+    const compactRange = $('viewer-header-range-format').value === 'compact';
+    if (rangeStart === rangeEnd) {
+      rangeLabel.textContent = rangeLanguage === 'arabic'
+        ? (compactRange ? localizeHeaderDigits(rangeStart) : `الآية ${localizeHeaderDigits(rangeStart)}`)
+        : (compactRange ? String(rangeStart) : `Ayah ${rangeStart}`);
+    } else if (rangeLanguage === 'arabic') {
+      const bounds = `${localizeHeaderDigits(rangeStart)}–${localizeHeaderDigits(rangeEnd)}`;
+      rangeLabel.textContent = compactRange ? bounds : `الآيات ${bounds}`;
+    } else {
+      const bounds = `${rangeStart}–${rangeEnd}`;
+      rangeLabel.textContent = compactRange ? bounds : `Ayahs ${bounds}`;
+    }
+    rangeLabel.hidden = !$('viewer-header-range-enabled').checked;
+    rangeLabel.dir = rangeLanguage === 'arabic' ? 'rtl' : 'ltr';
+    const selectedReciterName = $('selected-reciter-name')?.textContent.trim() || '';
+    const displayReciter = $('reciter-label').value.trim() || `Sheikh ${selectedReciterName}`;
+    const qariInHeader = $('viewer-header-qari-enabled').checked;
+    $('viewer-title-qari').textContent = displayReciter;
+    $('viewer-title-qari').hidden = !qariInHeader;
+    title.dataset.style = $('viewer-title-template').value;
+    title.style.setProperty('--viewer-title-accent', $('viewer-title-color').value);
+    title.style.setProperty('--viewer-title-opacity', $('viewer-title-opacity').value);
+    $('viewer-title-icon').hidden = !$('viewer-title-icon-enabled').checked;
+    title.style.top = $('viewer-title-position').value === 'upper' ? '10%' : '5.5%';
+    title.style.fontSize = `${Math.max(8, frameWidth * Number($('viewer-title-size').value))}px`;
+
+    const translation = $('viewer-translation');
+    const translationText = activeTranslationText();
+    translation.textContent = translationText;
+    translation.classList.toggle('hidden', !translationText);
+    translation.style.color = $('translation-color').value;
+    translation.style.fontSize = `${Math.max(8, frameWidth * Number($('translation-size').value))}px`;
+    translation.style.background = $('translation-bg-enabled').checked
+      ? `color-mix(in srgb, ${$('translation-bg-color').value} ${Math.round(Number($('translation-bg-opacity').value)*100)}%, transparent)` : 'transparent';
+    translation.style.padding = $('translation-bg-enabled').checked ? '.22em .6em' : '0';
+    translation.style.borderRadius = $('translation-bg-enabled').checked ? '.5em' : '0';
+
+    const reciterBadge = $('viewer-reciter-badge');
+    reciterBadge.hidden = !$('show-reciter-badge').checked;
+    $('preview-reciter-name').textContent = displayReciter;
+    reciterBadge.style.setProperty('--viewer-reciter-color', $('reciter-color').value);
+    reciterBadge.style.setProperty('--viewer-reciter-bg', $('reciter-background').value);
+    reciterBadge.style.setProperty('--viewer-reciter-opacity', $('reciter-opacity').value);
+    const wave = $('viewer-waveform');
+    wave.hidden = !$('show-waveform').checked;
+    wave.dataset.style = $('waveform-style').value;
+    wave.style.setProperty('--viewer-wave-color', $('waveform-color').value);
+    const barCount = Number($('waveform-count').value);
+    if (wave.children.length !== barCount) {
+      wave.replaceChildren(...Array.from({length:barCount}, () => document.createElement('span')));
+    }
+    wave.style.setProperty('--viewer-wave-speed', `${1 / Number($('waveform-speed').value)}s`);
+    const progress = $('viewer-progress-track');
+    progress.hidden = !$('show-progress').checked;
+    progress.style.setProperty('--viewer-progress-color', $('progress-color').value);
+    progress.style.setProperty('--viewer-progress-track', $('progress-track-color').value);
+    progress.style.height = `${Math.max(2, Number($('progress-height').value) * frameWidth / 1080)}px`;
+  }
+
+  function activeBackgroundSequencePreset() {
+    return backgroundSequenceTemplates[$('background-sequence-template').value] || null;
+  }
+
+  function updateBackgroundSequenceSelection() {
+    const selectedId = $('background-sequence-template').value;
+    document.querySelectorAll('.background-sequence-choice').forEach(button => {
+      const selected = button.dataset.sequenceId === selectedId;
+      button.classList.toggle('selected-sequence', selected);
+      button.setAttribute('aria-pressed', String(selected));
+    });
+  }
+
+  async function persistProjectSnapshot(snapshot, projectId = activeProjectId, createRecord = false) {
+    const serial = serializableProjectSnapshot(snapshot);
+    let mediaSaved = true;
+    try { await persistProjectMedia(projectId, snapshot.mediaClips); }
+    catch (error) { mediaSaved = false; console.warn('Background media autosave failed:', error); }
+    localStorage.setItem(PROJECT_DRAFT_KEY, JSON.stringify({projectId,state:serial}));
+    const records = savedProjectRecords();
+    const index = records.findIndex(item => item.id === projectId);
+    if (index >= 0 || createRecord) {
+      const record = {id:projectId, name:snapshot.projectName, updatedAt:Date.now(), state:serial};
+      if (index >= 0) records[index] = record; else records.push(record);
+      localStorage.setItem(SAVED_PROJECTS_KEY, JSON.stringify(records.slice(-40)));
+      refreshSavedProjects(projectId);
+    }
+    setProjectStatus(mediaSaved ? 'Saved on this browser' : 'Settings saved; browser could not store the background file', !mediaSaved);
+    return mediaSaved;
+  }
+
+  async function applyProjectSnapshot(snapshot, projectId = 'draft') {
+    if (!snapshot || snapshot.version !== 1) throw new Error('This saved project uses an unsupported format.');
+    historyApplying = true;
+    try {
+      for (const [id,value] of Object.entries(snapshot.fields || {})) {
+        const element = $(id);
+        if (!element || element.type === 'file') continue;
+        if (element.tagName === 'SELECT' && ![...element.options].some(option => option.value === String(value))) continue;
+        if (element.type === 'checkbox' || element.type === 'radio') element.checked = Boolean(value);
+        else element.value = value;
+      }
+      selectedTemplateId = videoTemplates[snapshot.videoTemplate] ? snapshot.videoTemplate : selectedTemplateId;
+      selectedReciter = snapshot.reciter || selectedReciter;
+      ratio = ['9:16','16:9','1:1'].includes(snapshot.ratio) ? snapshot.ratio : ratio;
+      theme = document.querySelector(`.background-choice[data-theme="${snapshot.theme}"]`) ? snapshot.theme : theme;
+      captionColor = snapshot.captionColor || captionColor;
+      wrapWidth = Number(snapshot.wrapWidth || 85);
+      speed = Number(snapshot.speed || 1);
+      scenePlanManual = Boolean(snapshot.scenePlanManual);
+      previewScenes = scenePlanManual ? (snapshot.scenes || []).map((scene,index) => ({...scene,scene_index:index})) : [];
+      $('project-name').value = snapshot.projectName || snapshot.fields?.['project-name'] || 'Untitled Reel';
+      document.querySelectorAll('.aspect-ratio-btn').forEach(button => button.classList.toggle('selected-ratio', button.dataset.ratio === ratio));
+      syncPreviewAspectRatio();
+      document.querySelectorAll('.video-template-choice').forEach(button => button.classList.toggle('selected-video-template', button.dataset.templateId === selectedTemplateId));
+      document.querySelectorAll('.background-choice').forEach(button => button.classList.toggle('selected-background', button.dataset.theme === theme));
+      document.querySelectorAll('.caption-color-choice').forEach(button => button.classList.toggle('selected-caption-color', button.dataset.color === captionColor));
+      $('speed-cycle-btn').textContent = `${speed.toFixed(2).replace(/0+$/,'').replace(/\.$/,'')}x`;
+      $('speed-indicator').textContent = `${speed}x (${speed === 1 ? 'Natural' : 'Adjusted'})`;
+      $('custom-resolution-fields').classList.toggle('hidden', $('export-resolution').value !== 'custom');
+      const customCrf = $('export-crf').value;
+      updateQualityDescription();
+      $('export-crf').value = customCrf;
+      $('export-crf-value').textContent = customCrf;
+      updateSurahInfo(); updateRangeSummary(); updateCanvasSummary();
+      setWallpaperPreview(); updateBackgroundAdjustments();
+
+      const savedClips = snapshot.mediaClips || [];
+      if (savedClips.length) {
+        let clips = savedClips.filter(item => item.file instanceof Blob);
+        if (clips.length !== savedClips.length) {
+          try { clips = await readProjectMedia(projectId, savedClips); }
+          catch (error) { clips = []; console.warn('Saved background files are unavailable:', error); }
+        }
+        if (clips.length === savedClips.length) {
+          $('background-file-name').textContent = clips.length === 1 ? clips[0].file.name : `${clips.length} saved video clips`;
+          renderUploadedBackgroundPreview(clips);
+        } else {
+          clearCustomBackgroundPreview();
+          $('background-file-name').textContent = 'Re-select the custom background used by this project';
+          setProjectStatus('Settings restored; saved background media is unavailable', true);
+        }
+      } else {
+        clearCustomBackgroundPreview();
+        $('background-file-name').textContent = 'PNG, JPG, WEBP, MP4, MOV or WEBM';
+        updateBackgroundSequenceSelection();
+        playBackgroundSequenceTemplate(0);
+      }
+      await loadVerses(false);
+      if (snapshot.fields?.['ayah-text'] != null) ayahText.value = snapshot.fields['ayah-text'];
+      scenePlanManual = Boolean(snapshot.scenePlanManual);
+      previewScenes = scenePlanManual ? (snapshot.scenes || []).map((scene,index) => ({...scene,scene_index:index})) : [];
+      await updateScenePlan();
+      await updateCaptionPreview();
+      hideRenderedVideo();
+    } finally { historyApplying = false; }
+  }
+
+  async function saveNamedProject() {
+    const name = $('project-name').value.trim();
+    if (!name) { $('project-name').focus(); setProjectStatus('Enter a project name before saving', true); return; }
+    if (activeProjectId === 'draft') activeProjectId = newLocalId('project');
+    const snapshot = makeEditorSnapshot(); snapshot.projectName = name;
+    try {
+      await persistProjectSnapshot(snapshot, activeProjectId, true);
+      lastPersistedSignature = snapshotSignature(snapshot);
+      if (!undoHistory.length) undoHistory.push(snapshot);
+      refreshSavedProjects(activeProjectId);
+    } catch (error) { setProjectStatus(`Could not save project: ${error.message}`, true); }
+  }
+
+  async function openNamedProject() {
+    const project = savedProjectRecords().find(item => item.id === $('saved-projects').value);
+    if (!project) return;
+    activeProjectId = project.id;
+    await applyProjectSnapshot(project.state, project.id);
+    undoHistory = [makeEditorSnapshot()]; redoHistory = [];
+    lastPersistedSignature = snapshotSignature(undoHistory[0]);
+    refreshSavedProjects(activeProjectId); updateHistoryButtons();
+    await persistProjectSnapshot(undoHistory[0], activeProjectId);
+  }
+
+  async function deleteNamedProject() {
+    const projectId = $('saved-projects').value;
+    if (!projectId) return;
+    localStorage.setItem(SAVED_PROJECTS_KEY, JSON.stringify(savedProjectRecords().filter(item => item.id !== projectId)));
+    try { await removeProjectMedia(projectId); } catch (error) { console.warn('Could not remove saved media:', error); }
+    if (activeProjectId === projectId) {
+      activeProjectId = 'draft'; $('project-name').value = 'Untitled Reel';
+      await persistProjectSnapshot(makeEditorSnapshot(), 'draft');
+    }
+    refreshSavedProjects();
+  }
+
+  function makeSavedDesign() {
+    const fields = {};
+    PROJECT_TEMPLATE_FIELDS.forEach(id => {
+      const element = $(id);
+      if (element) fields[id] = element.type === 'checkbox' ? element.checked : element.value;
+    });
+    return {version:1, fields, videoTemplate:selectedTemplateId, ratio, theme, captionColor, wrapWidth, speed};
+  }
+
+  function saveCustomDesign() {
+    const name = $('custom-template-name').value.trim();
+    if (!name) { $('custom-template-name').focus(); setProjectStatus('Name the design before saving it', true); return; }
+    const records = customDesignRecords();
+    const existing = records.find(item => item.name.toLowerCase() === name.toLowerCase());
+    const item = {id:existing?.id || newLocalId('design'), name, updatedAt:Date.now(), design:makeSavedDesign()};
+    const next = existing ? records.map(record => record.id === existing.id ? item : record) : [...records,item];
+    try {
+      localStorage.setItem(CUSTOM_DESIGNS_KEY, JSON.stringify(next.slice(-40)));
+      $('custom-template-name').value = name;
+      refreshCustomDesigns(item.id);
+      setProjectStatus(existing ? 'Saved design updated' : 'Reusable design saved');
+    } catch (_) { setProjectStatus('Browser storage is full; this design could not be saved', true); }
+  }
+
+  async function applyCustomDesign() {
+    const item = customDesignRecords().find(record => record.id === $('custom-template-list').value);
+    if (!item) return;
+    const design = item.design;
+    theme = document.querySelector(`.background-choice[data-theme="${design.theme}"]`) ? design.theme : theme;
+    ratio = ['9:16','16:9','1:1'].includes(design.ratio) ? design.ratio : ratio;
+    selectedTemplateId = videoTemplates[design.videoTemplate] ? design.videoTemplate : selectedTemplateId;
+    captionColor = design.captionColor || captionColor;
+    wrapWidth = Number(design.wrapWidth || 85); speed = Number(design.speed || 1);
+    for (const [id,value] of Object.entries(design.fields || {})) {
+      const element = $(id);
+      if (!element) continue;
+      if (element.type === 'checkbox' || element.type === 'radio') element.checked = Boolean(value);
+      else element.value = value;
+    }
+    document.querySelectorAll('.aspect-ratio-btn').forEach(button => button.classList.toggle('selected-ratio', button.dataset.ratio === ratio));
+    syncPreviewAspectRatio();
+    document.querySelectorAll('.background-choice').forEach(button => button.classList.toggle('selected-background', button.dataset.theme === theme));
+    document.querySelectorAll('.video-template-choice').forEach(button => button.classList.toggle('selected-video-template', button.dataset.templateId === selectedTemplateId));
+    document.querySelectorAll('.caption-color-choice').forEach(button => button.classList.toggle('selected-caption-color', button.dataset.color === captionColor));
+    $('custom-resolution-fields').classList.toggle('hidden', $('export-resolution').value !== 'custom');
+    const crf = $('export-crf').value; updateQualityDescription(); $('export-crf').value = crf; $('export-crf-value').textContent = crf;
+    $('speed-cycle-btn').textContent = `${speed.toFixed(2).replace(/0+$/,'').replace(/\.$/,'')}x`;
+    $('speed-indicator').textContent = `${speed}x (${speed === 1 ? 'Natural' : 'Adjusted'})`;
+    updateCanvasSummary(); setWallpaperPreview(); updateBackgroundAdjustments();
+    updateBackgroundSequenceSelection(); playBackgroundSequenceTemplate(0);
+    scenePlanManual = false;
+    await updateScenePlan(); await updateCaptionPreview(); hideRenderedVideo();
+    setProjectStatus(`Applied “${item.name}”`);
+    scheduleProjectAutosave();
+  }
+
+  function deleteCustomDesign() {
+    const id = $('custom-template-list').value;
+    if (!id) return;
+    localStorage.setItem(CUSTOM_DESIGNS_KEY, JSON.stringify(customDesignRecords().filter(item => item.id !== id)));
+    refreshCustomDesigns(); setProjectStatus('Reusable design deleted');
+  }
+
+  function validateImportedDesign(design) {
+    if (!design || design.version !== 1 || !design.fields || typeof design.fields !== 'object' || Array.isArray(design.fields)) {
+      throw new Error('This file is not a supported Quran Reels visual template.');
+    }
+    if (!['9:16','16:9','1:1'].includes(design.ratio) ||
+        !document.querySelector(`.background-choice[data-theme="${design.theme}"]`) ||
+        !videoTemplates[design.videoTemplate]) throw new Error('The template uses an unsupported background, video design, or aspect ratio.');
+    if (![65,75,85,95].includes(Number(design.wrapWidth)) || ![.9,1,1.15].includes(Number(design.speed))) {
+      throw new Error('The template has an invalid text wrap width or recitation speed.');
+    }
+    const colors = [...document.querySelectorAll('.caption-color-choice')].map(button => button.dataset.color);
+    if (!(colors.includes(design.captionColor) || /^#[\da-f]{6}$/i.test(design.captionColor || ''))) {
+      throw new Error('The template has an unsupported Quran text color.');
+    }
+    for (const [id,value] of Object.entries(design.fields)) {
+      if (!PROJECT_TEMPLATE_FIELDS.includes(id)) throw new Error(`The template contains an unsupported setting: ${id}.`);
+      const element = $(id);
+      if (!element) throw new Error(`The template refers to a missing editor control: ${id}.`);
+      if (element.type === 'checkbox') {
+        if (typeof value !== 'boolean') throw new Error(`The ${id} setting must be true or false.`);
+      } else if (element.type === 'color') {
+        if (typeof value !== 'string' || !/^#[\da-f]{6}$/i.test(value)) throw new Error(`The ${id} setting must be a hex color.`);
+      } else if (element.type === 'range' || element.type === 'number') {
+        if (value === '' && !element.required) continue;
+        const number = Number(value);
+        if (!Number.isFinite(number) || (element.min !== '' && number < Number(element.min)) ||
+            (element.max !== '' && number > Number(element.max))) throw new Error(`The ${id} setting is outside its allowed range.`);
+      } else if (element.tagName === 'SELECT' && ![...element.options].some(option => option.value === String(value))) {
+        throw new Error(`The template uses an unsupported ${id} option.`);
+      }
+    }
+    return design;
+  }
+
+  function exportCustomDesign() {
+    const item = customDesignRecords().find(record => record.id === $('custom-template-list').value);
+    if (!item) return;
+    const payload = {format:'quran-reels-custom-template',version:1,name:item.name,design:item.design};
+    const url = URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}));
+    const link = document.createElement('a');
+    link.href = url; link.download = `${item.name.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'') || 'quran-reels-template'}.json`;
+    document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url),1000);
+  }
+
+  async function importCustomDesign(file) {
+    if (!file) return;
+    if (file.size > 256 * 1024) throw new Error('Template JSON files must be smaller than 256 KB.');
+    let payload;
+    try { payload = JSON.parse(await file.text()); }
+    catch (_) { throw new Error('The selected template file is not valid JSON.'); }
+    if (payload.format !== 'quran-reels-custom-template' || payload.version !== 1 ||
+        typeof payload.name !== 'string' || !payload.name.trim() || payload.name.trim().length > 48) {
+      throw new Error('The file must contain a named Quran Reels template in version 1 format.');
+    }
+    const design = validateImportedDesign(payload.design);
+    const name = payload.name.trim();
+    const records = customDesignRecords();
+    const existing = records.find(item => item.name.toLowerCase() === name.toLowerCase());
+    const item = {id:existing?.id || newLocalId('design'),name,updatedAt:Date.now(),design};
+    const next = existing ? records.map(record => record.id === existing.id ? item : record) : [...records,item];
+    localStorage.setItem(CUSTOM_DESIGNS_KEY,JSON.stringify(next.slice(-40)));
+    $('custom-template-name').value = name;
+    refreshCustomDesigns(item.id);
+    setProjectStatus(`Imported “${name}”`);
+  }
+
+  function scheduleProjectAutosave() {
+    if (historyApplying) return;
+    setProjectStatus('Saving changes…');
+    clearTimeout(autosaveTimer);
+    autosaveTimer = setTimeout(() => {
+      const snapshot = makeEditorSnapshot();
+      const signature = snapshotSignature(snapshot);
+      if (!undoHistory.length) undoHistory.push(snapshot);
+      else if (signature !== snapshotSignature(undoHistory[undoHistory.length - 1])) {
+        undoHistory.push(snapshot);
+        if (undoHistory.length > 40) undoHistory.shift();
+        redoHistory = [];
+      }
+      updateHistoryButtons();
+      if (signature === lastPersistedSignature) return;
+      autosaveQueue = autosaveQueue.then(async () => {
+        const mediaSaved = await persistProjectSnapshot(snapshot, activeProjectId);
+        lastPersistedSignature = signature;
+        if (!mediaSaved) setProjectStatus('Settings saved; browser storage could not keep uploaded media', true);
+      }).catch(error => setProjectStatus(`Autosave failed: ${error.message}`, true));
+    }, 450);
+  }
+
+  async function undoProjectChange() {
+    if (historyApplying || undoHistory.length < 2) return;
+    redoHistory.push(undoHistory.pop());
+    await applyProjectSnapshot(undoHistory[undoHistory.length - 1], activeProjectId);
+    updateHistoryButtons();
+    const snapshot = makeEditorSnapshot();
+    await persistProjectSnapshot(snapshot, activeProjectId);
+    lastPersistedSignature = snapshotSignature(snapshot);
+  }
+
+  async function redoProjectChange() {
+    if (historyApplying || !redoHistory.length) return;
+    undoHistory.push(redoHistory.pop());
+    await applyProjectSnapshot(undoHistory[undoHistory.length - 1], activeProjectId);
+    updateHistoryButtons();
+    const snapshot = makeEditorSnapshot();
+    await persistProjectSnapshot(snapshot, activeProjectId);
+    lastPersistedSignature = snapshotSignature(snapshot);
+  }
+
+  async function initializeProjectWorkspace() {
+    applyVideoTemplate(selectedTemplateId);
+    refreshSavedProjects(); refreshCustomDesigns();
+    const draft = safeReadStorage(PROJECT_DRAFT_KEY, null);
+    if (draft?.state?.version === 1) {
+      activeProjectId = draft.projectId || 'draft';
+      await applyProjectSnapshot(draft.state, activeProjectId);
+    } else {
+      setWallpaperPreview(); updateCaptionPreview().catch(showError); updateSurahInfo(); await loadVerses();
+    }
+    undoHistory = [makeEditorSnapshot()]; redoHistory = [];
+    lastPersistedSignature = snapshotSignature(undoHistory[0]);
+    refreshSavedProjects(activeProjectId); updateHistoryButtons();
+    if (selectedReciter && reciterById.has(selectedReciter)) {
+      const name = reciterById.get(selectedReciter).name;
+      $('selected-reciter-name').textContent = name; updatePreviewReciterName(name);
+    }
+    const missingMedia = Boolean(draft?.state?.mediaClips?.length && backgroundClipRows.length === 0);
+    setProjectStatus(missingMedia ? 'Project restored; re-select its custom background media' :
+                     draft?.state ? 'Draft restored from this browser' : 'Autosaves in this browser', missingMedia);
+  }
+  function currentOutputSize() {
+    if ($('export-resolution').value === 'custom') {
+      return [Number($('custom-width').value), Number($('custom-height').value)];
+    }
+    const edge = {'480p':480,'720p':720,'1080p':1080,'1440p':1440,'4k':2160}[$('export-resolution').value] || 1080;
+    if (ratio === '9:16') return [edge, Math.floor(edge * 16 / 9 / 2) * 2];
+    if (ratio === '16:9') return [Math.floor(edge * 16 / 9 / 2) * 2, edge];
+    return [edge, edge];
+  }
+  function updateCanvasSummary() {
+    const [width, height] = currentOutputSize();
+    const fps = Number($('export-fps').value || 30);
+    const resolution = $('export-resolution').value;
+    const label = resolution === 'custom' ? 'Custom' : resolution.toUpperCase();
+    const summary = `${width} × ${height} (${ratio}) • ${fps} FPS`;
+    $('canvas-resolution').textContent = `${summary} · ${label}`;
+    $('generate-video-btn').querySelector('span:last-child').textContent = `Render ${label} Reel (${width}×${height})`;
+    const pill = $('resolution-pill'); if (pill) pill.textContent = label;
+    return [width, height];
+  }
+  function syncPreviewAspectRatio() {
+    const mockup = $('reel-mockup');
+    mockup.style.maxWidth = ratio === '16:9' ? '580px' : ratio === '1:1' ? '400px' : '340px';
+    mockup.querySelector('.aspect-screen').style.aspectRatio = ratio.replace(':', ' / ');
+  }
+  window.addEventListener('resize', updateViewerLayerPreview, {passive:true});
+  function updateQualityDescription() {
+    const quality = $('export-quality').value;
+    const profile = qualityProfiles[quality];
+    $('export-crf').value = profile.crf;
+    $('export-crf-value').textContent = profile.crf;
+    $('export-quality-help').textContent = `${profile.label}: x264 ${profile.preset}, CRF ${profile.crf}. Lower CRF improves quality and increases file size; higher CRF reduces both quality and file size. The mode controls encoding speed.`;
+  }
   function setPlaybackIcon(isPlaying) {
     $('playback-play-icon').classList.toggle('hidden', isPlaying);
     $('playback-pause-icon').classList.toggle('hidden', !isPlaying);
     $('playback-toggle').setAttribute('aria-label', isPlaying ? 'Pause preview' : 'Play preview');
+    $('viewer-waveform').classList.toggle('is-playing', isPlaying);
   }
   const reciterById = new Map();
 
@@ -496,30 +1463,519 @@ tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2ff',200:
     scrubber.min = start; scrubber.max = end;
     scrubber.value = Math.min(end, Math.max(start, player.currentTime));
     $('preview-time').textContent = `${formatTime(Math.max(0, player.currentTime - start))} / ${formatTime(end - start)}`;
+    $('viewer-progress-fill').style.width = `${Math.max(0, Math.min(1, (player.currentTime - start) / Math.max(.001, end - start))) * 100}%`;
   }
 
   function setWallpaperPreview() {
     const preview = $('preview-background');
-    if ($('background-file').files[0]) return;
-    const option = document.querySelector(`.background-choice[data-theme="${theme}"]`);
+    const file = selectedBackgroundFiles[0];
+    const sequencePreset = activeBackgroundSequencePreset();
+    const sequenceScene = sequencePreset && $('sequence-enabled').checked && !backgroundClipRows.length
+      ? sequencePreset.scenes[builtinSequenceIndex % sequencePreset.scenes.length] : null;
+    const previewTheme = sequenceScene?.theme || theme;
+    const option = document.querySelector(`.background-choice[data-theme="${previewTheme}"]`);
     const top = option?.dataset.top || '19,31,40';
     const bottom = option?.dataset.bottom || '55,85,75';
     preview.style.setProperty('--wallpaper-top', `rgb(${top})`);
     preview.style.setProperty('--wallpaper-bottom', `rgb(${bottom})`);
-    preview.style.backgroundImage = `url("/api/backgrounds/${encodeURIComponent(theme)}/preview?ratio=${encodeURIComponent(ratio)}"),linear-gradient(145deg,var(--wallpaper-top),var(--wallpaper-bottom))`;
+    const query = new URLSearchParams({ratio, fit:$('background-fit').value, v:'cinematic-1',
+      x:$('background-crop-x').value, y:$('background-crop-y').value});
+    $('preview-wallpaper').src = `/api/backgrounds/${encodeURIComponent(previewTheme)}/preview?${query}`;
+    configureBackgroundFit();
+    updateBackgroundAdjustments();
+    updateBackgroundAnimationPreview();
+    if (file && previewObjectUrls.length) return;
+  }
+
+  function playBackgroundSequenceTemplate(index = 0) {
+    clearTimeout(builtinSequencePreviewTimer);
+    const preset = activeBackgroundSequencePreset();
+    if (!preset || !$('sequence-enabled').checked || backgroundClipRows.length) {
+      setWallpaperPreview();
+      return;
+    }
+    const scenes = preset.scenes;
+    const sceneIndex = ((index % scenes.length) + scenes.length) % scenes.length;
+    const scene = scenes[sceneIndex];
+    const previousImage = $('preview-background-image-previous');
+    const transitionOverlay = $('preview-transition-overlay');
+    const previousUrl = $('preview-wallpaper').src;
+    const hasPrevious = builtinSequenceIndex !== sceneIndex || index > 0;
+    previousImage.classList.add('hidden'); previousImage.style.opacity = '0'; previousImage.removeAttribute('src');
+    if (hasPrevious && $('transitions-enabled').checked && previousUrl) {
+      previousImage.src = previousUrl; previousImage.classList.remove('hidden'); previousImage.style.opacity = '1';
+    }
+    builtinSequenceIndex = sceneIndex;
+    setWallpaperPreview();
+    const nextIndex = (sceneIndex + 1) % scenes.length;
+    const nextScene = scenes[nextIndex];
+    const transitionStyle = $('transitions-enabled').checked
+      ? (nextScene.transition || preset.transition || 'cut') : 'cut';
+    const transitionDuration = $('transitions-enabled').checked
+      ? Number(nextScene.transition_duration ?? preset.transition_duration ?? .45) : 0;
+    const overlapping = ['crossfade','dissolve','slide_left','slide_right','zoom'].includes(transitionStyle);
+    if (hasPrevious && $('transitions-enabled').checked && transitionDuration > 0) {
+      transitionOverlay.style.transitionDuration = `${transitionDuration}s`;
+      if (transitionStyle === 'fade_black' || transitionStyle === 'fade_color') {
+        transitionOverlay.style.backgroundColor = transitionStyle === 'fade_black' ? '#000000' : $('background-transition-color').value;
+        transitionOverlay.style.opacity = '1';
+        requestAnimationFrame(() => { transitionOverlay.style.opacity = '0'; });
+      } else if (overlapping) {
+        requestAnimationFrame(() => { previousImage.style.opacity = '0'; });
+      }
+      setTimeout(() => { previousImage.classList.add('hidden'); previousImage.removeAttribute('src'); }, transitionDuration * 1000 + 50);
+    }
+    const duration = Math.max(1, Number(scene.duration) || 7);
+    const nextDuration = Math.max(1, Number(nextScene.duration) || 7);
+    const lead = overlapping && $('transitions-enabled').checked
+      ? Math.min(transitionDuration, duration * .4, nextDuration * .4) : 0;
+    if (sceneIndex === scenes.length - 1 && !$('sequence-loop').checked) return;
+    builtinSequencePreviewTimer = setTimeout(() => playBackgroundSequenceTemplate(nextIndex),
+      Math.max(.05, duration - lead) * 1000);
+  }
+
+  function updateBackgroundAdjustments() {
+    const brightness = Number($('background-brightness').value);
+    const contrast = Number($('background-contrast').value);
+    const saturation = Number($('background-saturation').value);
+    const opacity = Number($('background-overlay-opacity').value);
+    const color = $('background-overlay-color').value;
+    const mediaFilter = `brightness(${brightness}) contrast(${contrast}) saturate(${saturation})`;
+    ['preview-wallpaper','preview-background-image','preview-background-image-previous','preview-background-video','preview-background-video-previous'].forEach(id => { $(id).style.filter = mediaFilter; });
+    $('preview-background-video-blur').style.filter = `${mediaFilter} blur(24px) brightness(.62)`;
+    const overlay = $('preview-background-overlay');
+    const channels = color.match(/[a-f\d]{2}/gi)?.map(channel => parseInt(channel, 16)) || [11,22,38];
+    overlay.style.backgroundColor = `rgba(${channels.join(',')},${opacity})`;
+    overlay.style.display = opacity > 0 ? 'block' : 'none';
+    $('background-brightness-value').textContent = `${Math.round(brightness * 100)}%`;
+    $('background-contrast-value').textContent = `${Math.round(contrast * 100)}%`;
+    $('background-saturation-value').textContent = `${Math.round(saturation * 100)}%`;
+    $('background-overlay-opacity-value').textContent = `${Math.round(opacity * 100)}%`;
+  }
+
+  function updateBackgroundAnimationPreview() {
+    const enabled = $('background-animation-enabled').checked && currentBackgroundKind !== 'video';
+    const atmosphereEnabled = $('background-atmosphere-enabled').checked;
+    const presetId = $('background-animation-preset').value;
+    const preset = imageAnimationPresets[presetId] || imageAnimationPresets.static;
+    const intensity = Number($('background-animation-intensity').value);
+    const duration = Math.max(1, Number($('background-animation-duration').value) || 12);
+    const speedValue = Number($('background-animation-speed').value) || 1;
+    const startDelay = Math.max(0, Number($('background-animation-start').value) || 0);
+    const atmosphereIntensity = Number($('background-atmosphere-intensity').value);
+    const atmosphereDuration = Math.max(8, Number($('background-atmosphere-duration').value) || 36);
+    const atmosphereSpeed = Number($('background-atmosphere-speed').value) || .7;
+    const atmosphereStart = Math.max(0, Number($('background-atmosphere-start').value) || 0);
+    const atmosphereOverlay = $('preview-atmosphere-overlay');
+    $('background-animation-intensity-label').textContent = `${Math.round(intensity * 100)}%`;
+    $('background-animation-speed-label').textContent = `${speedValue.toFixed(2)}×`;
+    $('background-atmosphere-intensity-label').textContent = `${Math.round(atmosphereIntensity * 100)}%`;
+    $('background-atmosphere-speed-label').textContent = `${atmosphereSpeed.toFixed(2)}×`;
+    atmosphereOverlay.style.opacity = atmosphereEnabled ? String(Math.min(.9, atmosphereIntensity)) : '0';
+    for (const id of ['preview-wallpaper','preview-background-image']) $(id).style.transform = 'none';
+    if (animationPreviewFrame) cancelAnimationFrame(animationPreviewFrame);
+    if ((!enabled || presetId === 'static' || intensity <= 0) && !atmosphereEnabled) return;
+    animationPreviewStartedAt = performance.now();
+    const draw = now => {
+      const elapsed = (now - animationPreviewStartedAt) / 1000;
+      if (enabled && presetId !== 'static' && intensity > 0) {
+        const cycle = elapsed < startDelay ? 0 : ((elapsed - startDelay) * speedValue / duration) % 1;
+        const phase = (1 - Math.cos(2 * Math.PI * cycle)) / 2;
+        const zoom = 1 + (preset.zoom[0] - 1 + (preset.zoom[1] - preset.zoom[0]) * phase) * intensity;
+        const cropX = preset.pan_x[0] + (preset.pan_x[1] - preset.pan_x[0]) * phase;
+        const cropY = preset.pan_y[0] + (preset.pan_y[1] - preset.pan_y[0]) * phase;
+        const transform = `translate3d(${((.5 - cropX) * (zoom - 1) * 100).toFixed(3)}%,${((.5 - cropY) * (zoom - 1) * 100).toFixed(3)}%,0) scale(${zoom.toFixed(4)})`;
+        for (const id of ['preview-wallpaper','preview-background-image']) $(id).style.transform = transform;
+      }
+      if (atmosphereEnabled && atmosphereIntensity > 0) {
+        const cycle = elapsed < atmosphereStart ? 0 : ((elapsed - atmosphereStart) * atmosphereSpeed / atmosphereDuration) % 1;
+        const phase = (1 - Math.cos(2 * Math.PI * cycle)) / 2;
+        atmosphereOverlay.style.backgroundPosition = `${20 + phase * 58}% ${12 + phase * 48}%`;
+      }
+      animationPreviewFrame = requestAnimationFrame(draw);
+    };
+    animationPreviewFrame = requestAnimationFrame(draw);
+  }
+
+  function scheduleWallpaperPreview() {
+    configureBackgroundFit();
+    clearTimeout(backgroundPreviewTimer);
+    backgroundPreviewTimer = setTimeout(setWallpaperPreview, 100);
+  }
+
+  function configureBackgroundFit() {
+    const preview = $('preview-background'), fit = $('background-fit').value;
+    ['cover','contain','stretch','blurred'].forEach(mode => preview.classList.toggle(`background-${mode}`, fit === mode));
+    const position = `${Number($('background-crop-x').value)*100}% ${Number($('background-crop-y').value)*100}%`;
+    $('preview-wallpaper').style.objectPosition = position;
+    $('preview-background-image').style.objectPosition = position;
+    $('preview-background-image-previous').style.objectPosition = position;
+    $('preview-background-video').style.objectPosition = position;
+    $('preview-background-video-previous').style.objectPosition = position;
+    $('preview-background-blur').style.backgroundImage = currentBackgroundKind === 'image' && previewObjectUrls[0]
+      ? `url("${previewObjectUrls[0]}")` : 'none';
+    const video = $('preview-background-video'), blurVideo = $('preview-background-video-blur');
+    const showVideo = currentBackgroundKind === 'video' && Boolean(previewObjectUrls.length);
+    video.classList.toggle('hidden', !showVideo);
+    blurVideo.classList.toggle('hidden', !showVideo || fit !== 'blurred');
+    if (showVideo) {
+      video.loop = !$('sequence-enabled').checked && $('background-loop').checked;
+      video.playbackRate = Number(backgroundClipRows[previewClipIndex]?.speed || $('background-speed').value);
+      blurVideo.loop = true; blurVideo.playbackRate = video.playbackRate;
+      video.play().catch(() => {}); if (fit === 'blurred') blurVideo.play().catch(() => {});
+    }
+  }
+
+  function clearCustomBackgroundPreview(clearSelection = true) {
+    previewObjectUrls.forEach(url => URL.revokeObjectURL(url));
+    previewObjectUrls = []; currentBackgroundKind = null;
+    if (clearSelection) {
+      selectedBackgroundFiles = [];
+      backgroundClipRows = [];
+      renderBackgroundClipList();
+    }
+    const image = $('preview-background-image'); image.removeAttribute('src'); image.classList.add('hidden');
+    $('preview-background-image-previous').removeAttribute('src'); $('preview-background-image-previous').classList.add('hidden');
+    ['preview-background-video','preview-background-video-blur','preview-background-video-previous'].forEach(id => {
+      const video = $(id); video.pause(); video.onended = null; video.ontimeupdate = null;
+      video.removeAttribute('src'); video.load(); video.classList.add('hidden');
+    });
+    $('preview-background').classList.remove('has-custom-background');
+    $('preview-background-blur').style.backgroundImage = 'none';
+    clearTimeout(sequencePreviewTimer);
+    clearTimeout(sequencePreviewFadeTimer);
+    clearTimeout(sequencePreviewCleanupTimer);
+    clearTimeout(builtinSequencePreviewTimer);
+    const transitionOverlay = $('preview-transition-overlay'); transitionOverlay.style.opacity = '0'; transitionOverlay.style.backgroundColor = '#000';
+    updateBackgroundAnimationPreview();
+  }
+
+  function renderUploadedBackgroundPreview(files) {
+    $('background-sequence-template').value = '';
+    updateBackgroundSequenceSelection();
+    clearTimeout(builtinSequencePreviewTimer);
+    const rows = [...files].map(item => item.file ? item : ({
+      file:item, start:0, end:null, speed:Number($('background-speed').value),
+      transition:$('default-background-transition').value || 'crossfade',
+      transition_duration:Number($('background-transition-duration').value) || .45,
+      duration:item.type.startsWith('image/') ? 4 : null,
+    }));
+    clearCustomBackgroundPreview(false);
+    backgroundClipRows = rows;
+    selectedBackgroundFiles = rows.map(row => row.file);
+    previewObjectUrls = selectedBackgroundFiles.map(file => URL.createObjectURL(file));
+    previewClipIndex = 0;
+    renderBackgroundClipList();
+    const preview = $('preview-background');
+    preview.classList.add('has-custom-background');
+    playPreviewSequenceItem(0);
+    setWallpaperPreview();
+    selectedBackgroundFiles.forEach((file, index) => {
+      if (!file.type.startsWith('video/')) return;
+      const probe = document.createElement('video');
+      probe.preload = 'metadata'; probe.src = previewObjectUrls[index];
+      probe.onloadedmetadata = () => {
+        const row = backgroundClipRows.find(item => item.file === file);
+        if (row) { row.duration = probe.duration; if (row.end === null) row.end = probe.duration; renderBackgroundClipList(); }
+        probe.removeAttribute('src'); probe.load();
+      };
+    });
+  }
+
+  function playPreviewClip(index) {
+    if (!backgroundClipRows.length || !previewObjectUrls.length) return;
+    const video = $('preview-background-video'), blurVideo = $('preview-background-video-blur');
+    const row = backgroundClipRows[index];
+    if (!row) return;
+    previewClipIndex = index; previewClipAdvancing = false;
+    currentBackgroundKind = 'video';
+    const begin = element => {
+      element.src = previewObjectUrls[index]; element.loop = false;
+      element.classList.remove('hidden'); element.style.opacity = '0';
+      element.playbackRate = Number(row.speed || 1); element.load();
+      element.onloadedmetadata = () => {
+        element.currentTime = Math.min(Number(row.start || 0), Math.max(0, element.duration - .05));
+        requestAnimationFrame(() => { element.style.opacity = '1'; });
+        element.play().catch(() => {});
+      };
+    };
+    begin(video); begin(blurVideo);
+    const next = () => {
+      if (previewClipAdvancing) return;
+      previewClipAdvancing = true;
+      const nextIndex = index + 1;
+      if ($('sequence-enabled').checked && nextIndex < backgroundClipRows.length) playPreviewSequenceItem(nextIndex);
+      else if ($('sequence-enabled').checked && $('sequence-loop').checked) playPreviewSequenceItem(0);
+      else if (!$('sequence-enabled').checked && $('background-loop').checked) playPreviewClip(index);
+      else { video.pause(); blurVideo.pause(); }
+    };
+    video.ontimeupdate = () => {
+      const end = Number(row.end ?? row.duration);
+      const speed = Math.max(.5, Number(row.speed || 1));
+      const lead = sequenceTransitionLead(index) * speed;
+      if (Number.isFinite(end) && end > 0 && video.currentTime >= end - lead - .04) next();
+    };
+    video.onended = next;
+    blurVideo.onended = null; blurVideo.ontimeupdate = null;
+  }
+
+  function playPreviewSequenceItem(index) {
+    if (!backgroundClipRows.length || !previewObjectUrls.length) return;
+    clearTimeout(sequencePreviewTimer);
+    if (!$('sequence-enabled').checked) index = 0;
+    const row = backgroundClipRows[index];
+    if (!row) return;
+    clearTimeout(sequencePreviewFadeTimer);
+    const image = $('preview-background-image');
+    const video = $('preview-background-video');
+    const blurVideo = $('preview-background-video-blur');
+    const previousImage = $('preview-background-image-previous');
+    const previousVideo = $('preview-background-video-previous');
+    const transitionOverlay = $('preview-transition-overlay');
+    const previousKind = currentBackgroundKind;
+    const isChangingScene = previousKind && previewClipIndex !== index;
+    const transitionEnabled = $('sequence-enabled').checked && $('transitions-enabled').checked && isChangingScene;
+    const transitionStyle = transitionEnabled ? (row.transition || $('default-background-transition').value) : 'cut';
+    const transitionDuration = transitionEnabled ? Math.max(0, Math.min(2, Number(row.transition_duration ?? .45) || 0)) : 0;
+    const overlapStyles = new Set(['crossfade','dissolve','slide_left','slide_right','zoom']);
+    const useTransition = transitionStyle !== 'cut' && transitionDuration > 0;
+
+    clearTimeout(sequencePreviewCleanupTimer);
+    previousImage.classList.add('hidden'); previousImage.style.opacity = '0'; previousImage.removeAttribute('src');
+    previousVideo.pause(); previousVideo.classList.add('hidden'); previousVideo.style.opacity = '0';
+    previousVideo.removeAttribute('src'); previousVideo.load();
+    transitionOverlay.style.transitionDuration = `${transitionDuration}s`;
+    transitionOverlay.style.opacity = '0';
+
+    let previousLayer = null;
+    if (useTransition && previousKind === 'image' && image.getAttribute('src')) {
+      previousImage.src = image.src; previousImage.classList.remove('hidden'); previousImage.style.opacity = '1';
+      previousLayer = previousImage;
+    } else if (useTransition && previousKind === 'video' && video.currentSrc) {
+      const previousTime = video.currentTime;
+      previousVideo.src = video.currentSrc; previousVideo.playbackRate = video.playbackRate;
+      previousVideo.classList.remove('hidden'); previousVideo.style.opacity = '1';
+      previousVideo.onloadedmetadata = () => {
+        previousVideo.currentTime = Math.min(previousTime, Math.max(0, previousVideo.duration - .05));
+        previousVideo.play().catch(() => {});
+      };
+      previousVideo.load(); previousLayer = previousVideo;
+    }
+    if (!previousLayer) {
+      transitionOverlay.style.transitionDuration = '0s';
+    } else if (transitionStyle === 'fade_black' || transitionStyle === 'fade_color') {
+      transitionOverlay.style.backgroundColor = transitionStyle === 'fade_black' ? '#000000' : $('background-transition-color').value;
+      transitionOverlay.style.opacity = '1';
+    }
+    previewClipIndex = index;
+
+    const beginIncoming = element => {
+      element.style.transitionDuration = `${transitionDuration}s`;
+      element.style.transitionProperty = 'opacity, transform';
+      element.style.opacity = useTransition && overlapStyles.has(transitionStyle) ? '0' : '1';
+      element.style.transform = transitionStyle === 'slide_left' ? 'translate3d(-100%,0,0)'
+        : transitionStyle === 'slide_right' ? 'translate3d(100%,0,0)'
+        : transitionStyle === 'zoom' ? 'scale(1.1)' : 'none';
+      requestAnimationFrame(() => {
+        element.style.opacity = '1'; element.style.transform = 'none';
+        if (previousLayer) previousLayer.style.opacity = '0';
+        if (transitionStyle === 'fade_black' || transitionStyle === 'fade_color') transitionOverlay.style.opacity = '0';
+      });
+      if (useTransition && previousLayer) {
+        sequencePreviewCleanupTimer = setTimeout(() => {
+          previousLayer.classList.add('hidden'); previousLayer.style.opacity = '0';
+          if (previousLayer === previousImage) previousImage.removeAttribute('src');
+          if (previousLayer === previousVideo) { previousVideo.pause(); previousVideo.removeAttribute('src'); previousVideo.load(); }
+          transitionOverlay.style.transitionDuration = '0s'; transitionOverlay.style.opacity = '0';
+        }, transitionDuration * 1000 + 50);
+      }
+    };
+    const advance = () => {
+      if (!$('sequence-enabled').checked) return;
+      const next = index + 1;
+      if (next < backgroundClipRows.length) playPreviewSequenceItem(next);
+      else if ($('sequence-loop').checked) playPreviewSequenceItem(0);
+    };
+    if (row.file.type.startsWith('video/')) {
+      currentBackgroundKind = 'video';
+      image.style.opacity = '0';
+      video.style.opacity = '0';
+      video.style.transform = transitionStyle === 'slide_left' ? 'translate3d(-100%,0,0)'
+        : transitionStyle === 'slide_right' ? 'translate3d(100%,0,0)'
+        : transitionStyle === 'zoom' ? 'scale(1.1)' : 'none';
+      video.style.transitionDuration = `${transitionDuration}s`;
+      playPreviewClip(index);
+      const loaded = video.onloadedmetadata;
+      video.onloadedmetadata = () => { if (loaded) loaded(); beginIncoming(video); };
+      if ($('sequence-enabled').checked) {
+        video.onended = advance;
+      }
+      return;
+    }
+    currentBackgroundKind = 'image';
+    video.pause(); blurVideo.pause();
+    video.style.opacity = '0';
+    video.style.transform = 'none';
+    image.src = previewObjectUrls[index];
+    image.classList.remove('hidden');
+    beginIncoming(image);
+    updateBackgroundAnimationPreview();
+    if ($('sequence-enabled').checked) {
+      const duration = Math.max(1, Number(row.duration) || 4);
+      const lead = sequenceTransitionLead(index);
+      const nextRow = backgroundClipRows[(index + 1) % backgroundClipRows.length];
+      const nextTransition = $('transitions-enabled').checked && nextRow
+        ? nextRow.transition || $('default-background-transition').value : 'cut';
+      if ($('transitions-enabled').checked && ['fade_black','fade_color'].includes(nextTransition) && $('sequence-loop').checked ||
+          $('transitions-enabled').checked && ['fade_black','fade_color'].includes(nextTransition) && index + 1 < backgroundClipRows.length) {
+        const fadeDuration = Math.min(Number(nextRow.transition_duration ?? .45) || 0, duration * .35);
+        sequencePreviewFadeTimer = setTimeout(() => {
+          const overlay = $('preview-transition-overlay');
+          overlay.style.backgroundColor = nextTransition === 'fade_black' ? '#000000' : $('background-transition-color').value;
+          overlay.style.transitionDuration = `${fadeDuration}s`; overlay.style.opacity = '0';
+          requestAnimationFrame(() => { overlay.style.opacity = '1'; });
+        }, Math.max(0, duration - fadeDuration) * 1000);
+      }
+      sequencePreviewTimer = setTimeout(advance, Math.max(.05, duration - lead) * 1000);
+    }
+  }
+
+  function selectedBackgroundDuration(row) {
+    if (!row) return 0;
+    if (row.file?.type?.startsWith('video/')) {
+      const end = Number(row.end ?? row.duration);
+      return Math.max(0, end - Number(row.start || 0)) / Math.max(.5, Number(row.speed || 1));
+    }
+    return Math.max(0, Number(row.duration) || 4);
+  }
+
+  function sequenceTransitionLead(index) {
+    if (!$('sequence-enabled').checked || !$('transitions-enabled').checked || backgroundClipRows.length < 2) return 0;
+    const nextIndex = index + 1 < backgroundClipRows.length ? index + 1 : $('sequence-loop').checked ? 0 : -1;
+    if (nextIndex < 0) return 0;
+    const incoming = backgroundClipRows[nextIndex];
+    if (!['crossfade','dissolve','slide_left','slide_right','zoom'].includes(incoming.transition || 'cut')) return 0;
+    return Math.min(Number(incoming.transition_duration ?? .45) || 0,
+      selectedBackgroundDuration(backgroundClipRows[index]) * .4,
+      selectedBackgroundDuration(incoming) * .4);
+  }
+
+  function refreshSequencePreview(index) {
+    if ($('sequence-enabled').checked && previewClipIndex === index) playPreviewSequenceItem(index);
+  }
+
+  function renderBackgroundClipList() {
+    const container = $('background-clip-list');
+    if (!container) return;
+    container.replaceChildren();
+    if (!backgroundClipRows.length) return;
+    backgroundClipRows.forEach((row, index) => {
+      const card = document.createElement('div'); card.className = 'background-clip-card';
+      const head = document.createElement('div'); head.className = 'background-clip-head';
+      const title = document.createElement('strong'); title.textContent = `${index + 1}. ${row.file.name}`;
+      const tools = document.createElement('div'); tools.className = 'background-clip-actions';
+      const action = (label, icon, callback, disabled = false) => {
+        const button = document.createElement('button'); button.type = 'button'; button.title = label;
+        button.setAttribute('aria-label', label); button.disabled = disabled;
+        button.innerHTML = `<span class="material-symbols-outlined" aria-hidden="true">${icon}</span>`;
+        button.addEventListener('click', callback); tools.append(button);
+      };
+      action('Replace media','sync',() => {
+        const input=document.createElement('input'); input.type='file';
+        input.accept='image/png,image/jpeg,image/webp,video/mp4,video/quicktime,video/webm,video/x-m4v';
+        input.addEventListener('change',()=>{
+          const file=input.files?.[0]; if(!file) return;
+          row.file=file; row.start=0; row.end=null; row.speed=Number($('background-speed').value);
+          row.duration=file.type.startsWith('image/')?4:null;
+          renderUploadedBackgroundPreview(backgroundClipRows); hideRenderedVideo();
+        }); input.click();
+      });
+      action('Move media up','arrow_upward',() => { if (!index) return; [backgroundClipRows[index-1],backgroundClipRows[index]]=[backgroundClipRows[index],backgroundClipRows[index-1]]; renderUploadedBackgroundPreview(backgroundClipRows); }, index===0);
+      action('Move media down','arrow_downward',() => { if (index>=backgroundClipRows.length-1) return; [backgroundClipRows[index+1],backgroundClipRows[index]]=[backgroundClipRows[index],backgroundClipRows[index+1]]; renderUploadedBackgroundPreview(backgroundClipRows); }, index===backgroundClipRows.length-1);
+      action('Duplicate clip','content_copy',() => { backgroundClipRows.splice(index+1,0,{...row}); renderUploadedBackgroundPreview(backgroundClipRows); });
+      action('Remove media','delete',() => { backgroundClipRows.splice(index,1); renderUploadedBackgroundPreview(backgroundClipRows); if (!backgroundClipRows.length) { $('background-file').value=''; clearCustomBackgroundPreview(); } });
+      head.append(title,tools); card.append(head);
+      if (row.file.type.startsWith('video/')) {
+        const info = document.createElement('p'); info.className='background-clip-duration';
+        info.textContent = row.duration ? `Media ${row.duration.toFixed(1)} s · selected ${(Number(row.end||row.duration)-Number(row.start||0)).toFixed(1)} s` : 'Reading video duration…';
+        card.append(info);
+        const controls=document.createElement('div'); controls.className='background-clip-controls';
+        const field=(label,type,value,min,max,step,change)=>{ const wrap=document.createElement('label'); wrap.textContent=label; const input=document.createElement('input'); input.type=type; input.value=value ?? ''; if(min!==null) input.min=min; if(max!==null) input.max=max; if(step) input.step=step; input.addEventListener('change',()=>{change(input.value); const text=card.querySelector('.background-clip-duration'); if(row.duration) text.textContent=`Media ${row.duration.toFixed(1)} s · selected ${(Number(row.end||row.duration)-Number(row.start||0)).toFixed(1)} s`; hideRenderedVideo(); refreshSequencePreview(index);}); wrap.append(input); controls.append(wrap); return input; };
+        field('Trim in (s)','number',row.start,0,row.duration||null,.1,value=>row.start=Number(value));
+        field('Trim out (s)','number',row.end,0,row.duration||null,.1,value=>row.end=Number(value));
+        const select=(label,value,options,change)=>{const wrap=document.createElement('label');wrap.textContent=label;const input=document.createElement('select');options.forEach(([key,text])=>{const option=document.createElement('option');option.value=key;option.textContent=text;input.append(option);});input.value=value;input.addEventListener('change',()=>{change(input.value);hideRenderedVideo();refreshSequencePreview(index);});wrap.append(input);controls.append(wrap);};
+        select('Speed',String(row.speed),[['0.5','0.5×'],['0.75','0.75×'],['1','1×'],['1.25','1.25×'],['1.5','1.5×'],['2','2×']],value=>row.speed=Number(value));
+      } else {
+        const info=document.createElement('p'); info.className='background-clip-duration'; info.textContent='Still image · configured duration'; card.append(info);
+        const controls=document.createElement('div'); controls.className='background-clip-controls';
+        const field=(label,type,value,min,max,step,change)=>{ const wrap=document.createElement('label'); wrap.textContent=label; const input=document.createElement('input'); input.type=type; input.value=value ?? ''; if(min!==null) input.min=min; if(max!==null) input.max=max; if(step) input.step=step; input.addEventListener('change',()=>{change(input.value);hideRenderedVideo();}); wrap.append(input); controls.append(wrap); return input; };
+        field('Duration (s)','number',row.duration||4,1,300,.5,value=>row.duration=Number(value));
+        const durationInput = controls.querySelector('input[type="number"]');
+        durationInput?.addEventListener('change', () => refreshSequencePreview(index));
+        card.append(controls);
+      }
+      const transitionControls=document.createElement('div'); transitionControls.className='background-clip-controls';
+      const transitionLabel=document.createElement('label'); transitionLabel.textContent='Transition in';
+      const transitionSelect=document.createElement('select');
+      [['cut','Hard cut'],['crossfade','Crossfade'],['dissolve','Dissolve'],['fade_black','Fade through black'],['fade_color','Fade through color'],['slide_left','Slide left'],['slide_right','Slide right'],['zoom','Gentle zoom']]
+        .forEach(([value,label])=>{const option=document.createElement('option');option.value=value;option.textContent=label;transitionSelect.append(option);});
+      transitionSelect.value=row.transition||$('default-background-transition').value;
+      transitionSelect.disabled=!$('transitions-enabled').checked;
+      transitionSelect.addEventListener('change',()=>{row.transition=transitionSelect.value;hideRenderedVideo();});
+      transitionLabel.append(transitionSelect); transitionControls.append(transitionLabel);
+      const durationWrap=document.createElement('label');durationWrap.textContent='Blend (s)';
+      const durationInput=document.createElement('input');durationInput.type='number';durationInput.min='0';durationInput.max='2';durationInput.step='.05';durationInput.value=row.transition_duration??.45;
+      durationInput.disabled=!$('transitions-enabled').checked;
+      durationInput.addEventListener('change',()=>{row.transition_duration=Number(durationInput.value);hideRenderedVideo();});
+      durationWrap.append(durationInput);transitionControls.append(durationWrap);card.append(transitionControls);
+      container.append(card);
+    });
   }
 
   let captionPreviewRequest = 0, captionPreviewObjectUrl = null;
   async function updateCaptionPreview() {
     const caption = $('preview-ayah-text');
+    if (!$('show-quran-text').checked) {
+      caption.style.display = 'none';
+      updateViewerLayerPreview();
+      return;
+    }
     const lines = ayahText.value.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-    const text = lines[previewIndex] || previewAyahs[previewIndex] || lines[0] || previewAyahs[0] || '';
+    const activeScene = previewScenes[previewIndex];
+    const text = activeScene?.text || lines[0] || previewAyahs[0] || '';
     if (!text) return;
     const requestId = ++captionPreviewRequest;
     const response = await fetch('/api/caption-preview', {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({text, aspect_ratio:ratio, caption_style:$('caption-style').value,
-                            caption_color:captionColor, wrap_width:wrapWidth})
+                            caption_color:captionColor, wrap_width:wrapWidth,
+                            template_id:selectedTemplateId, surah:Number(surahSelect.value),
+                            ayah:activeScene?.ayah_number || Number(startInput.value || 1),
+                            font_id:$('arabic-font').value,
+                            show_surah_title:$('show-surah-title').checked,
+                            show_ayah_number:$('show-ayah-number').checked,
+                            surah_template:$('surah-name-template').value,
+                            ayah_number_template:$('ayah-number-template').value,
+                            surah_color:$('surah-color').value, ayah_color:$('ayah-color').value,
+                            surah_scale:Number($('surah-scale').value),
+                            ayah_number_scale:Number($('ayah-number-scale').value),
+                            surah_align:$('surah-align').value,
+                            ayah_number_align:$('ayah-number-align').value,
+                            surah_font_id:$('surah-font-id').value,
+                            ayah_number_font_id:$('ayah-number-font-id').value,
+                            surah_opacity:Number($('surah-opacity').value),
+                            ayah_number_opacity:Number($('ayah-number-opacity').value),
+                            surah_placement:$('surah-placement').value,
+                            ayah_number_placement:$('ayah-number-placement').value,
+                            caption_position:$('caption-position').value,
+                            translation:activeTranslationText(),
+                            text_bg_enabled:$('text-bg-enabled').checked,
+                            text_bg_color:$('text-bg-color').value,
+                            text_bg_opacity:Number($('text-bg-opacity').value),
+                            glow_type:$('glow-type').value,
+                            glow_radius:Number($('glow-radius').value),
+                            resolution:$('export-resolution').value,
+                            custom_width:$('custom-width').value, custom_height:$('custom-height').value})
     });
     if (!response.ok) return;
     const imageUrl = URL.createObjectURL(await response.blob());
@@ -530,17 +1986,299 @@ tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2ff',200:
       if (requestId !== captionPreviewRequest) return;
       const frame = $('preview-background').parentElement;
       const frameBox = frame.getBoundingClientRect();
-      const sourceSize = {'9:16':[1080,1920], '16:9':[1920,1080], '1:1':[1080,1080]}[ratio];
+      const sourceSize = currentOutputSize();
       const scale = frameBox.width / sourceSize[0];
       const outputHeight = sourceSize[1], captionHeight = caption.naturalHeight;
-      const y = Math.max(Math.trunc(outputHeight*.2),
-        Math.min(Math.trunc(outputHeight*.57-captionHeight/2), outputHeight-captionHeight-Math.trunc(outputHeight*.12)));
+      const hasTranslation = Boolean(activeTranslationText());
+      const anchor = {'upper':.34,'center':hasTranslation ? .43 : .54,'lower':.72}[$('caption-position').value] || .54;
+      const y = Math.max(Math.trunc(outputHeight*.12),
+        Math.min(Math.trunc(outputHeight*anchor-captionHeight/2), outputHeight-captionHeight-Math.trunc(outputHeight*.12)));
       caption.style.width = `${caption.naturalWidth*scale}px`;
       caption.style.top = `${y*scale}px`;
       caption.style.display = 'block';
+      if (hasTranslation) {
+        const translation = $('viewer-translation');
+        const captionBottom = y*scale + captionHeight*scale;
+        translation.style.top = `${Math.min(.665, Math.max(.60, captionBottom/frameBox.height + .018))*100}%`;
+      }
+      updateViewerLayerPreview();
       if (previousUrl) URL.revokeObjectURL(previousUrl);
     };
     caption.src = imageUrl;
+  }
+
+  function scenePayload() {
+    return {
+      ayahs: ayahText.value.split(/\r?\n/).map(line => line.trim()).filter(Boolean),
+      ayah_start: Number(startInput.value || 1), aspect_ratio: ratio, wrap_width: wrapWidth,
+      resolution: $('export-resolution').value,
+      custom_width: $('custom-width').value, custom_height: $('custom-height').value,
+      max_lines: Number($('max-lines').value), font_id: $('arabic-font').value,
+      template_id: selectedTemplateId,
+      show_surah_title: $('show-surah-title').checked,
+      show_ayah_number: $('show-ayah-number').checked,
+    };
+  }
+
+  function refreshSceneLabels() {
+    const totals = new Map();
+    const groups = new Map();
+    previewScenes.forEach(scene => totals.set(scene.ayah_number, (totals.get(scene.ayah_number) || 0) + 1));
+    const seen = new Map();
+    previewScenes.forEach((scene, index) => {
+      scene.scene_index = index;
+      scene.segment_index = (seen.get(scene.ayah_number) || 0) + 1;
+      seen.set(scene.ayah_number, scene.segment_index);
+      scene.segment_count = totals.get(scene.ayah_number);
+      scene.weight = Math.max(1, [...scene.text].filter(char => !/\s/.test(char) && !/[\u0300-\u036f\u064b-\u065f\u0670\u06d6-\u06ed]/u.test(char)).length);
+      if (!groups.has(scene.ayah_number)) groups.set(scene.ayah_number, []);
+      groups.get(scene.ayah_number).push(scene);
+    });
+    for (const group of groups.values()) {
+      const fractionsTotal = group.reduce((sum, scene) => sum + Number(scene.duration_fraction || 0), 0);
+      const hasValidFractions = group.every(scene => Number(scene.duration_fraction) > 0) && Math.abs(fractionsTotal - 1) < .005;
+      if (!hasValidFractions) {
+        const weightTotal = group.reduce((sum, scene) => sum + scene.weight, 0);
+        group.forEach(scene => { scene.duration_fraction = scene.weight / weightTotal; scene.manual_duration_fraction = false; });
+      }
+      const verseDuration = Number(group[0].ayah_total_duration) || group.reduce((sum, scene) => sum + Number(scene.duration || 0), 0) || 3;
+      group.forEach(scene => {
+        scene.ayah_total_duration = verseDuration;
+        scene.duration = verseDuration * scene.duration_fraction;
+      });
+    }
+    let cursor = 0;
+    previewScenes.forEach(scene => {
+      scene.start_time = cursor;
+      cursor += Number(scene.duration || 0);
+      scene.end_time = cursor;
+    });
+  }
+
+  function renderSceneTimeline(approximate = previewScenes.some(scene => scene.segment_count > 1)) {
+    const list = $('scene-timeline');
+    list.replaceChildren();
+    if (!previewScenes.length) {
+      $('scene-summary').textContent = 'No scenes planned';
+      return;
+    }
+    previewScenes.forEach((scene, index) => {
+      const row = document.createElement('div');
+      row.className = `scene-row${index === previewIndex ? ' active-scene' : ''}`;
+      const select = document.createElement('button');
+      select.type = 'button';
+      select.className = 'scene-select';
+      select.setAttribute('aria-label', `Preview Ayah ${scene.ayah_number}, scene ${scene.segment_index} of ${scene.segment_count}`);
+      const heading = document.createElement('strong');
+      heading.textContent = `Ayah ${scene.ayah_number}${scene.segment_count > 1 ? ` · Part ${scene.segment_index}/${scene.segment_count}` : ''}`;
+      const excerpt = document.createElement('span');
+      excerpt.textContent = scene.text;
+      const sceneTime = document.createElement('span');
+      sceneTime.className = 'scene-time';
+      sceneTime.textContent = `${Number(scene.start_time || 0).toFixed(1)}–${Number(scene.end_time || 0).toFixed(1)} s${scene.segment_count > 1 ? ' · estimated phrase split' : scene.timing_mode === 'ayah_timestamp' ? ' · ayah timing' : ' · estimate'}`;
+      select.append(heading, excerpt, sceneTime);
+      select.addEventListener('click', () => paintPreviewAyah(index));
+      row.append(select);
+
+      const actions = document.createElement('div');
+      actions.className = 'scene-actions';
+      if (scene.segment_count > 1) {
+        const share = document.createElement('label'); share.className = 'scene-share'; share.textContent = 'Share %';
+        const input = document.createElement('input'); input.type = 'number'; input.min = '5'; input.max = '95'; input.step = '1';
+        input.value = String(Math.round(Number(scene.duration_fraction || 0) * 100));
+        input.setAttribute('aria-label', `Ayah ${scene.ayah_number}, part ${scene.segment_index} audio time percentage`);
+        input.addEventListener('change', () => {
+          const group = previewScenes.filter(item => item.ayah_number === scene.ayah_number);
+          const shareValue = Math.max(5, Math.min(95, Number(input.value || 5))) / 100;
+          const siblings = group.filter(item => item !== scene);
+          const siblingTotal = siblings.reduce((sum, item) => sum + Number(item.duration_fraction || item.weight), 0) || siblings.length;
+          scene.duration_fraction = shareValue; scene.manual_duration_fraction = true;
+          siblings.forEach(item => { item.duration_fraction = (1 - shareValue) * (Number(item.duration_fraction || item.weight) / siblingTotal); item.manual_duration_fraction = true; });
+          input.value = String(Math.round(shareValue * 100));
+          scenePlanRequest++; scenePlanManual = true; refreshSceneLabels(); renderSceneTimeline(true);
+          updateCaptionPreview().catch(showError); hideRenderedVideo();
+        });
+        share.append(input); actions.append(share);
+      }
+      const words = scene.text.trim().split(/\s+/);
+      if (words.length >= 6) {
+        const split = document.createElement('button');
+        split.type = 'button'; split.textContent = 'Split'; split.title = 'Split this caption scene';
+        split.addEventListener('click', event => {
+          event.stopPropagation();
+          let middle = Math.floor(words.length / 2);
+          for (let distance = 0; distance < 3; distance++) {
+            const candidate = middle + distance;
+            if (candidate > 0 && candidate < words.length && /[،؛.!؟ۚۖۗۘۙۛۜ۞۩۝]$/u.test(words[candidate - 1])) { middle = candidate; break; }
+          }
+          previewScenes.splice(index, 1,
+            {...scene, text: words.slice(0, middle).join(' ')},
+            {...scene, text: words.slice(middle).join(' ')});
+          scenePlanRequest++; scenePlanManual = true; refreshSceneLabels(); previewIndex = index;
+          renderSceneTimeline(true); updateCaptionPreview().catch(showError); hideRenderedVideo();
+        });
+        actions.append(split);
+      }
+      if (index > 0 && previewScenes[index - 1].ayah_number === scene.ayah_number) {
+        const merge = document.createElement('button');
+        merge.type = 'button'; merge.textContent = 'Merge'; merge.title = 'Merge with the previous part of this ayah';
+        merge.addEventListener('click', event => {
+          event.stopPropagation();
+          previewScenes.splice(index - 1, 2, {...scene, text: `${previewScenes[index - 1].text} ${scene.text}`});
+          scenePlanRequest++; scenePlanManual = true; refreshSceneLabels(); previewIndex = index - 1;
+          renderSceneTimeline(true); updateCaptionPreview().catch(showError); hideRenderedVideo();
+        });
+        actions.append(merge);
+      }
+      row.append(actions); list.append(row);
+    });
+    $('scene-summary').textContent = `${previewScenes.length} scene${previewScenes.length === 1 ? '' : 's'} · ${new Set(previewScenes.map(scene => scene.ayah_number)).size} ayah${new Set(previewScenes.map(scene => scene.ayah_number)).size === 1 ? '' : 's'}`;
+    $('scene-timing-note').textContent = approximate
+      ? 'Ayah boundaries follow recitation timing when loaded. Phrase splits inside a long ayah are estimated; adjust each segment’s share to move its scene boundary.'
+      : 'Scene boundaries use the selected recitation’s ayah-level timing. Phrase timing is not claimed as word-aligned.';
+  }
+
+  async function updateScenePlan() {
+    if (scenePlanManual) { renderSceneTimeline(true); return previewScenes; }
+    const requestId = ++scenePlanRequest;
+    const response = await fetch('/api/scenes/plan', {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(scenePayload()),
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || 'Could not plan caption scenes.');
+    if (requestId !== scenePlanRequest) return previewScenes;
+    previewScenes = payload.scenes;
+    previewIndex = Math.min(previewIndex, Math.max(0, previewScenes.length - 1));
+    renderSceneTimeline(payload.approximate_timing);
+    return previewScenes;
+  }
+
+  function applyVideoTemplate(templateId) {
+    const preset = videoTemplates[templateId];
+    if (!preset) return;
+    selectedTemplateId = templateId;
+    theme = preset.theme;
+    $('caption-style').value = preset.caption_style;
+    captionColor = preset.caption_color;
+    $('arabic-font').value = preset.font_id || 'naskh';
+    $('max-lines').value = String(preset.max_lines || 5);
+    $('show-surah-title').checked = Boolean(preset.show_surah_arabic ?? preset.show_surah_title);
+    $('show-ayah-number').checked = preset.show_ayah_number !== false;
+    $('show-quran-text').checked = preset.show_quran_text !== false;
+    $('surah-name-template').value = preset.surah_template || 'ornamental_gold';
+    $('ayah-number-template').value = preset.ayah_number_template || 'gold_medallion';
+    $('surah-color').value = preset.surah_color || '#ffd166';
+    $('ayah-color').value = preset.ayah_color || '#ffdf8e';
+    $('surah-scale').value = preset.surah_scale || '0.46';
+    $('ayah-number-scale').value = preset.ayah_number_scale || '0.38';
+    $('surah-align').value = preset.surah_align || 'center';
+    $('ayah-number-align').value = preset.ayah_number_align || 'center';
+    $('surah-font-id').value = preset.surah_font_id || preset.font_id || $('arabic-font').value;
+    $('ayah-number-font-id').value = preset.ayah_number_font_id || preset.font_id || $('arabic-font').value;
+    $('surah-opacity').value = preset.surah_opacity ?? 0.9;
+    $('ayah-number-opacity').value = preset.ayah_number_opacity ?? 0.96;
+    $('surah-placement').value = preset.surah_placement || 'above';
+    $('ayah-number-placement').value = preset.ayah_number_placement || 'above';
+    $('caption-position').value = preset.caption_position || 'center';
+    $('text-bg-enabled').checked = Boolean(preset.text_bg_enabled);
+    $('text-bg-color').value = preset.text_bg_color || '#000000';
+    $('text-bg-opacity').value = preset.text_bg_opacity ?? 0.65;
+    $('glow-type').value = preset.glow_type || 'none';
+    $('glow-radius').value = preset.glow_radius ?? 14;
+    $('viewer-title-enabled').checked = preset.show_viewer_title !== false;
+    $('viewer-title-icon-enabled').checked = preset.show_title_icon !== false;
+    $('viewer-header-surah-enabled').checked = preset.show_header_surah !== false;
+    $('viewer-header-surah-language').value = preset.header_surah_language || 'english';
+    $('viewer-header-range-enabled').checked = preset.show_ayah_range !== false;
+    $('viewer-header-range-language').value = preset.ayah_range_language || 'english';
+    $('viewer-header-range-format').value = preset.ayah_range_format || 'label';
+    $('viewer-header-qari-enabled').checked = preset.show_qari_in_header !== false;
+    $('viewer-title-template').value = preset.title_template || 'dark_pill';
+    $('viewer-title-color').value = preset.title_accent || '#edc85f';
+    $('viewer-title-opacity').value = preset.title_opacity ?? .88;
+    $('viewer-title-size').value = preset.title_size || .027;
+    $('viewer-title-position').value = preset.title_position || 'top';
+    $('show-translation').checked = Boolean(preset.show_translation);
+    $('translation-color').value = preset.translation_color || '#ffffff';
+    $('translation-size').value = preset.translation_size || .026;
+    $('translation-bg-enabled').checked = Boolean(preset.translation_bg_enabled);
+    $('translation-bg-color').value = preset.translation_bg_color || '#10161d';
+    $('translation-bg-opacity').value = preset.translation_bg_opacity || .4;
+    $('show-waveform').checked = preset.show_waveform !== false;
+    $('waveform-style').value = preset.waveform_style || 'gold';
+    $('waveform-color').value = preset.waveform_color || '#f0c64b';
+    $('waveform-count').value = String(preset.waveform_count || 13);
+    $('waveform-speed').value = preset.waveform_speed || 1;
+    $('show-reciter-badge').checked = preset.show_reciter_badge !== false;
+    $('reciter-color').value = preset.reciter_color || '#ffffff';
+    $('reciter-background').value = preset.reciter_background || '#10161d';
+    $('reciter-opacity').value = preset.reciter_opacity ?? .88;
+    $('show-progress').checked = preset.show_progress !== false;
+    $('progress-color').value = preset.progress_color || '#edbd36';
+    $('progress-track-color').value = preset.progress_track_color || '#d1d5db';
+    $('progress-height').value = preset.progress_height || 6;
+    document.querySelectorAll('.video-template-choice').forEach(button => {
+      const selected = button.dataset.templateId === templateId;
+      button.classList.toggle('selected-video-template', selected);
+      button.setAttribute('aria-pressed', String(selected));
+    });
+    document.querySelectorAll('.background-choice').forEach(button => {
+      button.classList.toggle('selected-background', button.dataset.theme === theme);
+    });
+    document.querySelectorAll('.caption-color-choice').forEach(button => {
+      button.classList.toggle('selected-caption-color', button.dataset.color === captionColor);
+    });
+    setWallpaperPreview();
+    updateViewerLayerPreview();
+    scenePlanManual = false;
+    updateScenePlan().then(updateCaptionPreview).catch(showError);
+    hideRenderedVideo();
+  }
+
+  function applyBackgroundSequenceTemplate(templateId) {
+    const preset = backgroundSequenceTemplates[templateId];
+    if (!preset || !preset.scenes?.length) return;
+    clearCustomBackgroundPreview();
+    $('background-file').value = '';
+    $('background-file-name').textContent = 'Five bundled photo scenes · no uploaded media';
+    $('background-sequence-template').value = templateId;
+    $('sequence-enabled').checked = true;
+    $('transitions-enabled').checked = true;
+    $('sequence-loop').checked = Boolean(preset.loop);
+    $('default-background-transition').value = preset.transition || 'crossfade';
+    $('background-transition-duration').value = preset.transition_duration ?? .45;
+    $('background-animation-enabled').checked = true;
+    $('background-animation-preset').value = preset.animation_preset || 'gentle_movement';
+    $('background-animation-intensity').value = preset.animation_intensity ?? .4;
+    $('background-animation-duration').value = preset.animation_duration ?? 18;
+    $('background-animation-speed').value = preset.animation_speed ?? 1;
+    $('background-animation-start').value = preset.animation_start ?? 0;
+    theme = preset.scenes[0].theme;
+    builtinSequenceIndex = 0;
+    updateBackgroundSequenceSelection();
+    document.querySelectorAll('.background-choice').forEach(button => {
+      button.classList.toggle('selected-background', button.dataset.theme === theme);
+    });
+    renderBackgroundClipList();
+    playBackgroundSequenceTemplate(0);
+    hideRenderedVideo(); scheduleProjectAutosave();
+    setProjectStatus(`Applied “${preset.name}” · five scenes with ${preset.transition.replace('_',' ')}`);
+  }
+
+  function applyQuranTextTemplate(templateId) {
+    const preset = textTemplates[templateId];
+    if (!preset) return;
+    $('caption-style').value = preset.caption_style;
+    captionColor = preset.caption_color;
+    $('arabic-font').value = preset.font_id;
+    $('text-bg-enabled').checked = Boolean(preset.text_bg_enabled);
+    $('text-bg-color').value = preset.text_bg_color;
+    $('text-bg-opacity').value = preset.text_bg_opacity;
+    $('glow-type').value = preset.glow_type;
+    document.querySelectorAll('.caption-color-choice').forEach(button => {
+      button.classList.toggle('selected-caption-color', button.dataset.color === captionColor);
+    });
+    hideRenderedVideo(); updateScenePlan().then(updateCaptionPreview).catch(showError);
   }
 
   function formatTime(seconds) {
@@ -550,6 +2288,8 @@ tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2ff',200:
 
   function paintPreviewAyah(index = 0) {
     previewIndex = index;
+    renderSceneTimeline();
+    updateViewerLayerPreview();
     updateCaptionPreview().catch(() => {});
   }
 
@@ -562,6 +2302,7 @@ tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2ff',200:
     if (Number(startInput.value) > count) startInput.value = count;
     if (Number(endInput.value) > count) endInput.value = count;
     updateRangeSummary();
+    updateViewerLayerPreview();
   }
 
   function updateRangeSummary() {
@@ -572,34 +2313,109 @@ tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2ff',200:
   }
 
   async function loadVerses(updateEditor = true) {
-    const params = new URLSearchParams({surah: surahSelect.value, start: startInput.value || '1', end: endInput.value || startInput.value || '1'});
+    const selectionKey = verseSelectionKey();
+    const requestId = ++verseLoadRequest;
+    if (updateEditor) {
+      ayahText.setAttribute('aria-busy', 'true');
+      $('ayah-text-status').textContent = 'Loading the selected ayahs…';
+    }
+    const [surah, start, end] = selectionKey.split(':');
+    const params = new URLSearchParams({surah, start, end});
     const response = await fetch(`/api/verses?${params}`);
     const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || 'Could not load Quran text.');
+    if (!response.ok) {
+      if (updateEditor && requestId === verseLoadRequest) {
+        ayahText.setAttribute('aria-busy', 'false');
+        $('ayah-text-status').textContent = 'Could not load the selected ayahs. Check the range and try again.';
+      }
+      throw new Error(payload.error || 'Could not load Quran text.');
+    }
+    // Range controls can change while a fetch is in flight. Never let an older
+    // response replace the current selection's Quran text or preview scenes.
+    if (requestId !== verseLoadRequest || selectionKey !== verseSelectionKey()) return previewAyahs;
     previewAyahs = payload.ayahs;
-    if (updateEditor) ayahText.value = payload.ayahs.join('\n');
-    loadedVerseSelection = verseSelectionKey();
+    if (updateEditor) {
+      ayahText.value = payload.ayahs.join('\n');
+      ayahText.setAttribute('aria-busy', 'false');
+      $('ayah-text-status').textContent = `${payload.ayahs.length} ${payload.ayahs.length === 1 ? 'ayah' : 'ayahs'} loaded for this range. You can edit the captions.`;
+      scenePlanManual = false;
+    }
+    loadedVerseSelection = selectionKey;
     const status = $('render-status');
     if (!status.classList.contains('bg-brand-50')) {
       status.className = 'hidden rounded-lg px-3 py-2 text-sm';
-      status.replaceChildren();
+      $('render-status-message').replaceChildren();
+      $('render-progress-row').classList.add('hidden');
+      $('render-cancel-btn').classList.add('hidden');
     }
     document.querySelector('.scope-duration').textContent = 'Audio timed to selected ayahs';
     hideRenderedVideo();
-    paintPreviewAyah();
+    if (updateEditor || !scenePlanManual) await updateScenePlan();
+    if (requestId !== verseLoadRequest || selectionKey !== verseSelectionKey()) return previewAyahs;
+    paintPreviewAyah(0);
     return payload.ayahs;
   }
 
-  function scheduleVerseLoad() {
+  function scheduleVerseLoad(changedInput = null) {
     updateSurahInfo();
+    const count = Number(surahSelect.selectedOptions[0]?.dataset.ayahCount || 1);
+    let start = Math.max(1, Math.min(count, Number(startInput.value || 1)));
+    let end = Math.max(1, Math.min(count, Number(endInput.value || start)));
+    if (start > end) {
+      if (changedInput === endInput) start = end;
+      else end = start;
+    }
+    startInput.value = String(start);
+    endInput.value = String(end);
+    loadedVerseSelection = '';
+    ayahText.setAttribute('aria-busy', 'true');
+    $('ayah-text-status').textContent = `Updating Arabic text for ayahs ${start}–${end}…`;
+    updateRangeSummary();
+    scenePlanRequest++;
+    scenePlanManual = false;
     clearTimeout(verseLoadTimer);
-    verseLoadTimer = setTimeout(() => loadVerses().catch(showError), 250);
+    verseLoadTimer = setTimeout(() => loadVerses(true).catch(error => {
+      ayahText.setAttribute('aria-busy', 'false');
+      $('ayah-text-status').textContent = 'Could not load the selected ayahs. Check your connection and try again.';
+      showError(error);
+    }), 100);
   }
 
   function showError(message) {
     const status = $('render-status');
     status.className = 'rounded-lg px-3 py-2 text-sm bg-red-50 text-red-700';
-    status.textContent = typeof message === 'string' ? message : message.message;
+    $('render-status-message').textContent = typeof message === 'string' ? message : message.message;
+    $('render-progress-row').classList.add('hidden');
+    $('render-cancel-btn').classList.add('hidden');
+  }
+
+  function expandSceneTimings(ayahTimings) {
+    const scenesByAyah = new Map();
+    previewScenes.forEach(scene => {
+      if (!scenesByAyah.has(scene.ayah_number)) scenesByAyah.set(scene.ayah_number, []);
+      scenesByAyah.get(scene.ayah_number).push(scene);
+    });
+    const expanded = [];
+    ayahTimings.forEach((timing, index) => {
+      const scenes = scenesByAyah.get(Number(timing.ayah)) || [];
+      const nextStart = ayahTimings[index + 1]?.start;
+      const end = Number.isFinite(nextStart) ? nextStart : timing.end;
+      const duration = Math.max(.01, end - timing.start);
+      const parts = scenes.length ? scenes : [{scene_index:index, ayah_number:Number(timing.ayah), text:previewAyahs[index] || '', weight:1}];
+      const useManualFractions = parts.length > 1 && parts.every(scene => scene.manual_duration_fraction);
+      const totalWeight = parts.reduce((sum, scene) => sum + (useManualFractions
+        ? (scene.duration_fraction || 0) : (scene.weight || 1)), 0);
+      let cursor = timing.start;
+      parts.forEach((scene, part) => {
+        const partWeight = useManualFractions ? scene.duration_fraction : (scene.weight || 1);
+        const partEnd = part === parts.length - 1 ? end : cursor + duration * partWeight / totalWeight;
+        scene.start_time = cursor; scene.end_time = partEnd; scene.duration = partEnd - cursor;
+        scene.ayah_total_duration = duration; scene.duration_fraction = scene.duration / duration;
+        expanded.push({...scene, start:cursor, end:partEnd});
+        cursor = partEnd;
+      });
+    });
+    return expanded;
   }
 
   async function startRecitationPreview() {
@@ -608,8 +2424,9 @@ tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2ff',200:
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || 'Could not load verse timing.');
     const player = $('voice-preview-audio');
-    previewTimings = result.timings;
     previewAyahs = await loadVerses(false);
+    previewTimings = expandSceneTimings(result.timings);
+    if (!previewTimings.length) throw new Error('No ayah scene timing was returned for this selection.');
     if (player.src !== result.audio_url) {
       player.src = result.audio_url;
       await new Promise((resolve, reject) => {
@@ -625,7 +2442,12 @@ tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2ff',200:
     paintPreviewAyah(0);
     player.ontimeupdate = () => {
       const elapsed = player.currentTime;
-      let current = previewTimings.findIndex((timing, index) => elapsed >= timing.start && (index === previewTimings.length - 1 || elapsed < previewTimings[index + 1].start));
+      let current = previewTimings.findIndex(timing => elapsed >= timing.start && elapsed < timing.end);
+      if (current < 0) {
+        for (let index = previewTimings.length - 1; index >= 0; index--) {
+          if (elapsed >= previewTimings[index].start) { current = index; break; }
+        }
+      }
       if (current < 0) current = 0;
       if (current !== previewIndex) paintPreviewAyah(current);
       const first = previewTimings[0].start, last = previewTimings[previewTimings.length - 1].end;
@@ -656,12 +2478,18 @@ tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2ff',200:
       item.addEventListener('click', () => {
         selectedReciter = reciter.id;
         $('selected-reciter-name').textContent = reciter.name;
-        $('preview-reciter-name').textContent = `Sheikh ${reciter.name}`;
+        updatePreviewReciterName(reciter.name);
         $('reciter-dropdown').classList.add('hidden');
         hideRenderedVideo();
       });
       reciterList.append(item);
     });
+    const selected = reciterById.get(selectedReciter);
+    if (selected) {
+      $('selected-reciter-name').textContent = selected.name;
+      updatePreviewReciterName(selected.name);
+      reciterList.querySelector(`[data-id="${CSS.escape(selectedReciter)}"]`)?.classList.add('bg-brand-50/70');
+    }
   }).catch(() => { reciterList.textContent = 'Could not load reciters.'; });
 
   $('reciter-trigger').addEventListener('click', event => {
@@ -685,16 +2513,19 @@ tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2ff',200:
   });
 
   [['start-inc', startInput, 1], ['start-dec', startInput, -1], ['end-inc', endInput, 1], ['end-dec', endInput, -1]].forEach(([button, input, delta]) => {
-    $(button).addEventListener('click', () => {
+      $(button).addEventListener('click', () => {
       input.value = Math.max(Number(input.min), Math.min(Number(input.max), Number(input.value || 1) + delta));
-      scheduleVerseLoad();
+      scheduleVerseLoad(input);
     });
   });
   [startInput, endInput].forEach(input => {
-    input.addEventListener('input', scheduleVerseLoad);
-    input.addEventListener('change', scheduleVerseLoad);
+    input.addEventListener('input', () => scheduleVerseLoad(input));
+    input.addEventListener('change', () => scheduleVerseLoad(input));
   });
-  ayahText.addEventListener('input', () => { hideRenderedVideo(); paintPreviewAyah(); });
+  ayahText.addEventListener('input', () => {
+    hideRenderedVideo(); scenePlanRequest++; scenePlanManual = false; clearTimeout(scenePlanTimer);
+    scenePlanTimer = setTimeout(() => updateScenePlan().then(() => paintPreviewAyah(0)).catch(showError), 250);
+  });
   surahSelect.addEventListener('change', () => {
     startInput.value = 1; endInput.value = 1; scheduleVerseLoad();
   });
@@ -703,43 +2534,183 @@ tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2ff',200:
     ratio = button.dataset.ratio;
     document.querySelectorAll('.aspect-ratio-btn').forEach(item => item.classList.remove('selected-ratio'));
     button.classList.add('selected-ratio');
-    const dimensions = {'9:16': '1080 × 1920', '16:9': '1920 × 1080', '1:1': '1080 × 1080'};
-    $('canvas-resolution').textContent = `${dimensions[ratio]} (${ratio}) • 24 FPS`;
-    $('reel-mockup').style.maxWidth = ratio === '16:9' ? '580px' : ratio === '1:1' ? '400px' : '340px';
-    $('reel-mockup').querySelector('.aspect-screen').style.aspectRatio = ratio.replace(':', ' / ');
+    updateCanvasSummary();
+    syncPreviewAspectRatio();
     setWallpaperPreview();
-    updateCaptionPreview().catch(() => {});
+    scenePlanManual = false;
+    updateScenePlan().then(updateCaptionPreview).catch(showError);
     hideRenderedVideo();
   }));
 
+  $('export-resolution').addEventListener('change', () => {
+    $('custom-resolution-fields').classList.toggle('hidden', $('export-resolution').value !== 'custom');
+    updateCanvasSummary(); hideRenderedVideo();
+    scenePlanManual = false; updateScenePlan().then(updateCaptionPreview).catch(showError);
+  });
+  ['custom-width','custom-height'].forEach(id => $(id).addEventListener('input', () => {
+    updateCanvasSummary(); hideRenderedVideo();
+    clearTimeout(window.customSizePreviewTimer);
+    window.customSizePreviewTimer = setTimeout(() => updateScenePlan().then(updateCaptionPreview).catch(showError), 250);
+  }));
+  $('export-fps').addEventListener('change', () => { updateCanvasSummary(); hideRenderedVideo(); });
+  $('export-quality').addEventListener('change', () => { updateQualityDescription(); hideRenderedVideo(); });
+  $('export-crf').addEventListener('input', () => {
+    $('export-crf-value').textContent = $('export-crf').value; hideRenderedVideo();
+  });
+  ['audio-bitrate','audio-sample-rate'].forEach(id => $(id).addEventListener('change', hideRenderedVideo));
+  updateQualityDescription(); updateCanvasSummary();
+
   document.querySelectorAll('.background-choice').forEach(button => button.addEventListener('click', () => {
     theme = button.dataset.theme;
+    $('background-sequence-template').value = '';
+    $('sequence-enabled').checked = false;
+    updateBackgroundSequenceSelection();
+    clearTimeout(builtinSequencePreviewTimer);
     document.querySelectorAll('.background-choice').forEach(item => item.classList.remove('selected-background'));
     button.classList.add('selected-background');
     const preview = $('preview-background');
+    $('background-file').value = '';
+    clearCustomBackgroundPreview();
+    $('background-file-name').textContent = 'PNG, JPG, WEBP, MP4, MOV or WEBM';
     preview.className = 'absolute inset-0 bg-cover bg-center preview-background';
     setWallpaperPreview();
-    $('background-file').value = '';
-    $('background-file-name').textContent = 'PNG, JPG or WEBP · click to browse';
     hideRenderedVideo();
   }));
+  function filterBackgrounds() {
+    const query = $('background-search').value.trim().toLowerCase();
+    const category = $('background-category').value;
+    document.querySelectorAll('.background-choice').forEach(button => {
+      const matchesText = button.textContent.toLowerCase().includes(query);
+      const matchesCategory = category === 'all' || button.dataset.category === category;
+      button.hidden = !matchesText || !matchesCategory;
+    });
+  }
+  $('background-search').addEventListener('input', filterBackgrounds);
+  $('background-category').addEventListener('change', filterBackgrounds);
+  document.querySelectorAll('.background-sequence-choice').forEach(button => button.addEventListener('click', () => {
+    applyBackgroundSequenceTemplate(button.dataset.sequenceId);
+  }));
+  document.querySelectorAll('.video-template-choice').forEach(button => button.addEventListener('click', () => {
+    applyVideoTemplate(button.dataset.templateId);
+  }));
+  $('reset-viewer-template-btn').addEventListener('click', () => applyVideoTemplate(selectedTemplateId));
+  $('quran-text-template').addEventListener('change', event => applyQuranTextTemplate(event.target.value));
+  ['show-surah-title','show-ayah-number','surah-name-template','ayah-number-template','surah-color','ayah-color','surah-align','ayah-number-align','surah-font-id','ayah-number-font-id','surah-placement','ayah-number-placement']
+    .forEach(id => $(id).addEventListener('change', () => {
+      hideRenderedVideo(); updateScenePlan().then(updateCaptionPreview).catch(showError);
+    }));
+  ['surah-scale','ayah-number-scale','surah-opacity','ayah-number-opacity'].forEach(id => $(id).addEventListener('input', () => {
+    hideRenderedVideo(); updateCaptionPreview().catch(showError);
+  }));
   $('background-file').addEventListener('change', () => {
-    const file = $('background-file').files[0];
-    if (!file) return;
-    $('background-file-name').textContent = file.name;
-    const preview = $('preview-background');
-    if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
-    previewObjectUrl = URL.createObjectURL(file);
-    preview.style.backgroundImage = `linear-gradient(rgba(0,0,0,.16),rgba(0,0,0,.16)),url("${previewObjectUrl}"),linear-gradient(145deg,var(--wallpaper-top),var(--wallpaper-bottom))`;
+    const files = [...$('background-file').files];
+    if (!files.length) return;
+    $('background-sequence-template').value = '';
+    updateBackgroundSequenceSelection();
+    $('background-file-name').textContent = files.length === 1 ? files[0].name : `${files.length} background items · sequence ${$('sequence-enabled').checked ? 'enabled' : 'off (first item active)'}`;
+    renderUploadedBackgroundPreview(files);
     hideRenderedVideo();
+  });
+  $('sequence-enabled').addEventListener('change', () => {
+    renderBackgroundClipList();
+    if (backgroundClipRows.length) playPreviewSequenceItem(0);
+    else playBackgroundSequenceTemplate(0);
+    hideRenderedVideo(); scheduleProjectAutosave();
+  });
+  $('transitions-enabled').addEventListener('change', () => {
+    renderBackgroundClipList();
+    if (backgroundClipRows.length) playPreviewSequenceItem(previewClipIndex);
+    else playBackgroundSequenceTemplate(0);
+    hideRenderedVideo(); scheduleProjectAutosave();
+  });
+  ['default-background-transition','background-transition-duration','background-transition-color','sequence-loop'].forEach(id => {
+    $(id).addEventListener('change', () => {
+      if (id === 'default-background-transition' || id === 'background-transition-duration') renderBackgroundClipList();
+      hideRenderedVideo(); scheduleProjectAutosave();
+    });
+  });
+  $('background-animation-enabled').addEventListener('change', () => {
+    updateBackgroundAnimationPreview(); hideRenderedVideo(); scheduleProjectAutosave();
+  });
+  ['background-animation-preset','background-animation-intensity','background-animation-duration','background-animation-speed','background-animation-start'].forEach(id => {
+    $(id).addEventListener('input', () => {
+      updateBackgroundAnimationPreview(); hideRenderedVideo(); scheduleProjectAutosave();
+    });
+    $(id).addEventListener('change', updateBackgroundAnimationPreview);
+  });
+  $('background-atmosphere-enabled').addEventListener('change', () => {
+    updateBackgroundAnimationPreview(); hideRenderedVideo(); scheduleProjectAutosave();
+  });
+  ['background-atmosphere-intensity','background-atmosphere-duration','background-atmosphere-speed','background-atmosphere-start'].forEach(id => {
+    $(id).addEventListener('input', () => {
+      updateBackgroundAnimationPreview(); hideRenderedVideo(); scheduleProjectAutosave();
+    });
+    $(id).addEventListener('change', updateBackgroundAnimationPreview);
+  });
+  ['background-fit','background-crop-x','background-crop-y'].forEach(id => {
+    $(id).addEventListener('input', scheduleWallpaperPreview);
+    $(id).addEventListener('change', () => { setWallpaperPreview(); hideRenderedVideo(); });
+  });
+  $('background-speed').addEventListener('input', () => {
+    const rate = Number($('background-speed').value);
+    backgroundClipRows.forEach(row => { row.speed = rate; });
+    $('preview-background-video').playbackRate = rate;
+    $('preview-background-video-blur').playbackRate = rate;
+    renderBackgroundClipList(); hideRenderedVideo();
+  });
+  $('background-loop').addEventListener('change', () => {
+    $('preview-background-video').loop = $('background-loop').checked;
+    hideRenderedVideo();
+  });
+  $('background-audio-enabled').addEventListener('change', hideRenderedVideo);
+  $('background-audio-volume').addEventListener('input', event => {
+    $('background-audio-volume-label').textContent = `${Math.round(Number(event.target.value)*100)}% · Quran recitation remains primary`;
+    hideRenderedVideo();
+  });
+  ['background-brightness','background-contrast','background-saturation','background-overlay-color','background-overlay-opacity'].forEach(id => {
+    $(id).addEventListener('input', () => { updateBackgroundAdjustments(); hideRenderedVideo(); });
+    $(id).addEventListener('change', () => { updateBackgroundAdjustments(); hideRenderedVideo(); });
   });
   $('wallpaper-jump').addEventListener('click', () => $('background-options').scrollIntoView({behavior:'smooth',block:'center'}));
   $('toggle-safezone-btn').addEventListener('click', () => $('safezone-overlay').classList.toggle('hidden'));
-  $('caption-style').addEventListener('change', () => updateCaptionPreview().catch(() => {}));
-  $('wrap-width').addEventListener('change', event => { wrapWidth = Number(event.target.value); updateCaptionPreview().catch(() => {}); });
+  $('caption-style').addEventListener('change', () => { hideRenderedVideo(); updateCaptionPreview().catch(() => {}); });
+  $('caption-position').addEventListener('change', () => { hideRenderedVideo(); updateCaptionPreview().catch(() => {}); });
+  ['text-bg-enabled','text-bg-color','text-bg-opacity','glow-type','glow-radius'].forEach(id => {
+    $(id).addEventListener('input', () => { hideRenderedVideo(); updateCaptionPreview().catch(() => {}); });
+    $(id).addEventListener('change', () => { hideRenderedVideo(); updateCaptionPreview().catch(() => {}); });
+  });
+  $('wrap-width').addEventListener('change', event => {
+    wrapWidth = Number(event.target.value); hideRenderedVideo(); scenePlanManual = false;
+    updateScenePlan().then(updateCaptionPreview).catch(showError);
+  });
+  ['arabic-font','max-lines'].forEach(id => $(id).addEventListener('change', () => {
+    hideRenderedVideo(); scenePlanManual = false;
+    updateScenePlan().then(updateCaptionPreview).catch(showError);
+  }));
+  $('show-surah-title').addEventListener('change', () => {
+    scenePlanManual = false; updateScenePlan().then(updateCaptionPreview).catch(showError);
+  });
+  $('show-quran-text').addEventListener('change', () => {
+    updateCaptionPreview().catch(showError); hideRenderedVideo(); scheduleProjectAutosave();
+  });
+  const viewerLayerControls = [
+    'viewer-title-enabled','viewer-title-icon-enabled','viewer-header-surah-enabled','viewer-header-surah-language','viewer-header-range-enabled','viewer-header-range-language','viewer-header-range-format','viewer-header-qari-enabled','viewer-title-text','viewer-title-template','viewer-title-color','viewer-title-opacity','viewer-title-size','viewer-title-position',
+    'show-translation','translation-text','translation-color','translation-size','translation-bg-enabled','translation-bg-color','translation-bg-opacity',
+    'show-waveform','waveform-style','waveform-color','waveform-count','waveform-speed',
+    'show-reciter-badge','reciter-label','reciter-color','reciter-background','reciter-opacity',
+    'show-progress','progress-color','progress-track-color','progress-height',
+  ];
+  const refreshViewerLayerControls = () => {
+    updateViewerLayerPreview(); hideRenderedVideo(); scheduleProjectAutosave();
+  };
+  viewerLayerControls.forEach(id => {
+    $(id).addEventListener('input', refreshViewerLayerControls);
+    $(id).addEventListener('change', refreshViewerLayerControls);
+  });
   document.querySelectorAll('.caption-color-choice').forEach(button => button.addEventListener('click', () => {
     captionColor = button.dataset.color;
     document.querySelectorAll('.caption-color-choice').forEach(item => item.classList.toggle('selected-caption-color', item === button));
+    hideRenderedVideo();
     updateCaptionPreview().catch(() => {});
   }));
   $('preview-scrubber').addEventListener('input', event => {
@@ -783,47 +2754,247 @@ tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2ff',200:
     catch { $('copy-status').textContent='Clipboard unavailable'; }
   });
 
+  function updateRenderProgress(job) {
+    $('render-status').className = 'rounded-lg px-3 py-2 text-sm bg-brand-50 text-brand-800';
+    $('render-status-message').textContent = job.message || 'Rendering video…';
+    $('render-progress-row').classList.remove('hidden');
+    $('render-progress').value = Number(job.progress || 0);
+    $('render-progress-percent').textContent = `${Math.round(job.progress || 0)}%`;
+    $('render-phase').textContent = job.phase || job.status;
+    const speed = Number(job.render_speed_fps);
+    const remaining = Number(job.estimated_remaining_seconds);
+    if (speed > 0 && Number.isFinite(remaining)) {
+      $('render-estimate').textContent = `Measured estimate: about ${formatTime(remaining)} remaining at ${speed.toFixed(1)} rendered FPS. Approximate; encoding speed can vary.`;
+      $('render-status-message').textContent = `${job.message || 'Rendering video…'} · ${speed.toFixed(1)} FPS · ~${formatTime(remaining)} left · elapsed ${formatTime(Number(job.elapsed_seconds || 0))}`;
+    } else {
+      $('render-estimate').textContent = 'Render estimate: Estimating from measured encoder speed…';
+    }
+  }
+
+  async function waitForRender(job) {
+    while (true) {
+      const response = await fetch(job.status_url, {cache:'no-store'});
+      const snapshot = await response.json();
+      if (!response.ok) throw new Error(snapshot.error || 'Render status is unavailable.');
+      updateRenderProgress(snapshot);
+      if (snapshot.status === 'complete') return snapshot.result;
+      if (snapshot.status === 'failed') throw new Error(snapshot.error || 'Video render failed.');
+      if (snapshot.status === 'cancelled') {
+        const error = new Error('Rendering cancelled.'); error.cancelled = true; throw error;
+      }
+      await new Promise(resolve => setTimeout(resolve, 450));
+    }
+  }
+
+  $('render-cancel-btn').addEventListener('click', async () => {
+    if (!activeRenderJobId) return;
+    const button = $('render-cancel-btn'); button.disabled = true;
+    try {
+      const response = await fetch(`/api/jobs/${encodeURIComponent(activeRenderJobId)}/cancel`, {method:'POST'});
+      const snapshot = await response.json();
+      if (!response.ok && response.status !== 409) throw new Error(snapshot.error || 'Could not cancel render.');
+      if (snapshot.status === 'complete') {
+        $('render-status-message').textContent = 'The video completed before cancellation was received.';
+      } else {
+        $('render-status-message').textContent = snapshot.message || 'Cancellation requested…';
+      }
+    } catch (error) { showError(error.message); }
+    finally { button.disabled = false; }
+  });
+
   $('generate-video-btn').addEventListener('click', async () => {
     const button = $('generate-video-btn'), status = $('render-status'), original = button.innerHTML;
     button.disabled = true;
-    button.innerHTML = '<span class="material-symbols-outlined animate-spin">progress_activity</span><span>Rendering timed recitation…</span>';
+    button.innerHTML = '<span class="material-symbols-outlined animate-spin">progress_activity</span><span>Preparing render…</span>';
     status.className = 'rounded-lg px-3 py-2 text-sm bg-brand-50 text-brand-800';
-    status.textContent = 'Loading the selected reciter audio and rendering the ayah captions…';
+    $('render-status-message').textContent = 'Preparing selected ayahs, recitation, and video settings…';
+    $('render-progress-row').classList.add('hidden');
+    $('render-estimate').textContent = 'Render estimate: Estimating from measured encoder speed…';
+    $('render-cancel-btn').classList.add('hidden');
+    activeRenderJobId = null;
     try {
-      // A range can change immediately before Export, before the debounce fires.
-      // Synchronize the editor in that case, while preserving edits for the same range.
-      const verses = loadedVerseSelection === verseSelectionKey()
-        ? await loadVerses(false)
-        : await loadVerses(true);
+      const selectionAtExport = verseSelectionKey();
+      const verses = loadedVerseSelection === selectionAtExport ? previewAyahs : await loadVerses(true);
+      if (loadedVerseSelection !== verseSelectionKey()) {
+        throw new Error('The ayah range changed while preparing the video. Please export again.');
+      }
       const form = new FormData();
       form.set('ayah_text', ayahText.value); form.set('aspect_ratio', ratio); form.set('reciter_id', selectedReciter);
+      form.set('resolution', $('export-resolution').value);
+      form.set('custom_width', $('custom-width').value); form.set('custom_height', $('custom-height').value);
+      form.set('fps', $('export-fps').value); form.set('quality', $('export-quality').value);
+      form.set('crf', $('export-crf').value); form.set('audio_bitrate', $('audio-bitrate').value);
+      form.set('audio_sample_rate', $('audio-sample-rate').value);
       form.set('transition', $('transition-style').value); form.set('caption_style', $('caption-style').value);
       form.set('theme', theme); form.set('speed', speed);
+      form.set('template_id', selectedTemplateId);
+      form.set('show_surah_title', $('show-surah-title').checked);
+      form.set('show_ayah_number', $('show-ayah-number').checked);
+      const viewerFormFields = {
+        'show-quran-text':'show_quran_text','viewer-title-enabled':'viewer_title_enabled',
+        'viewer-title-icon-enabled':'viewer_title_icon_enabled',
+        'viewer-header-surah-enabled':'viewer_header_surah_enabled',
+        'viewer-header-surah-language':'viewer_header_surah_language',
+        'viewer-header-range-enabled':'viewer_header_range_enabled',
+        'viewer-header-range-language':'viewer_header_range_language',
+        'viewer-header-range-format':'viewer_header_range_format',
+        'viewer-header-qari-enabled':'viewer_header_qari_enabled',
+        'viewer-title-text':'viewer_title_text','viewer-title-template':'viewer_title_template',
+        'viewer-title-color':'viewer_title_color','viewer-title-opacity':'viewer_title_opacity',
+        'viewer-title-size':'viewer_title_size','viewer-title-position':'viewer_title_position',
+        'show-translation':'show_translation','translation-text':'translation_text',
+        'translation-color':'translation_color','translation-size':'translation_size',
+        'translation-bg-enabled':'translation_bg_enabled','translation-bg-color':'translation_bg_color','translation-bg-opacity':'translation_bg_opacity',
+        'show-waveform':'show_waveform','waveform-style':'waveform_style','waveform-color':'waveform_color',
+        'waveform-count':'waveform_count','waveform-speed':'waveform_speed',
+        'show-reciter-badge':'show_reciter_badge','reciter-label':'reciter_label',
+        'reciter-color':'reciter_color','reciter-background':'reciter_background','reciter-opacity':'reciter_opacity',
+        'show-progress':'show_progress','progress-color':'progress_color',
+        'progress-track-color':'progress_track_color','progress-height':'progress_height',
+      };
+      Object.entries(viewerFormFields).forEach(([id,key]) => {
+        const element = $(id);
+        form.set(key, element.type === 'checkbox' ? String(element.checked) : element.value);
+      });
+      form.set('surah_template', $('surah-name-template').value);
+      form.set('ayah_number_template', $('ayah-number-template').value);
+      form.set('surah_color', $('surah-color').value); form.set('ayah_color', $('ayah-color').value);
+      form.set('surah_scale', $('surah-scale').value); form.set('ayah_number_scale', $('ayah-number-scale').value);
+      form.set('surah_align', $('surah-align').value); form.set('ayah_number_align', $('ayah-number-align').value);
+      form.set('surah_font_id', $('surah-font-id').value); form.set('ayah_number_font_id', $('ayah-number-font-id').value);
+      form.set('surah_opacity', $('surah-opacity').value); form.set('ayah_number_opacity', $('ayah-number-opacity').value);
+      form.set('surah_placement', $('surah-placement').value); form.set('ayah_number_placement', $('ayah-number-placement').value);
+      form.set('caption_position', $('caption-position').value);
+      form.set('text_bg_enabled', $('text-bg-enabled').checked);
+      form.set('text_bg_color', $('text-bg-color').value);
+      form.set('text_bg_opacity', $('text-bg-opacity').value);
+      form.set('glow_type', $('glow-type').value); form.set('glow_radius', $('glow-radius').value);
       form.set('caption_color', captionColor); form.set('wrap_width', String(wrapWidth));
+      form.set('font_id', $('arabic-font').value); form.set('max_lines', $('max-lines').value);
       form.set('surah', surahSelect.value); form.set('ayah_start', startInput.value); form.set('ayah_end', endInput.value);
-      if ($('background-file').files[0]) form.set('background', $('background-file').files[0]);
-      const response = await fetch('/api/generate', {method: 'POST', body: form});
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || 'Render failed.');
+      form.set('scene_overrides', JSON.stringify(previewScenes.map(scene => ({
+        ayah_number:scene.ayah_number, text:scene.text,
+        ...(scene.manual_duration_fraction ? {duration_fraction:scene.duration_fraction} : {}),
+      }))));
+      form.set('background_fit', $('background-fit').value);
+      form.set('crop_x', $('background-crop-x').value); form.set('crop_y', $('background-crop-y').value);
+      form.set('background_speed', $('background-speed').value);
+      form.set('background_loop', $('sequence-enabled').checked ? $('sequence-loop').checked : $('background-loop').checked);
+      form.set('sequence_enabled', $('sequence-enabled').checked);
+      form.set('background_sequence_template', $('background-sequence-template').value);
+      form.set('transitions_enabled', $('transitions-enabled').checked);
+      form.set('default_background_transition', $('default-background-transition').value);
+      form.set('background_transition_color', $('background-transition-color').value);
+      form.set('background_animation_enabled', $('background-animation-enabled').checked);
+      form.set('background_animation_preset', $('background-animation-preset').value);
+      form.set('background_animation_intensity', $('background-animation-intensity').value);
+      form.set('background_animation_duration', $('background-animation-duration').value);
+      form.set('background_animation_speed', $('background-animation-speed').value);
+      form.set('background_animation_start', $('background-animation-start').value);
+      form.set('background_atmosphere_enabled', $('background-atmosphere-enabled').checked);
+      form.set('background_atmosphere_intensity', $('background-atmosphere-intensity').value);
+      form.set('background_atmosphere_duration', $('background-atmosphere-duration').value);
+      form.set('background_atmosphere_speed', $('background-atmosphere-speed').value);
+      form.set('background_atmosphere_start', $('background-atmosphere-start').value);
+      form.set('background_audio_enabled', $('background-audio-enabled').checked);
+      form.set('background_audio_volume', $('background-audio-volume').value);
+      form.set('background_brightness', $('background-brightness').value);
+      form.set('background_contrast', $('background-contrast').value);
+      form.set('background_saturation', $('background-saturation').value);
+      form.set('background_overlay_color', $('background-overlay-color').value);
+      form.set('background_overlay_opacity', $('background-overlay-opacity').value);
+      if ($('sequence-enabled').checked) {
+        backgroundClipRows.forEach(row => form.append('background_clips', row.file));
+        form.set('background_clip_settings', JSON.stringify(backgroundClipRows.map(row => ({
+          start:row.start, end:row.end, speed:row.speed, duration:row.duration,
+          transition:row.transition, transition_duration:row.transition_duration,
+        }))));
+      } else if (backgroundClipRows[0]) {
+        form.append('background', backgroundClipRows[0].file);
+      }
+
+      const response = await fetch('/api/generate', {method:'POST', body:form});
+      const accepted = await response.json();
+      if (!response.ok) throw new Error(accepted.error || 'Render could not be started.');
+      activeRenderJobId = accepted.job_id;
+      $('render-cancel-btn').classList.remove('hidden');
+      const result = await waitForRender(accepted);
+      activeRenderJobId = null;
       status.className = 'rounded-lg px-3 py-2 text-sm bg-emerald-50 text-emerald-800';
-      status.replaceChildren(document.createTextNode(`Video ready · ${result.width}×${result.height} · ${result.duration.toFixed(1)} seconds · ${result.reciter} · ${verses.length} ayahs. `));
-      const link = document.createElement('a'); link.className = 'font-semibold underline'; link.href = result.download_url; link.textContent = 'Download MP4'; status.append(link);
-      const video = $('rendered-video'); video.src = result.download_url; video.classList.remove('hidden'); video.volume = Number($('preview-volume').value); video.load();
+      $('render-progress-row').classList.add('hidden');
+      $('render-cancel-btn').classList.add('hidden');
+      $('render-status-message').replaceChildren(document.createTextNode(
+        `Video ready · MP4 playback verified · ${result.width}×${result.height} · ${result.fps || 30} FPS · ${result.duration.toFixed(1)} seconds · ${result.reciter} · ${verses.length} ayahs · ${result.scene_count || previewScenes.length} scenes. `));
+      const link = document.createElement('a'); link.className = 'font-semibold underline'; link.href = result.download_url; link.textContent = 'Download MP4';
+      $('render-status-message').append(link);
+      const video = $('rendered-video'); video.src = result.download_url; video.classList.remove('hidden');
+      video.volume = Number($('preview-volume').value); video.load();
       button.innerHTML = '<span class="material-symbols-outlined">check_circle</span><span>Video Ready</span>';
-    } catch (error) { status.className = 'rounded-lg px-3 py-2 text-sm bg-red-50 text-red-700'; status.textContent = error.message; button.innerHTML = original; }
-    finally { button.disabled = false; }
+    } catch (error) {
+      activeRenderJobId = null;
+      if (error.cancelled) {
+        status.className = 'rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-700';
+        $('render-status-message').textContent = error.message;
+      } else {
+        status.className = 'rounded-lg px-3 py-2 text-sm bg-red-50 text-red-700';
+        $('render-status-message').textContent = error.message;
+      }
+      $('render-progress-row').classList.add('hidden');
+      $('render-cancel-btn').classList.add('hidden');
+      button.innerHTML = original;
+    } finally {
+      button.disabled = false;
+    }
   });
 
   $('export-preview-btn').addEventListener('click', () => $('generate-video-btn').click());
 
+  $('save-project-btn').addEventListener('click', () => saveNamedProject());
+  $('saved-projects').addEventListener('change', () => {
+    const selected = Boolean($('saved-projects').value);
+    $('open-project-btn').disabled = !selected; $('delete-project-btn').disabled = !selected;
+  });
+  $('open-project-btn').addEventListener('click', () => openNamedProject().catch(error => setProjectStatus(`Could not open project: ${error.message}`, true)));
+  $('delete-project-btn').addEventListener('click', () => deleteNamedProject().catch(error => setProjectStatus(`Could not delete project: ${error.message}`, true)));
+  $('undo-project-btn').addEventListener('click', () => undoProjectChange().catch(error => setProjectStatus(`Undo failed: ${error.message}`, true)));
+  $('redo-project-btn').addEventListener('click', () => redoProjectChange().catch(error => setProjectStatus(`Redo failed: ${error.message}`, true)));
+  $('save-custom-template-btn').addEventListener('click', saveCustomDesign);
+  $('custom-template-list').addEventListener('change', () => {
+    const selected = Boolean($('custom-template-list').value);
+    $('apply-custom-template-btn').disabled = !selected; $('delete-custom-template-btn').disabled = !selected;
+    $('export-custom-template-btn').disabled = !selected;
+    if (selected) $('custom-template-name').value = customDesignRecords().find(item => item.id === $('custom-template-list').value)?.name || '';
+  });
+  $('apply-custom-template-btn').addEventListener('click', () => applyCustomDesign().catch(error => setProjectStatus(`Could not apply design: ${error.message}`, true)));
+  $('delete-custom-template-btn').addEventListener('click', deleteCustomDesign);
+  $('export-custom-template-btn').addEventListener('click', exportCustomDesign);
+  $('import-custom-template-btn').addEventListener('click', () => $('custom-template-import-file').click());
+  $('custom-template-import-file').addEventListener('change', async event => {
+    const file = event.target.files?.[0];
+    try { await importCustomDesign(file); }
+    catch (error) { setProjectStatus(`Template import failed: ${error.message}`, true); }
+    finally { event.target.value = ''; }
+  });
+  document.addEventListener('input', event => {
+    if (event.target.closest('main') && !EXCLUDED_PROJECT_FIELDS.has(event.target.id)) scheduleProjectAutosave();
+  });
+  document.addEventListener('change', event => {
+    if (event.target.closest('main') && !EXCLUDED_PROJECT_FIELDS.has(event.target.id)) scheduleProjectAutosave();
+  });
+  document.addEventListener('click', event => {
+    if (event.target.closest('.video-template-choice,.background-choice,.caption-color-choice,.aspect-ratio-btn,.reciter-option,#speed-cycle-btn,.background-clip-actions')) scheduleProjectAutosave();
+  });
+
   $('preview-sample-btn').setAttribute('aria-label','Audition selected reciter voice');
   $('selected-reciter-name').textContent = reciterById.get(selectedReciter)?.name || 'Mishary Rashid Alafasy';
-  $('preview-reciter-name').textContent = `Sheikh ${$('selected-reciter-name').textContent}`;
+  updatePreviewReciterName($('selected-reciter-name').textContent);
   $('voice-preview-audio').volume = Number($('preview-volume').value);
-  setWallpaperPreview();
-  updateCaptionPreview().catch(error => showError(error));
-  updateSurahInfo();
-  loadVerses().then(() => updateCaptionPreview()).catch(showError);
+  initializeProjectWorkspace().catch(error => {
+    console.error('Could not initialize project workspace:', error);
+    setProjectStatus(`Project storage is unavailable: ${error.message}`, true);
+    applyVideoTemplate(selectedTemplateId); setWallpaperPreview(); updateSurahInfo();
+    loadVerses().then(updateCaptionPreview).catch(showError);
+  });
 })();
 </script>
 </body></html>

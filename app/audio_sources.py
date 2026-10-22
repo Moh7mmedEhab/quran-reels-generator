@@ -8,6 +8,8 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
+from .job_errors import JobCancelled
+
 TIMING_API = "https://mp3quran.net/api/v3/ayat_timing"
 MAX_AUDIO_BYTES = 200 * 1024 * 1024
 
@@ -56,9 +58,13 @@ def get_recitation_timings(reciter: dict, surah_number: int, ayah_start: int, ay
 
 
 def download_recitation(reciter: dict, surah_number: int, ayah_start: int, ayah_end: int,
-                        destination_dir: Path) -> AudioTrack:
+                        destination_dir: Path, *, cancel_event=None, on_progress=None) -> AudioTrack:
     """Download the chapter file and return its exact selected ayah time span."""
+    if cancel_event is not None and cancel_event.is_set():
+        raise JobCancelled()
     selected = get_recitation_timings(reciter, surah_number, ayah_start, ayah_end)
+    if cancel_event is not None and cancel_event.is_set():
+        raise JobCancelled()
     start_ms = int(selected[0]["start_time"])
     end_ms = int(selected[-1]["end_time"])
     if end_ms <= start_ms:
@@ -80,7 +86,16 @@ def download_recitation(reciter: dict, surah_number: int, ayah_start: int, ayah_
     total = 0
     try:
         with urlopen(request, timeout=45) as response, audio_path.open("wb") as output:
+            content_length = response.headers.get("Content-Length")
+            try:
+                expected = int(content_length) if content_length else None
+            except (TypeError, ValueError):
+                expected = None
+            if on_progress:
+                on_progress(0, expected)
             while True:
+                if cancel_event is not None and cancel_event.is_set():
+                    raise JobCancelled()
                 chunk = response.read(1024 * 1024)
                 if not chunk:
                     break
@@ -88,6 +103,11 @@ def download_recitation(reciter: dict, surah_number: int, ayah_start: int, ayah_
                 if total > MAX_AUDIO_BYTES:
                     raise AudioSourceError("This chapter audio is too large to process in one render.")
                 output.write(chunk)
+                if on_progress:
+                    on_progress(total, expected)
+    except JobCancelled:
+        audio_path.unlink(missing_ok=True)
+        raise
     except AudioSourceError:
         audio_path.unlink(missing_ok=True)
         raise
