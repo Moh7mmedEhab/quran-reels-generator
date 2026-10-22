@@ -21,7 +21,11 @@ class Config:
     DEBUG = _enabled(os.environ.get("FLASK_DEBUG"))
     TESTING = False
     MAX_CONTENT_LENGTH = 512 * 1024 * 1024
-    OUTPUT_FOLDER = BASE_DIR / "static" / "outputs"
+    # Let deployments place rendered files on a writable volume. create_app()
+    # falls back to the system temp directory when the project tree is read-only.
+    OUTPUT_FOLDER = Path(os.environ.get(
+        "QURAN_REELS_OUTPUT_FOLDER", str(BASE_DIR / "static" / "outputs")
+    )).expanduser()
     ARABIC_FONT = BASE_DIR / "static" / "assets" / "NotoNaskhArabic-Regular.ttf"
     RENDER_WORKERS = 1
     RENDER_JOBS_INLINE = False

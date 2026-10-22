@@ -1,5 +1,6 @@
 from pathlib import Path
 from types import SimpleNamespace
+import pytest
 
 from app import create_app
 from app.quraa_data import RECITERS
@@ -50,6 +51,62 @@ def test_studio_renders_light_template_with_all_surahs():
     assert b"id=\"show-quran-text\"" in response.data
     assert b"id=\"translation-text\"" in response.data
     assert b"id=\"viewer-progress-track\"" in response.data
+    assert b"id=\"export-encoder\"" in response.data
+
+
+def test_app_uses_writable_temp_output_when_project_output_is_read_only():
+    class ReadOnlyOutputConfig(TestConfig):
+        OUTPUT_FOLDER = "/proc/quran-reels-unwritable"
+
+    app = create_app(ReadOnlyOutputConfig)
+    output_folder = Path(app.config["OUTPUT_FOLDER"])
+    assert output_folder.is_dir()
+    assert output_folder != Path(ReadOnlyOutputConfig.OUTPUT_FOLDER)
+
+
+def test_render_capabilities_reports_both_gpus_and_cpu(monkeypatch):
+    import app.routes as routes
+    monkeypatch.setattr(routes, "hardware_encoder_status", lambda **kwargs: {
+        "nvidia": {"available": False, "name": "NVIDIA NVENC", "reason": "No CUDA device"},
+        "intel": {"available": True, "name": "Intel UHD", "reason": None},
+    })
+    response = create_app(TestConfig).test_client().get("/api/render-capabilities")
+    assert response.status_code == 200
+    assert response.json["default_encoder"] == "auto"
+    assert response.json["encoders"]["cpu"]["available"] is True
+    assert response.json["encoders"]["nvidia"]["available"] is False
+    assert response.json["encoders"]["nvidia"]["reason"] == "No CUDA device"
+    assert response.json["encoders"]["intel"]["available"] is True
+
+
+def test_generate_rejects_unavailable_nvidia_before_downloading_audio(monkeypatch):
+    import app.routes as routes
+    monkeypatch.setattr(routes, "hardware_encoder_status", lambda **kwargs: {
+        "nvidia": {"available": False, "name": "NVIDIA NVENC", "reason": "No CUDA device"},
+        "intel": {"available": False, "name": "Intel UHD", "reason": "No media device"},
+    })
+    monkeypatch.setattr(routes, "download_recitation", lambda *args, **kwargs: pytest.fail(
+        "Audio should not download if the selected encoder is unavailable"))
+    response = create_app(TestConfig).test_client().post("/api/generate", json={
+        "surah": 55, "ayah_start": 13, "ayah_end": 13,
+        "reciter_id": "mishary_alafasy", "encoder": "nvidia",
+    })
+    assert response.status_code == 400
+    assert "NVIDIA NVENC is unavailable" in response.json["error"]
+
+
+def test_generate_rejects_unavailable_intel_gpu(monkeypatch):
+    import app.routes as routes
+    monkeypatch.setattr(routes, "hardware_encoder_status", lambda **kwargs: {
+        "nvidia": {"available": False, "name": "NVIDIA NVENC", "reason": "No CUDA device"},
+        "intel": {"available": False, "name": "Intel UHD", "reason": "No media device"},
+    })
+    response = create_app(TestConfig).test_client().post("/api/generate", json={
+        "surah": 55, "ayah_start": 13, "ayah_end": 13,
+        "reciter_id": "mishary_alafasy", "encoder": "intel",
+    })
+    assert response.status_code == 400
+    assert "Intel UHD is unavailable" in response.json["error"]
 
 
 def test_cinematic_background_sequence_template_has_five_credited_local_scenes():

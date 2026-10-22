@@ -23,6 +23,7 @@ from .background_sequence_templates import BACKGROUND_SEQUENCE_TEMPLATES
 from .font_catalog import DEFAULT_FONT_ID, FONT_CATALOG, resolve_font
 from .scenes import build_scene_plan
 from .media_validation import validate_rendered_output
+from .ffmpeg_encoder import hardware_encoder_status
 from .design_templates import (AYAH_NUMBER_TEMPLATES, QURAN_TEXT_TEMPLATES,
                                SURAH_NAME_TEMPLATES, TRANSITION_TEMPLATES)
 from .reel_viewer import (REEL_VIEWER_TEMPLATES, render_playback_layer,
@@ -335,6 +336,17 @@ def list_fonts():
                     "default": DEFAULT_FONT_ID})
 
 
+@bp.get("/api/render-capabilities")
+def render_capabilities():
+    hardware = hardware_encoder_status(refresh=request.args.get("refresh") == "1")
+    return jsonify({"default_encoder": "auto", "encoders": {
+        "auto": {"available": True, "name": "NVIDIA Quadro T2000 first, CPU fallback", "reason": None},
+        "cpu": {"available": True, "name": "CPU · x264", "reason": None},
+        "nvidia": hardware["nvidia"],
+        "intel": hardware["intel"],
+    }})
+
+
 @bp.post("/api/scenes/plan")
 def scene_plan():
     payload = request.get_json(silent=True) or {}
@@ -561,6 +573,13 @@ def generate():
         quality = str(data.get("quality", "balanced")).lower()
         if quality not in QUALITY_PRESETS:
             return jsonify(error="Quality must be fast, balanced, high, or maximum."), 400
+        encoder = str(data.get("encoder", "auto")).lower()
+        if encoder not in {"auto", "cpu", "nvidia", "intel"}:
+            return jsonify(error="Encoder must be auto, cpu, nvidia, or intel."), 400
+        if encoder in {"nvidia", "intel"}:
+            capability = hardware_encoder_status(refresh=True)[encoder]
+            if not capability["available"]:
+                return jsonify(error=f"{capability['name']} is unavailable: {capability['reason']}"), 400
         try:
             crf = int(data.get("crf", QUALITY_PRESETS[quality]["crf"]))
             audio_fps = int(data.get("audio_sample_rate", 48000))
@@ -918,7 +937,7 @@ def generate():
 
                 result = render_reel(
                     ayahs=ayahs, output_path=partial_path, aspect_ratio=ratio,
-                    output_size=output_size, fps=fps, quality=quality, crf=crf,
+                    output_size=output_size, fps=fps, quality=quality, encoder=encoder, crf=crf,
                     audio_bitrate=audio_bitrate, audio_fps=audio_fps,
                     audio_path=track.path, audio_start=track.start, audio_end=track.end,
                     ayah_durations=track.ayah_durations, background_path=background_path,

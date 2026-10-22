@@ -340,12 +340,15 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
 </div>
 <label class="flex flex-col gap-1 text-[11px] font-semibold text-gray-600" for="export-quality">Encoding mode
 <select id="export-quality" class="w-full rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-xs font-normal text-gray-800"><option value="fast">Fast · quickest, larger file</option><option value="balanced" selected>Balanced · recommended</option><option value="high">High quality · slower</option><option value="maximum">Maximum · slowest</option></select></label>
+<label class="flex flex-col gap-1 text-[11px] font-semibold text-gray-600" for="export-encoder">Video encoder
+<select id="export-encoder" class="w-full rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-xs font-normal text-gray-800"><option value="auto" selected>Auto · Quadro T2000 first, CPU fallback</option><option value="cpu">CPU · x264</option><option value="nvidia" disabled>NVIDIA GPU · checking…</option><option value="intel" disabled>Intel UHD · checking…</option></select></label>
 <label class="flex flex-col gap-1 text-[11px] font-semibold text-gray-600" for="export-crf">H.264 quality (CRF <span id="export-crf-value">23</span>)<input id="export-crf" type="range" min="16" max="34" step="1" value="23" class="preview-range"></label>
 <label class="flex flex-col gap-1 text-[11px] font-semibold text-gray-600" for="audio-bitrate">Audio bitrate
 <select id="audio-bitrate" class="w-full rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-xs font-normal text-gray-800"><option value="128k">128 kbps · smaller</option><option value="192k" selected>192 kbps · recommended</option><option value="256k">256 kbps</option><option value="320k">320 kbps · largest</option></select></label>
 <label class="flex flex-col gap-1 text-[11px] font-semibold text-gray-600" for="audio-sample-rate">Audio sample rate
 <select id="audio-sample-rate" class="w-full rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-xs font-normal text-gray-800"><option value="44100">44.1 kHz</option><option value="48000" selected>48 kHz · video standard</option></select></label>
 <p class="col-span-2 text-[10px] leading-relaxed text-gray-500" id="export-quality-help">Balanced uses x264 veryfast with CRF 23. Lower CRF improves quality and increases file size; higher CRF reduces quality and file size. The mode controls encoding speed.</p>
+<p class="col-span-2 text-[10px] leading-relaxed text-gray-500" id="export-encoder-help">Auto tries NVIDIA Quadro T2000 NVENC first, then falls back to CPU x264 if the NVIDIA driver or encoder fails. Scene composition still runs on the CPU.</p>
 <p class="col-span-2 text-[10px] text-gray-500" id="render-estimate">Render estimate: Estimating. The estimate will use measured encoding speed for this export.</p>
 </div>
 </details>
@@ -780,7 +783,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     'background-loop','background-brightness','background-contrast','background-saturation',
     'background-overlay-color','background-overlay-opacity','background-audio-enabled',
     'background-audio-volume','export-resolution','custom-width','custom-height','export-fps',
-    'export-quality','export-crf','audio-bitrate','audio-sample-rate',
+    'export-quality','export-encoder','export-crf','audio-bitrate','audio-sample-rate',
     'sequence-enabled','transitions-enabled','default-background-transition','background-transition-color',
     'background-transition-duration','sequence-loop','background-animation-enabled',
     'background-animation-preset','background-animation-intensity','background-animation-duration',
@@ -807,7 +810,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
       fields[element.id] = element.type === 'checkbox' ? element.checked : element.value;
     });
     return {
-      version: 1, fields, projectName: $('project-name').value.trim() || 'Untitled Reel',
+      version: 2, fields, projectName: $('project-name').value.trim() || 'Untitled Reel',
       videoTemplate: selectedTemplateId, reciter: selectedReciter, ratio, theme,
       captionColor, wrapWidth, speed, scenePlanManual,
       scenes: scenePlanManual ? previewScenes.map(scene => ({
@@ -1104,10 +1107,12 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
   }
 
   async function applyProjectSnapshot(snapshot, projectId = 'draft') {
-    if (!snapshot || snapshot.version !== 1) throw new Error('This saved project uses an unsupported format.');
+    if (!snapshot || ![1, 2].includes(snapshot.version)) throw new Error('This saved project uses an unsupported format.');
     historyApplying = true;
     try {
-      for (const [id,value] of Object.entries(snapshot.fields || {})) {
+      const fields = {...(snapshot.fields || {})};
+      if (snapshot.version === 1 && fields['export-encoder'] === 'cpu') fields['export-encoder'] = 'auto';
+      for (const [id,value] of Object.entries(fields)) {
         const element = $(id);
         if (!element || element.type === 'file') continue;
         if (element.tagName === 'SELECT' && ![...element.options].some(option => option.value === String(value))) continue;
@@ -1123,7 +1128,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
       speed = Number(snapshot.speed || 1);
       scenePlanManual = Boolean(snapshot.scenePlanManual);
       previewScenes = scenePlanManual ? (snapshot.scenes || []).map((scene,index) => ({...scene,scene_index:index})) : [];
-      $('project-name').value = snapshot.projectName || snapshot.fields?.['project-name'] || 'Untitled Reel';
+      $('project-name').value = snapshot.projectName || fields['project-name'] || 'Untitled Reel';
       document.querySelectorAll('.aspect-ratio-btn').forEach(button => button.classList.toggle('selected-ratio', button.dataset.ratio === ratio));
       syncPreviewAspectRatio();
       document.querySelectorAll('.video-template-choice').forEach(button => button.classList.toggle('selected-video-template', button.dataset.templateId === selectedTemplateId));
@@ -1161,7 +1166,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
         playBackgroundSequenceTemplate(0);
       }
       await loadVerses(false);
-      if (snapshot.fields?.['ayah-text'] != null) ayahText.value = snapshot.fields['ayah-text'];
+      if (fields['ayah-text'] != null) ayahText.value = fields['ayah-text'];
       scenePlanManual = Boolean(snapshot.scenePlanManual);
       previewScenes = scenePlanManual ? (snapshot.scenes || []).map((scene,index) => ({...scene,scene_index:index})) : [];
       await updateScenePlan();
@@ -1382,7 +1387,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     applyVideoTemplate(selectedTemplateId);
     refreshSavedProjects(); refreshCustomDesigns();
     const draft = safeReadStorage(PROJECT_DRAFT_KEY, null);
-    if (draft?.state?.version === 1) {
+    if ([1, 2].includes(draft?.state?.version)) {
       activeProjectId = draft.projectId || 'draft';
       await applyProjectSnapshot(draft.state, activeProjectId);
     } else {
@@ -1431,6 +1436,47 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     $('export-crf').value = profile.crf;
     $('export-crf-value').textContent = profile.crf;
     $('export-quality-help').textContent = `${profile.label}: x264 ${profile.preset}, CRF ${profile.crf}. Lower CRF improves quality and increases file size; higher CRF reduces both quality and file size. The mode controls encoding speed.`;
+  }
+  async function updateEncoderCapabilities(refresh = false) {
+    const select = $('export-encoder');
+    const requestedEncoder = select.value;
+    const options = {
+      nvidia: select.querySelector('option[value="nvidia"]'),
+      intel: select.querySelector('option[value="intel"]'),
+    };
+    const help = $('export-encoder-help');
+    try {
+      const response = await fetch(`/api/render-capabilities${refresh ? '?refresh=1' : ''}`);
+      if (!response.ok) throw new Error('Could not check render capabilities.');
+      const data = await response.json();
+      const nvidia = data.encoders?.nvidia || {};
+      const intel = data.encoders?.intel || {};
+      const automatic = select.querySelector('option[value="auto"]');
+      automatic.textContent = nvidia.available
+        ? `Auto · ${nvidia.name || 'NVIDIA GPU'} first, CPU fallback`
+        : 'Auto · Quadro T2000 first if available, CPU fallback';
+      options.nvidia.disabled = !nvidia.available;
+      options.nvidia.textContent = nvidia.available ? `NVIDIA · ${nvidia.name || 'NVENC'}` : 'NVIDIA · unavailable';
+      options.intel.disabled = !intel.available;
+      options.intel.textContent = intel.available ? `Internal GPU · ${intel.name || 'Quick Sync'}` : 'Internal GPU · unavailable';
+      const unavailable = [
+        !nvidia.available && `NVIDIA: ${nvidia.reason || 'driver or NVENC unavailable'}`,
+        !intel.available && `Intel: ${intel.reason || 'driver or Quick Sync unavailable'}`,
+      ].filter(Boolean);
+      help.textContent = `${unavailable.join(' · ')}${nvidia.available ? ' Auto will try NVIDIA first, then use CPU x264 if encoding fails.' : ' Auto will use CPU x264 because NVIDIA is unavailable.'} Scene composition still runs on the CPU.`;
+      if (['nvidia', 'intel'].includes(requestedEncoder) && data.encoders?.[requestedEncoder]?.available !== true) {
+        const capability = data.encoders?.[requestedEncoder] || {};
+        if (!refresh) select.value = 'auto';
+        else throw new Error(`${capability.name || requestedEncoder} is unavailable: ${capability.reason || 'GPU encoder not detected.'}`);
+      }
+    } catch (error) {
+      Object.values(options).forEach(option => { option.disabled = true; });
+      options.nvidia.textContent = 'NVIDIA · unavailable';
+      options.intel.textContent = 'Internal GPU · unavailable';
+      help.textContent = refresh && error.message.includes('unavailable:')
+        ? error.message : 'Could not check hardware encoder support. CPU x264 remains available.';
+      if (refresh && requestedEncoder !== 'auto') throw error;
+    }
   }
   function setPlaybackIcon(isPlaying) {
     $('playback-play-icon').classList.toggle('hidden', isPlaying);
@@ -2322,7 +2368,13 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     const [surah, start, end] = selectionKey.split(':');
     const params = new URLSearchParams({surah, start, end});
     const response = await fetch(`/api/verses?${params}`);
-    const payload = await response.json();
+    let payload;
+    try {
+      payload = await response.json();
+    } catch (_) {
+      const contentType = response.headers.get('content-type') || 'unknown content type';
+      throw new Error(`The Quran text endpoint returned ${contentType} instead of JSON (HTTP ${response.status}). Restart Flask from this project, then reload the page.`);
+    }
     if (!response.ok) {
       if (updateEditor && requestId === verseLoadRequest) {
         ayahText.setAttribute('aria-busy', 'false');
@@ -2554,11 +2606,12 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
   }));
   $('export-fps').addEventListener('change', () => { updateCanvasSummary(); hideRenderedVideo(); });
   $('export-quality').addEventListener('change', () => { updateQualityDescription(); hideRenderedVideo(); });
+  $('export-encoder').addEventListener('change', hideRenderedVideo);
   $('export-crf').addEventListener('input', () => {
     $('export-crf-value').textContent = $('export-crf').value; hideRenderedVideo();
   });
   ['audio-bitrate','audio-sample-rate'].forEach(id => $(id).addEventListener('change', hideRenderedVideo));
-  updateQualityDescription(); updateCanvasSummary();
+  updateQualityDescription(); updateCanvasSummary(); updateEncoderCapabilities();
 
   document.querySelectorAll('.background-choice').forEach(button => button.addEventListener('click', () => {
     theme = button.dataset.theme;
@@ -2813,6 +2866,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     $('render-cancel-btn').classList.add('hidden');
     activeRenderJobId = null;
     try {
+      await updateEncoderCapabilities(true);
       const selectionAtExport = verseSelectionKey();
       const verses = loadedVerseSelection === selectionAtExport ? previewAyahs : await loadVerses(true);
       if (loadedVerseSelection !== verseSelectionKey()) {
@@ -2823,6 +2877,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
       form.set('resolution', $('export-resolution').value);
       form.set('custom_width', $('custom-width').value); form.set('custom_height', $('custom-height').value);
       form.set('fps', $('export-fps').value); form.set('quality', $('export-quality').value);
+      form.set('encoder', $('export-encoder').value);
       form.set('crf', $('export-crf').value); form.set('audio_bitrate', $('audio-bitrate').value);
       form.set('audio_sample_rate', $('audio-sample-rate').value);
       form.set('transition', $('transition-style').value); form.set('caption_style', $('caption-style').value);
@@ -2923,8 +2978,9 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
       status.className = 'rounded-lg px-3 py-2 text-sm bg-emerald-50 text-emerald-800';
       $('render-progress-row').classList.add('hidden');
       $('render-cancel-btn').classList.add('hidden');
+      const fallbackMessage = result.fallback_reason ? ` · fallback: ${result.fallback_reason}` : '';
       $('render-status-message').replaceChildren(document.createTextNode(
-        `Video ready · MP4 playback verified · ${result.width}×${result.height} · ${result.fps || 30} FPS · ${result.duration.toFixed(1)} seconds · ${result.reciter} · ${verses.length} ayahs · ${result.scene_count || previewScenes.length} scenes. `));
+        `Video ready · ${result.encoder_name || 'CPU · x264'}${fallbackMessage} · MP4 playback verified · ${result.width}×${result.height} · ${result.fps || 30} FPS · ${result.duration.toFixed(1)} seconds · ${result.reciter} · ${verses.length} ayahs · ${result.scene_count || previewScenes.length} scenes. `));
       const link = document.createElement('a'); link.className = 'font-semibold underline'; link.href = result.download_url; link.textContent = 'Download MP4';
       $('render-status-message').append(link);
       const video = $('rendered-video'); video.src = result.download_url; video.classList.remove('hidden');
@@ -2991,7 +3047,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
   $('voice-preview-audio').volume = Number($('preview-volume').value);
   initializeProjectWorkspace().catch(error => {
     console.error('Could not initialize project workspace:', error);
-    setProjectStatus(`Project storage is unavailable: ${error.message}`, true);
+    setProjectStatus(`Workspace could not initialize: ${error.message}`, true);
     applyVideoTemplate(selectedTemplateId); setWallpaperPreview(); updateSurahInfo();
     loadVerses().then(updateCaptionPreview).catch(showError);
   });

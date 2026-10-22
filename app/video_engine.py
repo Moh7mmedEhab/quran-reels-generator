@@ -757,13 +757,36 @@ def render_reel(*, ayahs, output_path, aspect_ratio="9:16", audio_path=None,
                 transitions_enabled=False,
                 background_transition_color="#000000",
                 output_size=None, quality="fast", crf=None, audio_bitrate="192k", audio_fps=48000,
-                progress_callback=None, cancel_event=None,
+                progress_callback=None, cancel_event=None, encoder="auto",
                 **custom_options):
     """Render every ayah with synced text and configurable Reel Viewer layers."""
     if aspect_ratio not in SIZES:
         raise ValueError(f"Unsupported aspect ratio: {aspect_ratio}")
     if quality not in QUALITY_PRESETS:
         raise ValueError("Quality must be fast, balanced, high, or maximum.")
+    if encoder not in {"auto", "cpu", "nvidia", "intel"}:
+        raise ValueError("Encoder must be auto, cpu, nvidia, or intel.")
+    requested_encoder = encoder
+    selected_encoder = encoder
+    hardware_encoder = None
+    hardware_capabilities = None
+    fallback_reason = None
+    if encoder == "auto":
+        from .ffmpeg_encoder import hardware_encoder_status
+        hardware_capabilities = hardware_encoder_status()
+        hardware_encoder = hardware_capabilities["nvidia"]
+        if not hardware_encoder["available"]:
+            fallback_reason = f"NVIDIA NVENC unavailable: {hardware_encoder['reason']}"
+            selected_encoder = "cpu"
+            hardware_encoder = None
+        else:
+            selected_encoder = "nvidia"
+    elif encoder != "cpu":
+        from .ffmpeg_encoder import hardware_encoder_status
+        hardware_capabilities = hardware_encoder_status()
+        hardware_encoder = hardware_capabilities[encoder]
+        if not hardware_encoder["available"]:
+            raise ValueError(f"{hardware_encoder['name']} is unavailable: {hardware_encoder['reason']}")
     profile = QUALITY_PRESETS[quality]
     try:
         crf = profile["crf"] if crf in (None, "") else int(crf)
@@ -1163,21 +1186,50 @@ def render_reel(*, ayahs, output_path, aspect_ratio="9:16", audio_path=None,
                     except TypeError:
                         progress_callback(self.last_progress)
 
-        output.write_videofile(
-            str(output_path), fps=fps, codec="libx264",
-            audio_codec="aac" if audio_segment is not None or background_audio_layers else None,
-            # MoviePy otherwise places its intermediate AAC file in the process
-            # working directory, which can be read-only in deployed setups.
-            temp_audiofile=str(Path(output_path).resolve().with_name(f"{Path(output_path).stem}_temp-audio.m4a")),
-            remove_temp=True, preset=profile["preset"], threads=4,
-            audio_bitrate=audio_bitrate, audio_fps=audio_fps,
-            ffmpeg_params=["-crf", str(crf), "-pix_fmt", "yuv420p", "-movflags", "+faststart"],
-            logger=RenderProgressLogger(),
-        )
+        def write_cpu_video():
+            output.write_videofile(
+                str(output_path), fps=fps, codec="libx264",
+                audio_codec="aac" if audio_segment is not None or background_audio_layers else None,
+                # Keep MoviePy's intermediate audio beside the target output,
+                # which may be on a writable volume when the app cwd is read-only.
+                temp_audiofile=str(Path(output_path).resolve().with_name(f"{Path(output_path).stem}_temp-audio.m4a")),
+                remove_temp=True, preset=profile["preset"], threads=4,
+                audio_bitrate=audio_bitrate, audio_fps=audio_fps,
+                ffmpeg_params=["-crf", str(crf), "-pix_fmt", "yuv420p", "-movflags", "+faststart"],
+                logger=RenderProgressLogger(),
+            )
+
+        if selected_encoder != "cpu":
+            from .ffmpeg_encoder import write_hardware_video
+            try:
+                write_hardware_video(
+                    output, output_path, fps=int(fps), ffmpeg=hardware_capabilities["ffmpeg"],
+                    encoder=selected_encoder, crf=crf, audio_bitrate=audio_bitrate, audio_fps=audio_fps,
+                    progress_callback=progress_callback, cancel_event=cancel_event,
+                    gpu_index=hardware_encoder.get("gpu_index") if selected_encoder == "nvidia" else None,
+                )
+            except JobCancelled:
+                raise
+            except Exception as exc:
+                if requested_encoder != "auto" or selected_encoder != "nvidia":
+                    raise
+                fallback_reason = f"NVIDIA NVENC failed during encoding; used CPU x264 instead: {exc}"
+                Path(output_path).unlink(missing_ok=True)
+                hardware_encoder = None
+                selected_encoder = "cpu"
+                write_cpu_video()
+        else:
+            write_cpu_video()
         check_cancelled()
         return {"path": str(output_path), "duration": float(output.duration), "width": width,
                 "height": height, "fps": int(fps), "has_audio": audio_segment is not None or bool(background_audio_layers),
-                "quality": quality, "encoder_preset": profile["preset"], "crf": crf,
+                "quality": quality, "encoder": selected_encoder,
+                "requested_encoder": requested_encoder,
+                "encoder_name": hardware_encoder["name"] if hardware_encoder else "CPU · x264",
+                "gpu_name": hardware_encoder["name"] if hardware_encoder else None,
+                "encoder_preset": ("NVENC p4" if selected_encoder == "nvidia" else "Intel Quick Sync")
+                                  if selected_encoder != "cpu" else profile["preset"],
+                "fallback_reason": fallback_reason, "crf": crf,
                 "audio_bitrate": audio_bitrate, "audio_sample_rate": audio_fps,
                 "background_audio_enabled": bool(background_audio_enabled),
                 "background_audio_volume": background_audio_volume,

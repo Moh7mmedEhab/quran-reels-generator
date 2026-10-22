@@ -38,6 +38,53 @@ def test_encoder_quality_presets_have_real_different_settings():
     assert len({(item["preset"], item["crf"]) for item in QUALITY_PRESETS.values()}) == 4
 
 
+def test_nvenc_command_uses_hardware_encoder_and_maps_mixed_audio(tmp_path):
+    from app.ffmpeg_encoder import build_nvenc_command
+    command = build_nvenc_command(
+        "/usr/bin/ffmpeg", width=720, height=1280, fps=30,
+        output_path=tmp_path / "out.mp4", audio_path=tmp_path / "audio.wav",
+        crf=23, audio_bitrate="192k", audio_fps=48000,
+    )
+    assert "h264_nvenc" in command
+    assert "p4" in command
+    assert str(tmp_path / "audio.wav") in command
+    assert command[-1] == str(tmp_path / "out.mp4")
+
+
+def test_intel_qsv_command_uses_hardware_encoder_and_nv12(tmp_path):
+    from app.ffmpeg_encoder import build_qsv_command
+    command = build_qsv_command(
+        "/usr/bin/ffmpeg", width=720, height=1280, fps=30,
+        output_path=tmp_path / "out.mp4", audio_path=None,
+        crf=23, audio_bitrate="192k", audio_fps=48000,
+    )
+    assert "h264_qsv" in command
+    assert "format=nv12" in command
+    assert command[-1] == str(tmp_path / "out.mp4")
+
+
+def test_nvidia_render_fails_early_with_actionable_capability_error(monkeypatch, tmp_path):
+    import app.ffmpeg_encoder as encoder_module
+    monkeypatch.setattr(encoder_module, "hardware_encoder_status", lambda: {
+        "ffmpeg": "/usr/bin/ffmpeg",
+        "nvidia": {"available": False, "name": "NVIDIA NVENC", "reason": "Driver not active"},
+        "intel": {"available": False, "name": "Intel UHD", "reason": "QSV unavailable"},
+    })
+    with pytest.raises(ValueError, match="NVIDIA NVENC is unavailable.*Driver not active"):
+        render_reel(ayahs=["آية"], output_path=tmp_path / "never.mp4", encoder="nvidia")
+
+
+def test_intel_render_fails_early_when_quick_sync_is_unavailable(monkeypatch, tmp_path):
+    import app.ffmpeg_encoder as encoder_module
+    monkeypatch.setattr(encoder_module, "hardware_encoder_status", lambda: {
+        "ffmpeg": "/usr/bin/ffmpeg",
+        "nvidia": {"available": False, "name": "NVIDIA NVENC", "reason": "No CUDA"},
+        "intel": {"available": False, "name": "Intel UHD · Quick Sync", "reason": "No media device"},
+    })
+    with pytest.raises(ValueError, match="Intel UHD.*No media device"):
+        render_reel(ayahs=["آية"], output_path=tmp_path / "never.mp4", encoder="intel")
+
+
 def test_background_color_grade_controls_change_pixel_values():
     original = np.array([[[100, 120, 140]]], dtype=np.uint8)
     grayscale = _adjust_background_frame(original, background_saturation=0)
