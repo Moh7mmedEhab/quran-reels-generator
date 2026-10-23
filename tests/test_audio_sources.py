@@ -69,6 +69,87 @@ def test_multi_ayah_audio_ends_at_final_selected_ayah_boundary(monkeypatch, tmp_
     assert sum(track.ayah_durations) == pytest.approx(track.end - track.start)
 
 
+def test_source_chapter_is_downloaded_once_for_different_ayah_ranges(monkeypatch, tmp_path):
+    monkeypatch.setattr(audio_sources, "_get_surah_timings", lambda *_args: TIMING_ROWS)
+    requested_urls = []
+
+    def open_audio(request, timeout):
+        requested_urls.append(request.full_url)
+        return FakeAudioResponse()
+
+    monkeypatch.setattr(audio_sources, "urlopen", open_audio)
+    first = audio_sources.download_recitation(
+        RECITERS_BY_ID["mishary_alafasy"], 18, 29, 29, tmp_path,
+    )
+    second = audio_sources.download_recitation(
+        RECITERS_BY_ID["mishary_alafasy"], 18, 30, 31, tmp_path,
+    )
+
+    assert len(requested_urls) == 1
+    assert first.path == second.path
+    assert first.persistent and second.persistent
+    assert first.start == 560.06 and second.start == 601.24
+    assert first.end == 601.24 and second.end == 642
+
+
+def test_verified_word_selection_trims_audio_timeline_and_boundary_text(tmp_path):
+    track = audio_sources.AudioTrack(
+        tmp_path / "chapter.mp3", "https://audio.example/chapter.mp3", 10, 19,
+        [5, 4],
+        [
+            [{"start": .2, "end": .6}, {"start": .9, "end": 1.3},
+             {"start": 1.7, "end": 2.1}, {"start": 2.4, "end": 2.8},
+             {"start": 3.3, "end": 3.8}],
+            [{"start": .2, "end": .5}, {"start": 1.1, "end": 1.6},
+             {"start": 2.1, "end": 2.5}, {"start": 3.0, "end": 3.4}],
+        ],
+        "quran_foundation_word", "Matching recording word timing.",
+    )
+
+    selected, text, word_ranges = audio_sources.select_audio_word_range(
+        track, ["a b c d e", "f g h i"], ayah_start=10,
+        start_word=3, end_word=2,
+    )
+
+    assert (selected.start, selected.end) == pytest.approx((11.7, 16.6))
+    assert selected.ayah_durations == pytest.approx([3.3, 1.6])
+    assert sum(selected.ayah_durations) == pytest.approx(selected.end - selected.start)
+    assert text == ["c d e", "f g"]
+    assert word_ranges == [(3, 5), (1, 2)]
+    assert selected.word_timings[0][0]["start"] == 0
+    assert selected.word_timings[1][-1]["end"] == pytest.approx(1.6)
+
+
+def test_manual_word_selection_uses_explicit_offsets_and_marks_approximate(tmp_path):
+    track = audio_sources.AudioTrack(
+        tmp_path / "chapter.mp3", "https://audio.example/chapter.mp3", 10, 19,
+        [5, 4], None, "mp3quran_ayah", "Ayah boundaries only.",
+    )
+
+    selected, text, _ranges = audio_sources.select_audio_word_range(
+        track, ["a b c d e", "f g h i"], ayah_start=10,
+        start_word=2, end_word=3, mode="manual",
+        manual_start=4.25, manual_end=7.75,
+    )
+
+    assert (selected.start, selected.end) == pytest.approx((14.25, 17.75))
+    assert selected.ayah_durations == pytest.approx([.75, 2.75])
+    assert text == ["b c d e", "f g h"]
+    assert selected.timing_source == "manual_audio_trim"
+    assert "manually entered" in selected.timing_note
+
+
+def test_partial_automatic_selection_rejects_unmatched_word_timing(tmp_path):
+    track = audio_sources.AudioTrack(
+        tmp_path / "chapter.mp3", "https://audio.example/chapter.mp3", 0, 5,
+        [5], None, "mp3quran_ayah", "Ayah boundaries only.",
+    )
+    with pytest.raises(audio_sources.AudioSourceError, match="Verified word timestamps are unavailable"):
+        audio_sources.select_audio_word_range(
+            track, ["a b c"], ayah_start=1, start_word=2, end_word=3,
+        )
+
+
 def test_chapter_only_recording_keeps_full_surah_and_marks_estimated_captions(monkeypatch, tmp_path):
     requests = []
 

@@ -360,12 +360,13 @@ def test_recitation_preview_uses_audio_boundary_separate_from_caption_end():
     page = create_app().test_client().get("/")
     assert page.status_code == 200
     script = page.get_data(as_text=True)
-    assert "previewAudioStart = Number(result.audio_start ?? previewAyahTimingRows[0]?.start)" in script
-    assert "previewAudioEnd = Number(result.audio_end ?? previewAyahTimingRows.at(-1)?.end)" in script
-    assert "previewAudioDuration = Number(result.audio_duration ?? (previewAudioEnd - previewAudioStart))" in script
+    assert "previewAudioBaseStart = Number(result.audio_start ?? previewAyahTimingRows[0]?.start)" in script
+    assert "previewAudioBaseEnd = Number(result.audio_end ?? previewAyahTimingRows.at(-1)?.end)" in script
+    assert "previewAudioBaseDuration = Number(result.audio_duration ?? (previewAudioBaseEnd - previewAudioBaseStart))" in script
+    assert "previewAudioStart = 0; previewAudioEnd = clipEnd - clipStart;" in script
     assert "previewAudioUrl.hash = ''" in script
     assert "player.currentTime = 0" in script
-    assert "const elapsed = audioStart + player.currentTime" in script
+    assert "const elapsed = audioStart + timelineTime" in script
     assert "elapsed >= (timing.caption_start ?? timing.start)" in script
     assert "elapsed < (timing.caption_end ?? timing.end)" in script
     assert "player.onended = finishPreview" in script

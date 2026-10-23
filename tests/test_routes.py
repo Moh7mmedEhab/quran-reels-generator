@@ -1026,6 +1026,112 @@ def test_recitation_preview_endpoint_serves_only_selected_ayah_audio(tmp_path, m
     assert np.corrcoef(second_reference, second)[0, 1] > .98
 
 
+def test_recitation_preview_endpoint_trims_verified_word_boundaries(tmp_path, monkeypatch):
+    import wave
+    import numpy as np
+    import app.routes as routes
+    from app.audio_sources import AudioTrack
+    from io import BytesIO
+
+    sample_rate = 44100
+    time_axis = np.arange(int(sample_rate * 3.5), dtype=np.float64) / sample_rate
+    samples = np.zeros_like(time_axis)
+    for start, end, frequency in ((.2, .8, 220),  (1.0, 1.8, 440), (2.0, 2.7, 880)):
+        active = (time_axis >= start) & (time_axis < end)
+        samples[active] = .3 * np.sin(2 * np.pi * frequency * time_axis[active])
+    source_path = tmp_path / "timed-chapter.wav"
+    with wave.open(str(source_path), "wb") as audio_file:
+        audio_file.setnchannels(1)
+        audio_file.setsampwidth(2)
+        audio_file.setframerate(sample_rate)
+        audio_file.writeframes((samples * 32767).astype("int16").tobytes())
+    track = AudioTrack(
+        source_path, "https://audio.example/matching-recording.mp3", 0, 3.5, [3.5],
+        [[{"start": .2, "end": .8}, {"start": 1.0, "end": 1.8},
+          {"start": 2.0, "end": 2.7}, {"start": 2.9, "end": 3.2}]],
+        "quran_foundation_word", "Word timing tied to this recording.",
+    )
+    monkeypatch.setattr(routes, "download_recitation", lambda *_args, **_kwargs: track)
+    app = create_app(TestConfig)
+    app.config["AUDIO_PREVIEW_FOLDER"] = tmp_path / "preview-cache"
+
+    response = app.test_client().get(
+        "/api/reciters/mishary_alafasy/audio-preview?surah=1&start=1&end=1"
+        "&start_word=2&end_word=3&word_mode=automatic"
+    )
+
+    assert response.status_code == 200
+    with wave.open(BytesIO(response.data), "rb") as audio_file:
+        assert audio_file.getframerate() == 48000
+        assert audio_file.getnframes() / audio_file.getframerate() == pytest.approx(1.7, abs=.03)
+        rendered = np.frombuffer(audio_file.readframes(audio_file.getnframes()), dtype="<i2")
+        rendered = rendered.reshape(-1, audio_file.getnchannels()).mean(axis=1) / 32768
+    second_word = rendered[int(.1 * 48000):int(.6 * 48000)]
+    third_word = rendered[int(1.1 * 48000):int(1.6 * 48000)]
+    second_reference = np.sin(2 * np.pi * 440 * (np.arange(len(second_word)) / 48000 + 1.1))
+    third_reference = np.sin(2 * np.pi * 880 * (np.arange(len(third_word)) / 48000 + 2.1))
+    assert np.corrcoef(second_reference, second_word)[0, 1] > .98
+    assert np.corrcoef(third_reference, third_word)[0, 1] > .98
+
+
+def test_generate_applies_manual_partial_word_range_to_audio_text_and_scenes(monkeypatch, tmp_path):
+    import app.routes as routes
+    from app.audio_sources import AudioTrack
+    from app.quran_data import get_ayahs
+
+    source_path = tmp_path / "manual-trim-source.mp3"
+    source_path.write_bytes(b"synthetic source audio")
+    track = AudioTrack(
+        source_path, "https://audio.example/chapter.mp3", 1, 10, [5, 4], None,
+        "mp3quran_ayah", "Ayah boundaries only.",
+    )
+    captured = {}
+
+    def fake_render(**kwargs):
+        captured.update(kwargs)
+        Path(kwargs["output_path"]).write_bytes(b"complete-mp4" * 200)
+        return {"path":str(kwargs["output_path"]), "duration":5.5,
+                "width":1080, "height":1920, "has_audio":True}
+
+    monkeypatch.setattr(routes, "download_recitation", lambda *_args, **_kwargs: track)
+    monkeypatch.setattr(routes, "render_reel", fake_render)
+    monkeypatch.setattr(routes, "validate_rendered_output", lambda *_args, **_kwargs: {"playable":True})
+
+    ayahs = get_ayahs(1, 1, 2)
+    scene_overrides = [
+        {"scene_id":"first-ayah", "ayah_number":1, "text":ayahs[0], "locked":True,
+         "manual_duration":2.2, "duration":2.2},
+        {"scene_id":"second-ayah", "ayah_number":2, "text":ayahs[1], "locked":False,
+         "manual_duration":3.1, "duration":3.1},
+    ]
+
+    class Config(TestConfig):
+        OUTPUT_FOLDER = tmp_path / "outputs"
+
+    client = create_app(Config).test_client()
+    response = client.post("/api/generate", json={
+        "surah":1, "ayah_start":1, "ayah_end":2, "reciter_id":"mishary_alafasy",
+        "start_word":2, "end_word":3, "word_mode":"manual",
+        "manual_start":1.5, "manual_end":7.0,
+        "scene_overrides":scene_overrides,
+    })
+    assert response.status_code == 202, response.json
+    job = client.get(response.json["status_url"])
+    assert job.json["status"] == "complete", job.json
+    assert captured["audio_start"] == pytest.approx(2.5)
+    assert captured["audio_end"] == pytest.approx(8.0)
+    assert captured["ayah_durations"] == pytest.approx([3.5, 2.0])
+    assert captured["ayahs"] == [" ".join(ayahs[0].split()[1:]), " ".join(ayahs[1].split()[:3])]
+    assert [(row["scene_id"], row["text"]) for row in captured["scene_overrides"]] == [
+        ("first-ayah", captured["ayahs"][0]), ("second-ayah", captured["ayahs"][1]),
+    ]
+    assert [row["manual_duration"] for row in captured["scene_overrides"]] == [2.2, 3.1]
+    result = job.json["result"]
+    assert result["timing_source"] == "manual_audio_trim"
+    assert result["start_word"] == 2 and result["end_word"] == 3
+    assert "approximate" in result["timing_note"]
+
+
 def test_generate_rejects_invalid_range_before_audio_fetch():
     response = create_app(TestConfig).test_client().post("/api/generate", json={
         "surah": 93, "ayah_start": 1, "ayah_end": 12, "aspect_ratio": "9:16"

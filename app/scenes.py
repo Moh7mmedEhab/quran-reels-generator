@@ -438,6 +438,69 @@ def _manual_scenes(ayahs, ayah_start, overrides):
     return scenes
 
 
+def clip_scene_overrides_to_word_ranges(ayahs, ayah_start, overrides, word_ranges):
+    """Project existing scene edits onto selected word spans without mutating them.
+
+    A partially intersected scene keeps its ID, lock state, and manual duration;
+    source scenes outside the chosen audio range are omitted from this render.
+    The editor's saved full-ayah scene plan remains untouched.
+    """
+    if overrides is None or not isinstance(overrides, list):
+        return overrides
+    if len(word_ranges) != len(ayahs):
+        raise ValueError("Word selection does not cover the complete ayah range.")
+    previous_ayah = int(ayah_start)
+    for row in overrides:
+        if not isinstance(row, dict):
+            return overrides
+        try:
+            number = int(row.get("ayah_number"))
+        except (TypeError, ValueError):
+            return overrides
+        if number < int(ayah_start) or number >= int(ayah_start) + len(ayahs) or number < previous_ayah:
+            return overrides
+        previous_ayah = number
+    projected = []
+    for index, (ayah, selected_range) in enumerate(zip(ayahs, word_ranges)):
+        try:
+            lower, upper = int(selected_range[0]), int(selected_range[1])
+            ayah_number = int(ayah_start) + index
+        except (TypeError, ValueError, IndexError) as exc:
+            raise ValueError("Word selection contains an invalid ayah boundary.") from exc
+        source_words = str(ayah).split()
+        if lower < 1 or upper < lower or upper > len(source_words):
+            raise ValueError(f"Word selection is invalid for ayah {ayah_number}.")
+        matching_rows = []
+        for row in overrides:
+            if not isinstance(row, dict):
+                continue
+            try:
+                row_number = int(row.get("ayah_number"))
+            except (TypeError, ValueError):
+                continue
+            if row_number == ayah_number:
+                matching_rows.append(row)
+        if not matching_rows:
+            continue
+        scene_cursor = 0
+        for row in matching_rows:
+            scene_words = str(row.get("text", "")).strip().split()
+            scene_end = scene_cursor + len(scene_words)
+            overlap_start = max(scene_cursor, lower - 1)
+            overlap_end = min(scene_end, upper)
+            if overlap_end > overlap_start:
+                clipped = dict(row)
+                clipped["text"] = " ".join(scene_words[overlap_start - scene_cursor:
+                                                          overlap_end - scene_cursor])
+                projected.append(clipped)
+            scene_cursor = scene_end
+        if scene_cursor != len(source_words):
+            # Keep invalid or custom scene data intact so the existing strict
+            # scene validator can return its specific error to the caller.
+            return overrides
+    return projected
+
+
 def compose_scene_plan_overrides(ayahs, default_scenes, *, ayah_start=1,
                                  saved_defaults=None, saved_edits=None):
     """Restore stable per-ayah scene arrangements over a newly planned range.

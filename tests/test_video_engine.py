@@ -1327,6 +1327,74 @@ def test_multi_ayah_export_contains_only_the_selected_audio_interval(tmp_path):
         video.close()
 
 
+def test_partial_word_selection_is_encoded_into_real_mp4(tmp_path):
+    import wave
+    import subprocess
+    from moviepy import VideoFileClip
+    from app.audio_sources import AudioTrack, select_audio_word_range
+    from app.media_validation import validate_rendered_output
+
+    sample_rate = 44100
+    times = np.arange(int(sample_rate * 3.2), dtype=np.float64) / sample_rate
+    signal = np.zeros_like(times)
+    for start, end, frequency in ((0, .7, 110), (.7, 1.2, 220), (1.5, 2.1, 440), (2.1, 3.2, 880)):
+        active = (times >= start) & (times < end)
+        signal[active] = .3 * np.sin(2 * np.pi * frequency * times[active])
+    source_path = tmp_path / "word-boundary-source.wav"
+    with wave.open(str(source_path), "wb") as audio_file:
+        audio_file.setnchannels(1)
+        audio_file.setsampwidth(2)
+        audio_file.setframerate(sample_rate)
+        audio_file.writeframes((signal * 32767).astype("int16").tobytes())
+    track = AudioTrack(
+        source_path, "https://audio.example/matched-chapter.mp3", 0, 3.2, [3.2],
+        [[{"start": .1, "end": .6}, {"start": .7, "end": 1.2},
+          {"start": 1.5, "end": 2.1}, {"start": 2.2, "end": 2.8}]],
+        "quran_foundation_word", "Matching recording word timing.",
+    )
+    selected_track, selected_text, _word_ranges = select_audio_word_range(
+        track, ["سابقٌ بدايةٌ نهايةٌ لاحقٌ"], ayah_start=1,
+        start_word=2, end_word=3,
+    )
+    output_path = tmp_path / "partial-word-result.mp4"
+    metadata = render_reel(
+        ayahs=selected_text, output_path=output_path,
+        aspect_ratio="9:16", output_size=(240, 426), fps=24, quality="fast",
+        encoder="cpu", audio_path=selected_track.path,
+        audio_start=selected_track.start, audio_end=selected_track.end,
+        ayah_durations=selected_track.ayah_durations,
+        word_timings=selected_track.word_timings, show_quran_text=False,
+        show_surah_title=False, show_ayah_number=False, transition="cut",
+        audio_fps=sample_rate,
+    )
+
+    assert selected_text == ["بدايةٌ نهايةٌ"]
+    assert metadata["recitation_source_start"] == pytest.approx(.7)
+    assert metadata["recitation_source_end"] == pytest.approx(2.1)
+    assert metadata["recitation_audio_duration"] == pytest.approx(1.4, abs=.08)
+    video = VideoFileClip(str(output_path))
+    try:
+        extracted = tmp_path / "partial-word-audio.wav"
+        subprocess.run([
+            "ffmpeg", "-y", "-v", "error", "-i", str(output_path),
+            "-vn", "-ac", "1", "-ar", str(sample_rate), "-c:a", "pcm_s16le", str(extracted),
+        ], check=True, capture_output=True)
+        with wave.open(str(extracted), "rb") as audio_file:
+            exported = np.frombuffer(audio_file.readframes(audio_file.getnframes()), dtype="<i2").astype(float) / 32768
+        assert video.audio.duration == pytest.approx(1.4, abs=.08)
+        first = exported[int(.15 * sample_rate):int(.4 * sample_rate)]
+        last = exported[int(.9 * sample_rate):int(1.15 * sample_rate)]
+        first_reference = np.sin(2 * np.pi * 220 * (np.arange(len(first)) / sample_rate + .85))
+        last_reference = np.sin(2 * np.pi * 440 * (np.arange(len(last)) / sample_rate + 1.6))
+        assert np.corrcoef(first_reference, first)[0, 1] > .96
+        assert np.corrcoef(last_reference, last)[0, 1] > .96
+        assert np.sqrt(np.mean(first ** 2)) > .12
+        assert np.sqrt(np.mean(last ** 2)) > .12
+    finally:
+        video.close()
+    assert validate_rendered_output(output_path, expected_size=(240, 426), require_audio=True)["playable"] is True
+
+
 def test_split_export_uses_labeled_weighted_timing_when_only_ayah_duration_exists(tmp_path, monkeypatch):
     from moviepy import AudioClip, VideoFileClip
     from PIL import Image
