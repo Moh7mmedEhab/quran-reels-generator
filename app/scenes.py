@@ -4,6 +4,7 @@ Validated word timestamps provide exact phrase timing. When only ayah
 durations are available, split scenes use an explicitly approximate estimate
 weighted by Arabic word length and pause marks.
 """
+import re
 import unicodedata
 from pathlib import Path
 from math import isfinite
@@ -14,6 +15,121 @@ from .text_renderer import DEFAULT_FONT, wrap_arabic_lines
 from .video_engine import SIZES
 
 PREFERRED_BREAKS = frozenset("،؛.?!ۚۖۗۘۙۛۜ۞۩۝")
+
+
+def _translation_boundary_rank(token):
+    token = re.sub(r"[\"'’”’»\)\]\}]+$", "", str(token))
+    if re.search(r"[.!?…]$", token):
+        return 0
+    if re.search(r"[;:—–]$", token):
+        return 1
+    if token.endswith(","):
+        return 2
+    return 3
+
+
+def split_translation_across_scenes(translation, scene_word_counts):
+    """Partition one ayah translation across Arabic scenes without rewriting it.
+
+    Scene Arabic word counts set proportional targets. Sentence and phrase
+    punctuation are preferred boundaries; plain word boundaries are used only
+    when the source translation has no suitable phrase break near a target.
+    """
+    counts = [max(0, int(count)) for count in scene_word_counts]
+    if not counts:
+        return []
+    text = str(translation or "").strip()
+    if not text:
+        return [""] * len(counts)
+    if len(counts) == 1:
+        return [text]
+
+    words = list(re.finditer(r"\S+", text))
+    word_total = len(words)
+    if not word_total:
+        return [""] * len(counts)
+    weights = counts if sum(counts) else [1] * len(counts)
+    weight_total = sum(weights)
+    min_words = 1 if word_total >= len(counts) else 0
+    states = {0: (0.0, [])}
+    cumulative_weight = 0
+    for boundary_index in range(1, len(counts)):
+        cumulative_weight += weights[boundary_index - 1]
+        target = word_total * cumulative_weight / weight_total
+        remaining_scenes = len(counts) - boundary_index
+        next_states = {}
+        for previous_cut, (previous_cost, previous_cuts) in states.items():
+            first_cut = previous_cut + min_words
+            last_cut = word_total - remaining_scenes * min_words
+            for cut in range(first_cut, last_cut + 1):
+                if 0 < cut < word_total:
+                    rank = _translation_boundary_rank(words[cut - 1].group())
+                else:
+                    rank = 3
+                punctuation_penalty = (0.0, .4, .9, 2.0)[rank]
+                empty_penalty = .25 if cut == previous_cut else 0.0
+                cost = (previous_cost + abs(cut - target) + punctuation_penalty
+                        + empty_penalty)
+                candidate = (cost, [*previous_cuts, cut])
+                existing = next_states.get(cut)
+                if existing is None or (candidate[0], candidate[1]) < (existing[0], existing[1]):
+                    next_states[cut] = candidate
+        states = next_states
+
+    cuts = min(states.values(), key=lambda item: (item[0], item[1]))[1]
+    boundaries = [0, *cuts, word_total]
+    segments = []
+    for start, end in zip(boundaries, boundaries[1:]):
+        if end <= start:
+            segments.append("")
+        else:
+            segments.append(text[words[start].start():words[end - 1].end()].strip())
+    return segments
+
+
+def synchronize_scene_translations(scene_rows, translation_lines, *, ayah_start=1):
+    """Attach each ayah's phrase-aligned translation to its Arabic scene span."""
+    if not isinstance(scene_rows, list):
+        raise ValueError("Scene translation alignment requires a scene list.")
+    scenes = [dict(scene) for scene in scene_rows]
+    for scene in scenes:
+        scene["translation_text"] = ""
+    if translation_lines is None or translation_lines == []:
+        return scenes
+    if not isinstance(translation_lines, list):
+        raise ValueError("English translations must contain one line per selected ayah.")
+    translations = []
+    for line in translation_lines:
+        if not isinstance(line, str) or len(line) > 5000:
+            raise ValueError("Each English ayah translation must be text no longer than 5,000 characters.")
+        translations.append(line.strip())
+
+    grouped = {}
+    for index, scene in enumerate(scenes):
+        try:
+            ayah_number = int(scene["ayah_number"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("Every scene needs a valid ayah number for translation alignment.") from exc
+        grouped.setdefault(ayah_number, []).append((index, scene))
+
+    for ayah_number, indexed_scenes in grouped.items():
+        translation_index = ayah_number - int(ayah_start)
+        translation = translations[translation_index] if 0 <= translation_index < len(translations) else ""
+        has_word_spans = all(
+            isinstance(scene.get("word_start_index"), int)
+            and not isinstance(scene.get("word_start_index"), bool)
+            for _, scene in indexed_scenes
+        )
+        if has_word_spans:
+            ordered = sorted(indexed_scenes, key=lambda item: (item[1]["word_start_index"], item[0]))
+        else:
+            ordered = indexed_scenes
+        segments = split_translation_across_scenes(
+            translation, [len(str(scene.get("text", "")).split()) for _, scene in ordered],
+        )
+        for (scene_index, _scene), segment in zip(ordered, segments):
+            scenes[scene_index]["translation_text"] = segment
+    return scenes
 
 
 def split_ayah_at_word_boundaries(text: str, *, max_words=18, max_characters=180,
@@ -117,6 +233,7 @@ def _manual_scenes(ayahs, ayah_start, overrides):
         text = str(row.get("text", "")).strip()
         if not text:
             raise ValueError("A manual scene cannot have empty text.")
+        word_count = len(text.split())
         locked = row.get("locked", False)
         if not isinstance(locked, bool):
             raise ValueError("Scene lock state must be true or false.")
@@ -128,7 +245,9 @@ def _manual_scenes(ayahs, ayah_start, overrides):
         grouped[ayah_index].append(text)
         scene = {"ayah_number": ayah_number, "text": text,
                  "scene_id": scene_id, "locked": locked,
-                 "segment_index": len(grouped[ayah_index]), "word_count": len(text.split()), "weight": 1}
+                 "segment_index": len(grouped[ayah_index]), "word_count": word_count, "weight": 1,
+                 "word_start_index": word_offset,
+                 "word_end_index": word_offset + word_count - 1}
         if row.get("manual_duration") not in (None, ""):
             if isinstance(row["manual_duration"], bool):
                 raise ValueError("Scene duration must be a positive decimal number of seconds.")
@@ -647,6 +766,7 @@ def build_scene_plan(ayahs, *, ayah_start=1, durations=None, word_timings=None,
             estimated_durations = _estimated_scene_durations(source_text, chunks, verse_duration)
         word_offset = 0
         for part, chunk in enumerate(chunks, start=1):
+            scene_word_count = len(chunk.split())
             scene = {
                 "scene_index": len(planned),
                 "scene_id": f"ayah-{ayah_start + index}-word-{word_offset}",
@@ -666,7 +786,9 @@ def build_scene_plan(ayahs, *, ayah_start=1, durations=None, word_timings=None,
                                 else "ayah_timestamp" if durations is not None
                                 else "default_duration_estimate"),
                 "timing_approximate": estimated_durations is not None,
-                "word_count": len(chunk.split()),
+                "word_count": scene_word_count,
+                "word_start_index": word_offset,
+                "word_end_index": word_offset + scene_word_count - 1,
             }
             if parsed_times is not None:
                 first_word, after_last_word = offsets[part - 1]

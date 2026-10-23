@@ -301,13 +301,31 @@ def test_long_translation_wraps_beneath_arabic_and_stays_inside_caption_safe_hei
         ayah, aspect_ratio="9:16", output_size=canvas,
         translation_text="A source translation with a long sentence that wraps cleanly across lines. " * 4,
         translation_options={"translation_font": "serif", "translation_size": .026,
-                             "translation_align": "left", "translation_wrap_width": .55,
-                             "translation_credit": "Saheeh International · AlQuranCloud"},
+                             "translation_align": "left", "translation_wrap_width": .55},
         max_height_ratio=.5,
     )
     assert combined.width <= canvas[0]
     assert combined.height <= canvas[1] * .5
     assert combined.height > arabic_only.height
+
+
+def test_obsolete_translation_credit_setting_does_not_add_caption_text():
+    from app.video_engine import render_caption_image
+
+    ayah = "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ"
+    settings = {"translation_font": "serif", "translation_size": .026,
+                "translation_align": "center", "translation_wrap_width": .85}
+    plain = render_caption_image(
+        ayah, aspect_ratio="9:16", output_size=(240, 426),
+        translation_text="In the name of Allah, the Entirely Merciful, the Especially Merciful.",
+        translation_options=settings,
+    )
+    with_legacy_credit = render_caption_image(
+        ayah, aspect_ratio="9:16", output_size=(240, 426),
+        translation_text="In the name of Allah, the Entirely Merciful, the Especially Merciful.",
+        translation_options={**settings, "translation_credit": "Saheeh AI"},
+    )
+    assert plain.tobytes() == with_legacy_credit.tobytes()
 
 
 def test_export_includes_optional_viewer_layers_and_timeline_progress(tmp_path):
@@ -338,7 +356,7 @@ def test_export_includes_optional_viewer_layers_and_timeline_progress(tmp_path):
         exported.close()
 
 
-def test_translation_stays_under_its_ayah_on_last_split_scene_and_export_audio_is_cropped(tmp_path, monkeypatch):
+def test_translation_splits_across_export_scenes_and_export_audio_is_cropped(tmp_path, monkeypatch):
     import math
     import struct
     import wave
@@ -377,12 +395,14 @@ def test_translation_stays_under_its_ayah_on_last_split_scene_and_export_audio_i
         output_size=(240, 426), fps=24, quality="fast", encoder="cpu",
         audio_path=audio_path, audio_start=.5, audio_end=2.5,
         ayah_durations=[2], word_timings=word_times, ayah_start=13,
-        words_per_scene=2, translation_lines=["The verified English translation."],
+        words_per_scene=2,
+        translation_lines=["The verified phrase, followed by its closing words."],
         viewer_options={"show_viewer_title": False, "show_translation": True,
                        "show_waveform": False, "show_reciter_badge": False,
                        "show_progress": False},
     )
-    assert rendered_translations == ["", "The verified English translation."]
+    assert rendered_translations == ["The verified phrase,", "followed by its closing words."]
+    assert " ".join(rendered_translations) == "The verified phrase, followed by its closing words."
     assert metadata["duration"] == pytest.approx(2)
     assert metadata["scene_count"] == 2
 

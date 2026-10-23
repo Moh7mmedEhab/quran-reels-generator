@@ -216,7 +216,7 @@ button:disabled { cursor: wait; opacity: .72; }
 #generate-video-btn:hover,#playback-toggle:hover { background:#0056cc; }
 #preview-stage { min-height:660px; padding:2rem; display:flex; flex-direction:column; align-items:center; justify-content:center; position:relative; overflow:hidden; border:1px solid #e2e8f0; border-radius:1rem; background:#f1f5f9; }
 #reel-mockup { position:relative; width:100%; max-width:340px; padding:12px; border:4px solid #f1f5f9; border-radius:38px; background:#fff; box-shadow:0 25px 50px -12px rgb(15 23 42 / .3); }
-.preview-frame { position:relative; width:100%; aspect-ratio:9/16; overflow:hidden; display:flex; align-items:center; justify-content:center; border-radius:28px; background:#05080d; }
+.preview-frame { position:relative; width:100%; aspect-ratio:9/16; overflow:hidden; display:flex; align-items:center; justify-content:center; border-radius:28px; background:#05080d; container-type:inline-size; }
 .caption-preview-overlay { display:none; position:absolute; z-index:10; left:0; top:0; height:auto; max-width:none; transform:none; pointer-events:none; }
 input[type="checkbox"],input[type="radio"] { accent-color:#006aff; cursor:pointer; transition:accent-color .14s ease,filter .14s ease; }
 input[type="checkbox"] { width:1rem; height:1rem; flex:none; border-radius:.28rem; }
@@ -236,8 +236,8 @@ button:focus-visible,summary:focus-visible { outline:2px solid #006aff; outline-
 .viewer-title-reference { color:var(--viewer-title-accent,#edc85f); font-size:.88em; }
 .viewer-title-badge[data-style="minimal_white"] .viewer-title-reference { color:var(--viewer-title-accent,#006aff); }
 .viewer-translation { position:absolute; z-index:15; top:62%; left:50%; width:84%; max-height:8.5%; overflow:hidden; transform:translateX(-50%); color:#fff; font-family:Inter,Arial,sans-serif; font-size:clamp(8px,2.4vw,18px); line-height:1.38; text-align:center; text-shadow:0 1px 5px rgb(0 0 0 / .95); overflow-wrap:anywhere; pointer-events:none; }
-.viewer-waveform { position:absolute; z-index:15; left:50%; bottom:29%; display:flex; align-items:center; justify-content:center; gap:clamp(2px,.65vw,7px); height:3.4%; transform:translateX(-50%); pointer-events:none; }
-.viewer-waveform span { display:block; width:clamp(2px,.72vw,8px); height:var(--bar-height,42%); border-radius:99px; background:var(--viewer-wave-color,#f0c64b); transform-origin:center; animation:viewer-wave var(--viewer-wave-speed,1s) ease-in-out infinite alternate; animation-play-state:paused; }
+.viewer-waveform { position:absolute; z-index:15; left:calc(50% + var(--viewer-wave-x-offset,0%)); bottom:calc(28.8% - var(--viewer-wave-y-offset,0%)); display:flex; align-items:center; justify-content:center; gap:clamp(2px,.8cqw,8px); height:3.4%; transform:translateX(-50%); pointer-events:none; }
+.viewer-waveform span { display:block; width:clamp(2px,.8cqw,8px); height:var(--bar-height,42%); border-radius:99px; background:var(--viewer-wave-color,#f0c64b); transform-origin:center; animation:viewer-wave var(--viewer-wave-speed,1s) ease-in-out infinite alternate; animation-play-state:paused; }
 .viewer-waveform span:nth-child(4n+1) { --bar-height:28%; animation-delay:-.18s; }
 .viewer-waveform span:nth-child(4n+2) { --bar-height:52%; animation-delay:-.42s; }
 .viewer-waveform span:nth-child(4n+3) { --bar-height:76%; animation-delay:-.7s; }

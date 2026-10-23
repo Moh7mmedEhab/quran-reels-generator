@@ -13,6 +13,12 @@ _LATIN_FONT = Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
 _LATIN_BOLD_FONT = Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")
 _ARABIC_FONT = _ASSETS / "fonts" / "NotoNaskhArabic-Regular.ttf"
 
+DEFAULT_WAVEFORM_X_OFFSET = 0
+DEFAULT_WAVEFORM_Y_OFFSET = 0
+WAVEFORM_X_OFFSET_RANGE = (-28, 28)
+WAVEFORM_Y_OFFSET_RANGE = (-65, 27)
+WAVEFORM_DEFAULT_CENTER = (.5, .695)
+
 REEL_VIEWER_TEMPLATES = {
     "cinematic_nature": {"name": "Cinematic Nature", "theme": "misty_forest", "caption_style": "soft_white", "caption_color": "white", "font_id": "naskh", "caption_position": "center", "show_viewer_title": True, "title_template": "dark_pill", "title_color": "#ffffff", "title_accent": "#edc85f", "title_opacity": .88, "show_surah_arabic": True, "show_ayah_number": True, "show_quran_text": True, "show_translation": False, "translation_color": "#ffffff", "translation_size": .026, "show_waveform": True, "waveform_style": "gold", "waveform_color": "#f0c64b", "waveform_count": 13, "waveform_speed": 1, "show_reciter_badge": True, "reciter_color": "#ffffff", "reciter_background": "#10161d", "reciter_opacity": .88, "show_progress": True, "progress_color": "#edbd36", "progress_track_color": "#d1d5db", "progress_height": 6},
     "golden_quran": {"name": "Golden Quran", "theme": "copper_dusk", "caption_style": "golden_illuminated", "caption_color": "gold", "font_id": "naskh", "caption_position": "center", "show_viewer_title": True, "title_template": "gold_ornament", "title_color": "#fff7e7", "title_accent": "#f2c14e", "title_opacity": .94, "show_surah_arabic": True, "show_ayah_number": True, "show_quran_text": True, "show_translation": False, "translation_color": "#fff2cf", "translation_size": .024, "show_waveform": True, "waveform_style": "glow", "waveform_color": "#ffc84a", "waveform_count": 13, "waveform_speed": .85, "show_reciter_badge": True, "reciter_color": "#ffe5a7", "reciter_background": "#21190b", "reciter_opacity": .92, "show_progress": True, "progress_color": "#ffc84a", "progress_track_color": "#6b6250", "progress_height": 7},
@@ -301,10 +307,19 @@ def render_playback_layer(time_seconds: float, duration: float, size: tuple[int,
         spacing = max(3, int(width * .008))
         heights = [0.25, .42, .68, .42, .82, .55, 1, .5, .74, .35, .65, .4, .26]
         speed = max(.25, min(2.5, float(options.get("waveform_speed", 1.0))))
-        baseline = int(height * .695)
+        x_offset = max(WAVEFORM_X_OFFSET_RANGE[0], min(
+            WAVEFORM_X_OFFSET_RANGE[1],
+            float(options.get("waveform_x_offset", DEFAULT_WAVEFORM_X_OFFSET)),
+        ))
+        y_offset = max(WAVEFORM_Y_OFFSET_RANGE[0], min(
+            WAVEFORM_Y_OFFSET_RANGE[1],
+            float(options.get("waveform_y_offset", DEFAULT_WAVEFORM_Y_OFFSET)),
+        ))
+        center_x = width * (WAVEFORM_DEFAULT_CENTER[0] + x_offset / 100)
+        baseline = int(height * (WAVEFORM_DEFAULT_CENTER[1] + y_offset / 100))
         max_height = int(height * .030)
         total_width = count * bar_width + (count - 1) * spacing
-        start_x = (width - total_width) // 2
+        start_x = round(center_x - total_width / 2)
         style = options.get("waveform_style", "gold")
         color = "#ffffff" if style == "white" else options.get("waveform_color", "#f0c64b")
         for index in range(count):

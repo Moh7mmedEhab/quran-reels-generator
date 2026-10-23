@@ -37,21 +37,25 @@ from .background_video_templates import (BACKGROUND_VIDEO_TEMPLATES,
 from .font_catalog import DEFAULT_FONT_ID, FONT_CATALOG, resolve_font
 from .scenes import (build_scene_plan, edit_scene_text, merge_scene_with_previous,
                      compose_scene_plan_overrides, redistribute_scene_words, set_scene_lock,
-                     split_scene_by_word_count)
+                     split_scene_by_word_count, synchronize_scene_translations)
 from .media_validation import validate_rendered_output
 from .ffmpeg_encoder import hardware_encoder_status
 from .word_alignment import get_chapter_word_timing
-from .translations import (TRANSLATION_EDITION, TRANSLATION_NAME,
-                           TRANSLATION_SOURCE, TranslationSourceError,
+from .translations import (TRANSLATION_EDITION, TranslationSourceError,
                            TranslationRequestError,
                            TranslationSourceUnavailable,
                            get_translation_range)
 from .design_templates import (AYAH_NUMBER_TEMPLATES, QURAN_TEXT_TEMPLATES,
                                SURAH_NAME_TEMPLATES, TRANSITION_TEMPLATES)
-from .reel_viewer import (REEL_VIEWER_TEMPLATES, render_playback_layer,
+from .reel_viewer import (DEFAULT_WAVEFORM_X_OFFSET, DEFAULT_WAVEFORM_Y_OFFSET,
+                          REEL_VIEWER_TEMPLATES, WAVEFORM_X_OFFSET_RANGE,
+                          WAVEFORM_Y_OFFSET_RANGE, render_playback_layer,
                           render_static_layer)
 from .youtube_metadata import generate_youtube_metadata
 from .file_names import unique_download_filename
+from .preview_storage import (PREVIEW_RETENTION_SECONDS, cleanup_expired_previews,
+                              load_preview, new_preview_id, preview_paths,
+                              utc_timestamp, write_preview_metadata)
 from .version import APP_VERSION, DISPLAY_VERSION
 
 bp = Blueprint("main", __name__)
@@ -59,6 +63,22 @@ _AUDIO_PREVIEW_CACHE_LOCK = Lock()
 _IMAGE_GENERATION_LOCK = Lock()
 _POLLINATIONS_MODEL_CACHE_LOCK = Lock()
 _POLLINATIONS_MODEL_CACHE = {"expires": 0.0, "models": []}
+
+
+def _preview_dimensions(size, max_edge=960):
+    """Scale an export down for preview while preserving its aspect ratio."""
+    width, height = (int(size[0]), int(size[1]))
+    scale = min(1.0, float(max_edge) / max(width, height))
+    scaled_width = max(2, int(round(width * scale)))
+    scaled_height = max(2, int(round(height * scale)))
+    return scaled_width - scaled_width % 2, scaled_height - scaled_height % 2
+
+
+def _preview_noindex(response):
+    response.headers["X-Robots-Tag"] = "noindex, nofollow, noarchive"
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
 CAPTION_STYLES = {
     "Dynamic Karaoke (Glow)": "karaoke",
     "Minimalist Subtitle Fade": "minimal",
@@ -325,6 +345,10 @@ def _viewer_layer_options(data, template=None):
         "waveform_color": data.get("waveform_color", template.get("waveform_color", "#f0c64b")),
         "waveform_count": number("waveform_count", template.get("waveform_count", 13), 5, 31, int),
         "waveform_speed": number("waveform_speed", template.get("waveform_speed", 1), .25, 2.5),
+        "waveform_x_offset": number("waveform_x_offset", DEFAULT_WAVEFORM_X_OFFSET,
+                                    *WAVEFORM_X_OFFSET_RANGE),
+        "waveform_y_offset": number("waveform_y_offset", DEFAULT_WAVEFORM_Y_OFFSET,
+                                    *WAVEFORM_Y_OFFSET_RANGE),
         "show_reciter_badge": flag("show_reciter_badge", template.get("show_reciter_badge", True)),
         "reciter_label": str(data.get("reciter_label", "")).strip()[:60],
         "reciter_color": data.get("reciter_color", template.get("reciter_color", "#ffffff")),
@@ -536,6 +560,35 @@ def studio():
 @bp.get("/images")
 def image_studio():
     return render_template("image_generator.html")
+
+
+@bp.get("/preview/<preview_id>")
+def preview_result(preview_id):
+    metadata = load_preview(current_app.config["OUTPUT_FOLDER"], preview_id)
+    if metadata is None:
+        response = current_app.make_response((render_template(
+            "result_preview.html", preview=None,
+            error="This preview is invalid, unavailable, or expired.",
+        ), 404))
+        return _preview_noindex(response)
+    response = current_app.make_response(render_template(
+        "result_preview.html", preview=metadata,
+        video_url=url_for("main.preview_video", preview_id=preview_id),
+        editor_url=url_for("main.studio"), error=None,
+        expires_at_label=datetime.fromtimestamp(float(metadata["expires_at"]), timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+    ))
+    return _preview_noindex(response)
+
+
+@bp.get("/preview/<preview_id>/video")
+def preview_video(preview_id):
+    if load_preview(current_app.config["OUTPUT_FOLDER"], preview_id) is None:
+        response = jsonify(error="This preview is invalid, unavailable, or expired.")
+        response.status_code = 404
+        return _preview_noindex(response)
+    paths = preview_paths(current_app.config["OUTPUT_FOLDER"], preview_id)
+    response = send_from_directory(paths[0], paths[1].name, mimetype="video/mp4", conditional=True)
+    return _preview_noindex(response)
 
 
 @bp.get("/api/images/models")
@@ -1168,6 +1221,16 @@ def scene_plan():
                 show_surah_title=show_header or show_number, output_size=dimensions,
                 words_per_scene=words_per_scene, scene_overrides=edited_overrides,
             )
+        translation_lines = payload.get("translation_lines")
+        if translation_lines not in (None, []) and (
+                not isinstance(translation_lines, list) or len(translation_lines) != len(ayahs)):
+            raise ValueError("English translations must contain one line per selected ayah.")
+        scenes = synchronize_scene_translations(
+            scenes, translation_lines, ayah_start=ayah_start,
+        )
+        resolved_defaults = synchronize_scene_translations(
+            resolved_defaults, translation_lines, ayah_start=ayah_start,
+        )
     except (TypeError, ValueError, FileNotFoundError) as exc:
         return jsonify(error=str(exc)), 400
     return jsonify({"scenes": scenes, "default_scenes": resolved_defaults, "count": len(scenes),
@@ -1225,6 +1288,14 @@ def scene_redistribute():
             key = (str(row.get("scene_id") or ""), str(row.get("text", "")).strip())
             if key in old_timing:
                 row["manual_duration"] = old_timing[key]
+        translation_lines = payload.get("translation_lines")
+        if translation_lines not in (None, []) and (
+                not isinstance(translation_lines, list) or len(translation_lines) != len(ayahs)):
+            raise ValueError("English translations must contain one line per selected ayah.")
+        result["scenes"] = synchronize_scene_translations(
+            result.get("scenes", []), translation_lines,
+            ayah_start=payload.get("ayah_start", 1),
+        )
     except (TypeError, ValueError) as exc:
         return jsonify(error=str(exc)), 400
     return jsonify(result)
@@ -1334,10 +1405,6 @@ def caption_preview():
             return jsonify(error="One ayah translation is too long to preview."), 400
         if translation_text and not viewer_options["show_translation"]:
             translation_text = ""
-        viewer_options["translation_credit"] = (
-            f"{TRANSLATION_NAME} · {TRANSLATION_SOURCE}"
-            if translation_text and payload.get("translation_edition") == TRANSLATION_EDITION else ""
-        )
         caption_x, caption_y, _caption_position = _caption_position_coordinates(
             payload, template, has_translation=bool(translation_text)
         )
@@ -1582,17 +1649,19 @@ def preview_reciter_audio(reciter_id):
 def generate():
     data = request.form if request.form else (request.get_json(silent=True) or {})
     try:
+        preview_only = str(data.get("preview_only", "false")).strip().lower() in {"true", "1", "yes", "on"}
         ratio = data.get("aspect_ratio", "9:16")
         if ratio not in SIZES:
             return jsonify(error="Aspect ratio must be 9:16, 16:9, or 1:1."), 400
         resolution = str(data.get("resolution", "1080p")).lower()
         try:
-            output_size = output_dimensions(ratio, resolution, data.get("custom_width"), data.get("custom_height"))
+            final_output_size = output_dimensions(ratio, resolution, data.get("custom_width"), data.get("custom_height"))
             fps = int(data.get("fps", 30))
         except (TypeError, ValueError) as exc:
             return jsonify(error=str(exc)), 400
         if fps not in {24, 25, 30, 60}:
             return jsonify(error="Frame rate must be 24, 25, 30, or 60 FPS."), 400
+        output_size = _preview_dimensions(final_output_size) if preview_only else final_output_size
         quality = str(data.get("quality", "balanced")).lower()
         if quality not in QUALITY_PRESETS:
             return jsonify(error="Quality must be fast, balanced, high, or maximum."), 400
@@ -1682,11 +1751,6 @@ def generate():
             show_quran_text = show_quran_text.lower() in ("true", "1", "yes", "on")
         if viewer_options["show_translation"] and not show_quran_text:
             return jsonify(error="English translation is shown below Quran text. Enable Show Quran text first."), 400
-        viewer_options["translation_credit"] = (
-            f"{TRANSLATION_NAME} · {TRANSLATION_SOURCE}"
-            if viewer_options["show_translation"] and translation_edition == TRANSLATION_EDITION else ""
-        )
-
         transition = data.get("transition", "crossfade")
         if transition not in {"crossfade", "cut"}:
             transition = "crossfade"
@@ -1981,14 +2045,32 @@ def generate():
             return jsonify(error=f"Could not use the selected background: {exc}"), 400
 
         app = current_app._get_current_object()
-        output_dir = Path(app.config["OUTPUT_FOLDER"])
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / f"{job_id}.mp4"
-        partial_path = output_dir / f".{job_id}.partial.mp4"
+        output_root = Path(app.config["OUTPUT_FOLDER"])
+        output_root.mkdir(parents=True, exist_ok=True)
+        preview_id = None
+        preview_metadata_path = None
+        preview_expires_epoch = None
+        if preview_only:
+            preview_dir = output_root / "previews"
+            cleanup_expired_previews(preview_dir)
+            preview_id = new_preview_id()
+            preview_paths_for_job = preview_paths(output_root, preview_id)
+            output_dir, output_path, preview_metadata_path = preview_paths_for_job
+            retention_seconds = max(60, int(app.config.get(
+                "PREVIEW_RETENTION_SECONDS", PREVIEW_RETENTION_SECONDS
+            )))
+            preview_expires_epoch = int(time.time()) + retention_seconds
+            download_url = url_for("main.preview_video", preview_id=preview_id)
+            preview_page_url = url_for("main.preview_result", preview_id=preview_id)
+        else:
+            output_dir = output_root
+            output_path = output_dir / f"{job_id}.mp4"
+            download_url = url_for("main.download", filename=output_path.name)
+            preview_page_url = None
+        partial_path = output_dir / f".{output_path.stem}.partial.mp4"
         # Build this while the request context is available. The render worker
         # runs on a separate thread with only an application context, where
         # Flask cannot infer the host needed by url_for().
-        download_url = url_for("main.download", filename=output_path.name)
         manager = app.extensions["render_job_manager"]
 
         def render_worker(update, cancel_event):
@@ -2156,10 +2238,104 @@ def generate():
                     "audio_sample_rate": audio_fps,
                     **playback,
                 })
+                if preview_only:
+                    created_epoch = int(time.time())
+                    result.update({
+                        "preview_only": True,
+                        "preview_id": preview_id,
+                        "preview_url": preview_page_url,
+                        "preview_expires_at": utc_timestamp(preview_expires_epoch),
+                        "preview_dimensions": {"width": output_size[0], "height": output_size[1]},
+                        "final_dimensions": {"width": final_output_size[0], "height": final_output_size[1]},
+                    })
+                    preview_settings = {
+                        "aspect_ratio": ratio,
+                        "requested_resolution": resolution,
+                        "final_dimensions": list(final_output_size),
+                        "preview_dimensions": list(output_size),
+                        "fps": fps,
+                        "quality": quality,
+                        "encoder": encoder,
+                        "crf": crf,
+                        "audio_bitrate": audio_bitrate,
+                        "audio_sample_rate": audio_fps,
+                        "selected_audio": {
+                            "reciter_id": str(data.get("reciter_id", "mishary_alafasy")),
+                            "reciter_name": reciter["name"],
+                            "surah_number": surah,
+                            "surah_name": SURAHS_BY_NUMBER[surah]["english_name"],
+                            "ayah_start": ayah_start,
+                            "ayah_end": ayah_end,
+                            "audio_start_seconds": float(track.start),
+                            "audio_end_seconds": float(track.end),
+                            "timing_source": result.get("timing_source"),
+                        },
+                        "ayah_text": ayahs,
+                        "translation_lines": translation_lines,
+                        "translation_edition": translation_edition,
+                        "scene_overrides": raw_scenes or [],
+                        "render_settings": result,
+                        "background_assets": {
+                            "theme": theme,
+                            "fit": background_fit,
+                            "video_template": background_video_template or None,
+                            "sequence_template": background_sequence_template or None,
+                            "uploaded_files": [path.name for path in background_paths],
+                            "clips": [{
+                                "asset": Path(spec["path"]).name,
+                                "start": spec["start"], "end": spec["end"],
+                                "duration": spec["duration"], "speed": spec["speed"],
+                                "transition": spec["transition"],
+                                "transition_duration": spec["transition_duration"],
+                            } for spec in background_clip_specs],
+                        },
+                        "caption_settings": {
+                            "font_id": font_id, "font_path": str(font_path),
+                            "caption_style": caption_style, "caption_color": caption_color,
+                            "caption_position": caption_position,
+                            "caption_x": caption_x, "caption_y": caption_y,
+                            "wrap_width": wrap_width, "max_lines": max_lines,
+                            "custom_options": custom_opts,
+                            "label_options": label_options,
+                            "viewer_layers": viewer_options,
+                        },
+                        "background_motion": {
+                            "speed": background_speed, "loop": background_loop,
+                            "animation_enabled": animation_enabled,
+                            "animation_preset": animation_preset,
+                            "animation_intensity": animation_intensity,
+                            "animation_duration": animation_duration,
+                            "animation_speed": animation_speed,
+                            "animation_start": animation_start,
+                            "atmosphere_enabled": atmosphere_enabled,
+                            "atmosphere_intensity": atmosphere_intensity,
+                            "atmosphere_duration": atmosphere_duration,
+                            "atmosphere_speed": atmosphere_speed,
+                            "atmosphere_start": atmosphere_start,
+                            "brightness": background_brightness,
+                            "contrast": background_contrast,
+                            "saturation": background_saturation,
+                            "overlay_color": background_overlay_color,
+                            "overlay_opacity": background_overlay_opacity,
+                        },
+                        "created_at": utc_timestamp(created_epoch),
+                    }
+                    preview_record = {
+                        "version": 1,
+                        "id": preview_id,
+                        "created_at": utc_timestamp(created_epoch),
+                        "expires_at": preview_expires_epoch,
+                        "settings": preview_settings,
+                    }
                 partial_path.replace(output_path)
+                if preview_only:
+                    write_preview_metadata(preview_metadata_path, preview_record)
                 return result
             except Exception:
                 app.logger.exception("Video render job %s failed", job_id)
+                if preview_only:
+                    output_path.unlink(missing_ok=True)
+                    preview_metadata_path.unlink(missing_ok=True)
                 raise
             finally:
                 if track is not None:

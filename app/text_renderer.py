@@ -121,8 +121,7 @@ def render_arabic_text(text: str, *, font_path=None, font_size=72, color=(255,25
                        translation_opacity=1.0, translation_line_spacing=1.35,
                        translation_gap=18, translation_align="center",
                        translation_max_width=None, translation_bg_enabled=False,
-                       translation_bg_color="#10161d", translation_bg_opacity=.4,
-                       translation_credit="") -> Image.Image:
+                       translation_bg_color="#10161d", translation_bg_opacity=.4) -> Image.Image:
     """Return a readable RGBA Arabic caption with custom styling, contrast plate, and optional Surah header."""
     shape_arabic(text)  # Fail early with a clear message if shaping dependencies are unavailable.
     chosen_font = Path(font_path) if font_path else DEFAULT_FONT
@@ -155,7 +154,6 @@ def render_arabic_text(text: str, *, font_path=None, font_size=72, color=(255,25
         raise ValueError("English translation colors must be valid colors.") from exc
     translation_fill = (*translation_rgb[:3], round(255 * translation_opacity))
     translation_bg_fill = (*translation_bg_rgb[:3], round(255 * translation_bg_opacity))
-    translation_credit = str(translation_credit or "").strip()[:100]
     base_translation_size = max(6, int(translation_font_size or round(font_size * .34)))
     translation_wrap_width = max(1, int(translation_max_width or max_width))
     translation_path = translation_font_path(translation_font)
@@ -241,21 +239,11 @@ def render_arabic_text(text: str, *, font_path=None, font_size=72, color=(255,25
                 round(scaled_translation_size * translation_line_spacing),
                 max((box[3] - box[1] for box in translation_boxes), default=scaled_translation_size),
             )
-            credit_font_obj = _load_font(
-                translation_path, max(6, round(scaled_translation_size * .68)),
-            ) if translation_credit else None
-            credit_box = draw.textbbox((0, 0), translation_credit, font=credit_font_obj) if credit_font_obj else None
-            translation_width = max(
-                max((box[2] - box[0] for box in translation_boxes), default=0),
-                (credit_box[2] - credit_box[0]) if credit_box else 0,
-            )
+            translation_width = max((box[2] - box[0] for box in translation_boxes), default=0)
             translation_height = len(translation_lines) * translation_line_height
-            if credit_box:
-                translation_height += max(4, round(scaled_translation_size * .25)) + (credit_box[3] - credit_box[1])
             translation_layout = {
                 "font": translation_font_obj, "lines": translation_lines,
                 "boxes": translation_boxes, "line_height": translation_line_height,
-                "credit_font": credit_font_obj, "credit_box": credit_box,
             }
         total_content_w = max(content_width, header_max_w, translation_width)
         total_h = (verse_height + before_height + after_height + pad_y * 2
@@ -452,20 +440,4 @@ def render_arabic_text(text: str, *, font_path=None, font_size=72, color=(255,25
                       fill=text_shadow)
             draw.text((line_x, line_y), line, font=translation_font_obj,
                       fill=translation_fill)
-        credit_font_obj = translation_layout["credit_font"]
-        credit_box = translation_layout["credit_box"]
-        if credit_font_obj and credit_box:
-            credit_y = translation_y + len(translation_lines) * translation_layout["line_height"] + max(
-                4, round(translation_font_obj.size * .25),
-            )
-            credit_width = credit_box[2] - credit_box[0]
-            if translation_align == "left":
-                credit_x = content_left - credit_box[0]
-            elif translation_align == "right":
-                credit_x = content_right - credit_width - credit_box[0]
-            else:
-                credit_x = content_left + (available_width - credit_width) // 2 - credit_box[0]
-            draw.text((credit_x, credit_y - credit_box[1]), translation_credit,
-                      font=credit_font_obj,
-                      fill=(*translation_rgb[:3], round(210 * translation_opacity)))
     return image

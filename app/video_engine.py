@@ -304,7 +304,6 @@ def render_caption_image(text, *, aspect_ratio, font_path=None, caption_style="c
         translation_bg_enabled=translation_options.get("translation_bg_enabled", False),
         translation_bg_color=translation_options.get("translation_bg_color", "#10161d"),
         translation_bg_opacity=translation_options.get("translation_bg_opacity", .4),
-        translation_credit=translation_options.get("translation_credit", ""),
         output_size=(width, height),
     )
 
@@ -964,11 +963,11 @@ def render_reel(*, ayahs, output_path, aspect_ratio="9:16", audio_path=None,
         "background_saturation": background_saturation,
     }
 
-    from .scenes import build_scene_plan
+    from .scenes import build_scene_plan, synchronize_scene_translations
 
     (AudioFileClip, CompositeVideoClip, ImageClip, VideoClip, VideoFileClip,
      _concatenate, vfx, CompositeAudioClip, afx) = _moviepy()
-    from .reel_viewer import render_playback_layer, render_static_layer, translation_for_ayah
+    from .reel_viewer import render_playback_layer, render_static_layer
     viewer_options = viewer_options or {
         "show_viewer_title": False, "show_translation": False,
         "show_waveform": False, "show_reciter_badge": False, "show_progress": False,
@@ -1042,6 +1041,11 @@ def render_reel(*, ayahs, output_path, aspect_ratio="9:16", audio_path=None,
             scene_overrides=scene_overrides, default_duration=duration_per_ayah,
             words_per_scene=words_per_scene,
             output_size=(width, height),
+        )
+        scene_plan = synchronize_scene_translations(
+            scene_plan,
+            translation_lines if viewer_options.get("show_translation") and show_quran_text else [],
+            ayah_start=ayah_start,
         )
         if progress_callback:
             progress_callback(.05)
@@ -1194,10 +1198,7 @@ def render_reel(*, ayahs, output_path, aspect_ratio="9:16", audio_path=None,
                            if scene.get("start_time") is not None else timeline)
             if scene_start < timeline - .001:
                 raise ValueError("Scene timing overlaps a previous caption interval.")
-            translation = translation_for_ayah(translation_lines, current_ayah_num, ayah_start)
-            last_ayah_segment = int(scene.get("segment_index", 1)) >= int(scene.get("segment_count", 1))
-            scene_translation = (translation if last_ayah_segment
-                                 and viewer_options.get("show_translation") and show_quran_text else "")
+            scene_translation = scene.get("translation_text", "")
             scene_caption_y = None
             caption_image = None
             if show_quran_text:

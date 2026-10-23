@@ -33,6 +33,7 @@ def test_studio_renders_light_template_with_all_surahs():
     assert b"id=\"background-animation-start\"" in response.data
     assert b"id=\"background-atmosphere-enabled\"" in response.data
     assert b"id=\"background-atmosphere-start\"" in response.data
+    assert b'class="grid grid-cols-2 items-start gap-3" id="caption-layout-grid"' in response.data
     assert b"Ayah scene transition" in response.data
     assert b"Camera Motion" not in response.data
     assert b"Cinematic Background Sequences" in response.data
@@ -198,6 +199,34 @@ def test_reel_viewer_presets_define_ten_complete_compositions():
     assert all(required <= preset.keys() for preset in presets.values())
     assert presets["modern_translation"]["show_translation"] is False
     assert presets["clean_arabic"]["show_reciter_badge"] is False
+
+
+def test_viewer_waveform_position_defaults_are_backward_compatible_and_validated():
+    import app.routes as routes
+
+    defaults = routes._viewer_layer_options({})
+    assert defaults["waveform_x_offset"] == 0
+    assert defaults["waveform_y_offset"] == 0
+    positioned = routes._viewer_layer_options({
+        "waveform_x_offset": -28, "waveform_y_offset": 27,
+    })
+    assert positioned["waveform_x_offset"] == -28
+    assert positioned["waveform_y_offset"] == 27
+    with pytest.raises(ValueError, match="between -28 and 28"):
+        routes._viewer_layer_options({"waveform_x_offset": 29})
+    with pytest.raises(ValueError, match="between -65 and 27"):
+        routes._viewer_layer_options({"waveform_y_offset": -66})
+
+
+def test_studio_exposes_persistable_canvas_relative_waveform_position_controls():
+    response = create_app(TestConfig).test_client().get("/")
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert 'id="waveform-x-position" type="range" min="-28" max="28" step="1" value="0"' in html
+    assert 'id="waveform-y-position" type="range" min="-65" max="27" step="1" value="0"' in html
+    assert 'id="waveform-position-reset"' in html
+    assert "waveform_x_offset" in html and "waveform_y_offset" in html
+    assert "viewer-wave-x-offset" in html and "viewer-wave-y-offset" in html
 
 
 def test_verse_endpoint_returns_arabic_range():
@@ -443,6 +472,57 @@ def test_scene_plan_endpoint_groups_by_word_count_without_inventing_times():
     assert "".join(ayah.split()) == "".join("".join(scene["text"].split()) for scene in scenes)
 
 
+def test_scene_translation_segments_follow_plan_edits_and_selected_range():
+    client = create_app(TestConfig).test_client()
+    ayah = "أَوَّلٌ ثَانٍ ثَالِثٌ رَابِعٌ خَامِسٌ سَادِسٌ"
+    translation = "First phrase, continues here; and the final clause."
+    planned = client.post("/api/scenes/plan", json={
+        "ayahs": [ayah], "ayah_start": 55, "words_per_scene": 2,
+        "translation_lines": [translation], "aspect_ratio": "9:16",
+    })
+    assert planned.status_code == 200, planned.json
+    rows = planned.json["scenes"]
+    assert len(rows) == 3
+    assert [row["translation_text"] for row in rows] == [
+        "First phrase,", "continues here;", "and the final clause.",
+    ]
+    assert " ".join(row["translation_text"] for row in rows) == translation
+
+    merged = client.post("/api/scenes/redistribute", json={
+        "action": "merge_previous", "ayahs": [ayah], "ayah_start": 55,
+        "scene_index": 1, "scenes": rows, "translation_lines": [translation],
+    })
+    assert merged.status_code == 200, merged.json
+    assert len(merged.json["scenes"]) == 2
+    assert " ".join(row["translation_text"] for row in merged.json["scenes"]) == translation
+
+    split_again = client.post("/api/scenes/redistribute", json={
+        "action": "split_by_word_count", "ayahs": [ayah], "ayah_start": 55,
+        "scene_index": 0, "words_per_scene": 2,
+        "scenes": merged.json["scenes"], "translation_lines": [translation],
+    })
+    assert split_again.status_code == 200, split_again.json
+    assert len(split_again.json["scenes"]) == 3
+    assert " ".join(row["translation_text"] for row in split_again.json["scenes"]) == translation
+
+    disabled = client.post("/api/scenes/plan", json={
+        "ayahs": [ayah], "ayah_start": 55, "words_per_scene": 2,
+        "translation_lines": [],
+    })
+    assert disabled.status_code == 200, disabled.json
+    assert all(not row["translation_text"] for row in disabled.json["scenes"])
+
+    second_ayah = "سَابِعٌ ثَامِنٌ"
+    second_translation = "The next selected ayah."
+    narrowed = client.post("/api/scenes/plan", json={
+        "ayahs": [second_ayah], "ayah_start": 56, "words_per_scene": 1,
+        "translation_lines": [second_translation],
+    })
+    assert narrowed.status_code == 200, narrowed.json
+    assert {row["ayah_number"] for row in narrowed.json["scenes"]} == {56}
+    assert " ".join(row["translation_text"] for row in narrowed.json["scenes"]) == second_translation
+
+
 def test_scene_plan_restores_saved_ayah_edits_across_narrowed_range():
     client = create_app(TestConfig).test_client()
     ayahs = [
@@ -650,7 +730,7 @@ def test_caption_preview_returns_pillow_caption_for_selected_video_template():
     assert image.height > 0
 
 
-def test_caption_preview_passes_optional_translation_and_attribution_to_shared_renderer(monkeypatch):
+def test_caption_preview_passes_translation_without_attribution_to_shared_renderer(monkeypatch):
     import app.routes as routes
     from PIL import Image
 
@@ -665,7 +745,7 @@ def test_caption_preview_passes_optional_translation_and_attribution_to_shared_r
     assert captured["translation_text"] == base["translation"]
     assert captured["translation_options"]["translation_font"] == "serif"
     assert captured["translation_options"]["translation_align"] == "left"
-    assert captured["translation_options"]["translation_credit"] == "Saheeh International · AlQuranCloud"
+    assert "translation_credit" not in captured["translation_options"]
     assert captured["max_height_ratio"] == .5
 
     response = create_app(TestConfig).test_client().post("/api/caption-preview", json={**base, "show_translation": False})
@@ -939,6 +1019,7 @@ def test_generate_success_uses_local_ayah_text_and_selected_qari(monkeypatch, tm
         "translation_text": "So which of the favors of your Lord would you deny?",
         "show_waveform": False, "show_reciter_badge": False,
         "show_progress": True, "progress_color": "#006aff",
+        "waveform_x_offset": -18, "waveform_y_offset": 14,
     })
     assert response.status_code == 202, response.json
     job = client.get(response.json["status_url"])
@@ -982,6 +1063,8 @@ def test_generate_success_uses_local_ayah_text_and_selected_qari(monkeypatch, tm
     assert captured["viewer_options"]["show_translation"] is True
     assert captured["viewer_options"]["show_waveform"] is False
     assert captured["viewer_options"]["show_reciter_badge"] is False
+    assert captured["viewer_options"]["waveform_x_offset"] == -18
+    assert captured["viewer_options"]["waveform_y_offset"] == 14
     assert captured["viewer_options"]["progress_color"] == "#006aff"
     assert captured["translation_lines"] == ["So which of the favors of your Lord would you deny?"]
     assert captured["crf"] == 23
@@ -1030,6 +1113,151 @@ def test_background_render_worker_builds_download_url_without_request_context(mo
     downloaded = client.get(result["download_url"])
     assert downloaded.status_code == 200
     assert downloaded.data.startswith(b"complete-mp4")
+
+
+def test_result_preview_uses_reduced_render_and_persists_unlisted_share_link(monkeypatch, tmp_path):
+    import json
+    import app.routes as routes
+
+    track_path = tmp_path / "recitation.mp3"
+    track_path.write_bytes(b"audio")
+    captured = {}
+
+    def fake_render(**kwargs):
+        captured.update(kwargs)
+        Path(kwargs["output_path"]).write_bytes(b"complete-mp4" * 200)
+        return {"path": str(kwargs["output_path"]), "duration": 4.0,
+                "width": kwargs["output_size"][0], "height": kwargs["output_size"][1],
+                "has_audio": True, "scene_count": 2}
+
+    monkeypatch.setattr(routes, "download_recitation", lambda *args, **kwargs: SimpleNamespace(
+        path=track_path, start=1.25, end=5.25, ayah_durations=[4.0],
+        timing_source="mp3quran_ayah", timing_note="Ayah timing."))
+    monkeypatch.setattr(routes, "render_reel", fake_render)
+    monkeypatch.setattr(routes, "validate_rendered_output", lambda *args, **kwargs: {"playable": True})
+
+    class PreviewConfig(TestConfig):
+        OUTPUT_FOLDER = tmp_path / "outputs"
+        PREVIEW_RETENTION_SECONDS = 3600
+
+    client = create_app(PreviewConfig).test_client()
+    scene_overrides = [{"scene_id": "ayah-13a", "ayah_number": 13,
+                        "text": "فَبِأَيِّ آلَاءِ رَبِّكُمَا تُكَذِّبَانِ", "locked": True}]
+    response = client.post("/api/generate", json={
+        "preview_only": True,
+        "surah": 55, "ayah_start": 13, "ayah_end": 13,
+        "reciter_id": "mishary_alafasy", "aspect_ratio": "9:16",
+        "resolution": "1080p", "scene_overrides": scene_overrides,
+        "show_translation": True,
+        "translation_text": "Which of the favors of your Lord would you deny?",
+    })
+    assert response.status_code == 202, response.json
+    job = client.get(response.json["status_url"]).json
+    assert job["status"] == "complete", job
+    result = job["result"]
+    assert captured["output_size"] == (540, 960)
+    assert result["preview_dimensions"] == {"width": 540, "height": 960}
+    assert result["final_dimensions"] == {"width": 1080, "height": 1920}
+    assert result["download_url"] == f"/preview/{result['preview_id']}/video"
+
+    preview_page = client.get(result["preview_url"])
+    assert preview_page.status_code == 200
+    assert preview_page.headers["X-Robots-Tag"] == "noindex, nofollow, noarchive"
+    assert b"Copy Preview URL" in preview_page.data
+    assert b"anyone with this URL can watch" in preview_page.data
+    assert b"<video controls playsinline" in preview_page.data
+    refreshed_page = client.get(result["preview_url"])
+    assert refreshed_page.status_code == 200
+    video = client.get(result["download_url"])
+    assert video.status_code == 200
+    assert video.mimetype == "video/mp4"
+    assert video.data.startswith(b"complete-mp4")
+
+    metadata_path = PreviewConfig.OUTPUT_FOLDER / "previews" / f"{result['preview_id']}.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    settings = metadata["settings"]
+    assert settings["scene_overrides"] == scene_overrides
+    assert settings["selected_audio"]["reciter_id"] == "mishary_alafasy"
+    assert settings["selected_audio"]["surah_number"] == 55
+    assert settings["selected_audio"]["ayah_start"] == 13
+    assert settings["selected_audio"]["audio_start_seconds"] == 1.25
+    assert settings["translation_lines"] == ["Which of the favors of your Lord would you deny?"]
+
+
+def test_result_preview_handles_invalid_and_expired_ids(tmp_path):
+    import json
+    from app.preview_storage import new_preview_id
+
+    class PreviewConfig(TestConfig):
+        OUTPUT_FOLDER = tmp_path / "outputs"
+
+    client = create_app(PreviewConfig).test_client()
+    missing = client.get("/preview/not-a-valid-id")
+    assert missing.status_code == 404
+    assert b"Preview unavailable" in missing.data
+
+    preview_dir = PreviewConfig.OUTPUT_FOLDER / "previews"
+    preview_dir.mkdir(parents=True)
+    preview_id = new_preview_id()
+    video_path = preview_dir / f"{preview_id}.mp4"
+    metadata_path = preview_dir / f"{preview_id}.json"
+    video_path.write_bytes(b"expired video" * 100)
+    metadata_path.write_text(json.dumps({"id": preview_id, "expires_at": 1}), encoding="utf-8")
+    assert client.get(f"/preview/{preview_id}").status_code == 404
+    assert client.get(f"/preview/{preview_id}/video").status_code == 404
+    assert not video_path.exists()
+    assert not metadata_path.exists()
+
+
+def test_result_preview_renders_a_playable_reduced_mp4(monkeypatch, tmp_path):
+    import math
+    import wave
+    import numpy as np
+    from moviepy import VideoFileClip
+    import app.routes as routes
+
+    audio_path = tmp_path / "preview-tone.wav"
+    sample_rate = 44100
+    duration = 1.5
+    time_axis = np.arange(int(sample_rate * duration), dtype=np.float64) / sample_rate
+    samples = (.12 * np.sin(2 * math.pi * 330 * time_axis) * 32767).astype("int16")
+    with wave.open(str(audio_path), "wb") as audio_file:
+        audio_file.setnchannels(1)
+        audio_file.setsampwidth(2)
+        audio_file.setframerate(sample_rate)
+        audio_file.writeframes(samples.tobytes())
+    monkeypatch.setattr(routes, "download_recitation", lambda *args, **kwargs: SimpleNamespace(
+        path=audio_path, start=0, end=duration, ayah_durations=[duration],
+        word_timings=None, timing_source="test_audio", timing_note="Synthetic test audio."))
+
+    class PreviewConfig(TestConfig):
+        OUTPUT_FOLDER = tmp_path / "outputs"
+        PREVIEW_RETENTION_SECONDS = 3600
+
+    client = create_app(PreviewConfig).test_client()
+    response = client.post("/api/generate", json={
+        "preview_only": True,
+        "surah": 55, "ayah_start": 13, "ayah_end": 13,
+        "reciter_id": "mishary_alafasy", "aspect_ratio": "9:16",
+        "resolution": "1080p", "fps": 24, "quality": "fast", "encoder": "cpu",
+    })
+    assert response.status_code == 202, response.json
+    job = client.get(response.json["status_url"]).json
+    assert job["status"] == "complete", job
+    result = job["result"]
+    assert result["preview_dimensions"] == {"width": 540, "height": 960}
+    assert result["final_dimensions"] == {"width": 1080, "height": 1920}
+    video_response = client.get(result["download_url"])
+    assert video_response.status_code == 200
+    assert video_response.mimetype == "video/mp4"
+    video_path = PreviewConfig.OUTPUT_FOLDER / "previews" / f"{result['preview_id']}.mp4"
+    video = VideoFileClip(str(video_path))
+    try:
+        assert video.size == [540, 960]
+        assert video.audio is not None
+        assert video.duration == pytest.approx(duration, abs=.15)
+    finally:
+        video.close()
 
 
 def test_generate_applies_selected_complete_video_template(monkeypatch, tmp_path):

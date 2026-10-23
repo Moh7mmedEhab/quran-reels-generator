@@ -490,7 +490,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
 </select>
 </div>
 </div>
-<div class="grid grid-cols-2 gap-3">
+<div class="grid grid-cols-2 items-start gap-3" id="caption-layout-grid">
 <div class="flex flex-col gap-1">
 <label class="text-[11px] font-semibold text-gray-600" for="arabic-font">Arabic font</label>
 <select class="w-full rounded-xl border border-gray-200 bg-white text-gray-900 px-3 py-2 text-xs focus:ring-2 focus:ring-brand-500 focus:border-brand-500 focus:outline-none" id="arabic-font">
@@ -577,7 +577,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
 <summary class="cursor-pointer text-[11px] font-semibold text-gray-700">English Translation · Optional</summary>
 <div class="mt-3 grid grid-cols-2 gap-3">
 <label class="col-span-2 flex items-center gap-2 text-[11px] text-gray-700"><input id="show-translation" type="checkbox"> Add English Translation · Saheeh International</label>
-<p class="col-span-2 text-[10px] leading-relaxed text-gray-500">Exact English edition from AlQuranCloud, cached by Surah. Translation text stays directly below Arabic in the same caption. Its edition credit appears under the translation.</p>
+<p class="col-span-2 text-[10px] leading-relaxed text-gray-500">Exact English edition from AlQuranCloud, cached by Surah. Translation text stays directly below Arabic in the same caption.</p>
 <p id="translation-status" class="col-span-2 text-[10px] text-gray-500" role="status" aria-live="polite">Translation is off.</p>
 <label class="col-span-2 flex flex-col gap-1 text-[10px] text-gray-600">Fetched text · one ayah per line<textarea id="translation-text" rows="3" dir="auto" readonly placeholder="Enable Add English Translation to load the selected ayahs." class="rounded-lg border border-gray-200 bg-slate-50 px-2 py-2 text-xs font-normal"></textarea></label>
 <label class="flex items-center justify-between gap-2 text-[10px] text-gray-600">Text color<input id="translation-color" type="color" value="#ffffff" class="h-7 w-9 rounded border border-gray-200"></label>
@@ -601,6 +601,10 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
 <label class="flex items-center justify-between gap-2 text-[10px] text-gray-600">Waveform color<input id="waveform-color" type="color" value="#f0c64b" class="h-7 w-9 rounded border border-gray-200"></label>
 <label class="flex flex-col gap-1 text-[10px] text-gray-600">Bar count<select id="waveform-count" class="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs"><option value="9">9 bars</option><option value="13" selected>13 bars</option><option value="17">17 bars</option></select></label>
 <label class="flex flex-col gap-1 text-[10px] text-gray-600">Animation speed<input id="waveform-speed" type="range" min="0.5" max="2" step="0.1" value="1"></label>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">X Position <output id="waveform-x-position-value" for="waveform-x-position">0%</output><input id="waveform-x-position" type="range" min="-28" max="28" step="1" value="0"></label>
+<label class="flex flex-col gap-1 text-[10px] text-gray-600">Y Position <output id="waveform-y-position-value" for="waveform-y-position">0%</output><input id="waveform-y-position" type="range" min="-65" max="27" step="1" value="0"></label>
+<button class="col-span-2 justify-self-start rounded-lg border border-gray-200 px-3 py-1.5 text-[10px] font-semibold text-gray-700 hover:bg-gray-50" id="waveform-position-reset" type="button">Reset Position</button>
+<p class="col-span-2 text-[10px] leading-relaxed text-gray-500">Position offsets are percentages of the video canvas. Positive X moves right; positive Y moves down.</p>
 <p class="col-span-2 text-[10px] leading-relaxed text-gray-500">Bars animate only while the audio or exported video plays. They are not measured audio amplitudes.</p>
 </div>
 </details>
@@ -714,9 +718,9 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
 <span class="material-symbols-outlined text-[16px]">crop_free</span>
 <span class="hidden sm:inline">Safe Zone</span>
 </button>
-<button class="px-3 py-1.5 bg-brand-50 border border-brand-200 text-brand-700 hover:bg-brand-100 rounded-lg transition-colors flex items-center gap-1.5 font-semibold" id="export-preview-btn" title="Export Video" type="button">
-<span class="material-symbols-outlined text-[16px] text-brand-600">download</span>
-<span>Export MP4</span>
+<button class="px-3 py-1.5 bg-brand-50 border border-brand-200 text-brand-700 hover:bg-brand-100 rounded-lg transition-colors flex items-center gap-1.5 font-semibold" id="export-preview-btn" title="Create a shareable result preview without starting the final export" type="button">
+<span class="material-symbols-outlined text-[16px] text-brand-600">visibility</span>
+<span>Preview Result</span>
 </button>
 </div>
 </div>
@@ -834,6 +838,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
   let verseLoadTimer;
   let verseLoadRequest = 0;
   let activeRenderJobId = null;
+  let renderInProgress = false;
   let lastDownloadUrl = null;
   let previewAyahs = [];
   let previewScenes = [];
@@ -895,7 +900,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
   const PROJECT_TEMPLATE_FIELDS = [
     'caption-style','arabic-font','max-lines','words-per-scene','show-surah-title','show-ayah-number',
     'show-quran-text','viewer-title-enabled','viewer-title-icon-enabled','viewer-header-surah-enabled','viewer-header-surah-language','viewer-header-range-enabled','viewer-header-range-language','viewer-header-range-format','viewer-header-qari-enabled','viewer-title-text','viewer-title-template','viewer-title-color','viewer-title-opacity','viewer-title-size','viewer-title-position',
-    'show-translation','translation-text','translation-color','translation-size','translation-font','translation-opacity','translation-line-spacing','translation-gap','translation-align','translation-wrap-width','translation-bg-enabled','translation-bg-color','translation-bg-opacity','show-waveform','waveform-style','waveform-color','waveform-count','waveform-speed',
+    'show-translation','translation-text','translation-color','translation-size','translation-font','translation-opacity','translation-line-spacing','translation-gap','translation-align','translation-wrap-width','translation-bg-enabled','translation-bg-color','translation-bg-opacity','show-waveform','waveform-style','waveform-color','waveform-count','waveform-speed','waveform-x-position','waveform-y-position',
     'show-reciter-badge','reciter-label','reciter-color','reciter-background','reciter-opacity','show-progress','progress-color','progress-track-color','progress-height',
     'surah-name-template','ayah-number-template','surah-color','ayah-color','surah-color-hex','ayah-color-hex',
     'caption-color-picker','caption-color-hex','surah-scale',
@@ -1117,8 +1122,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
   function activeTranslationText() {
     if (!$('show-translation').checked) return '';
     const scene = previewScenes[previewIndex];
-    if (scene && Number(scene.segment_index || 1) < Number(scene.segment_count || 1)) return '';
-    return englishTranslationByAyah.get(`${Number(surahSelect.value)}:${currentPreviewAyahNumber()}`) || '';
+    return String(scene?.translation_text || '');
   }
 
   async function loadEnglishTranslationsForSelection() {
@@ -1138,6 +1142,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     if (cachedLines.length === end - start + 1) {
       $('translation-text').value = cachedLines.join('\n');
       $('translation-status').textContent = `Loaded ${cachedLines.length} ayah${cachedLines.length === 1 ? '' : 's'} from this page's cache · Saheeh International.`;
+      await updateScenePlan();
       await updateCaptionPreview();
       return;
     }
@@ -1154,6 +1159,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
       $('translation-text').value = lines.join('\n');
       $('translation-status').textContent = `Loaded ${lines.length} ayah${lines.length === 1 ? '' : 's'} · ${data.translator || 'Saheeh International'} · ${data.cached ? 'server cache' : 'source fetched and cached'}.`;
       hideRenderedVideo(); scheduleProjectAutosave();
+      await updateScenePlan();
       await updateCaptionPreview();
     } catch (error) {
       if (requestId !== translationLoadRequest) return;
@@ -1228,6 +1234,14 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     wave.hidden = !$('show-waveform').checked;
     wave.dataset.style = $('waveform-style').value;
     wave.style.setProperty('--viewer-wave-color', $('waveform-color').value);
+    const waveformX = Number($('waveform-x-position').value || 0);
+    const waveformY = Number($('waveform-y-position').value || 0);
+    wave.style.setProperty('--viewer-wave-x-offset', `${waveformX}%`);
+    wave.style.setProperty('--viewer-wave-y-offset', `${waveformY}%`);
+    $('waveform-x-position-value').value = `${waveformX > 0 ? '+' : ''}${waveformX}%`;
+    $('waveform-x-position-value').textContent = $('waveform-x-position-value').value;
+    $('waveform-y-position-value').value = `${waveformY > 0 ? '+' : ''}${waveformY}%`;
+    $('waveform-y-position-value').textContent = $('waveform-y-position-value').value;
     const barCount = Number($('waveform-count').value);
     if (wave.children.length !== barCount) {
       wave.replaceChildren(...Array.from({length:barCount}, () => document.createElement('span')));
@@ -1284,6 +1298,8 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
         if (element.type === 'checkbox' || element.type === 'radio') element.checked = Boolean(value);
         else element.value = value;
       }
+      if (!Object.prototype.hasOwnProperty.call(fields, 'waveform-x-position')) $('waveform-x-position').value = '0';
+      if (!Object.prototype.hasOwnProperty.call(fields, 'waveform-y-position')) $('waveform-y-position').value = '0';
       const savedWordLimit = String($('words-per-scene').value || '8');
       appliedWordsPerScene = /^[1-9]\d?$/.test(savedWordLimit) && Number(savedWordLimit) <= 30
         ? Number(savedWordLimit) : 8;
@@ -1452,6 +1468,8 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
       if (element.type === 'checkbox' || element.type === 'radio') element.checked = Boolean(value);
       else element.value = value;
     }
+    if (!Object.prototype.hasOwnProperty.call(design.fields || {}, 'waveform-x-position')) $('waveform-x-position').value = '0';
+    if (!Object.prototype.hasOwnProperty.call(design.fields || {}, 'waveform-y-position')) $('waveform-y-position').value = '0';
     updateFontPreviews(); syncLabelColorControls('surah'); syncLabelColorControls('ayah');
     const designWordLimit = String($('words-per-scene').value || '8');
     appliedWordsPerScene = /^[1-9]\d?$/.test(designWordLimit) && Number(designWordLimit) <= 30
@@ -1573,6 +1591,19 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
         if (!mediaSaved) setProjectStatus('Settings saved; browser storage could not keep uploaded media', true);
       }).catch(error => setProjectStatus(`Autosave failed: ${error.message}`, true));
     }, 450);
+  }
+
+  async function persistLatestEditorSnapshot() {
+    clearTimeout(autosaveTimer);
+    await autosaveQueue;
+    const snapshot = makeEditorSnapshot();
+    const signature = snapshotSignature(snapshot);
+    if (signature === lastPersistedSignature) return;
+    const mediaSaved = await persistProjectSnapshot(snapshot, activeProjectId);
+    if (!mediaSaved && snapshot.mediaClips.length) {
+      throw new Error('The latest background media could not be saved in this browser. Keep the editor open or save the media before opening a shareable preview.');
+    }
+    lastPersistedSignature = signature;
   }
 
   async function undoProjectChange() {
@@ -2555,6 +2586,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     const cache = sceneCacheRecords(ayahs, ayahStart, surah, signature);
     return {
       ayahs, ayah_start:ayahStart, scene_defaults:cache.defaults, scene_edits:cache.edits,
+      translation_lines:selectedTranslationLines(),
       aspect_ratio: ratio, wrap_width: wrapWidth,
       resolution: $('export-resolution').value,
       custom_width: $('custom-width').value, custom_height: $('custom-height').value,
@@ -2564,6 +2596,14 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
       show_surah_title: $('show-surah-title').checked,
       show_ayah_number: $('show-ayah-number').checked,
     };
+  }
+
+  function selectedTranslationLines() {
+    if (!$('show-translation').checked) return [];
+    const ayahs = ayahText.value.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+    const ayahStart = Number(startInput.value || 1);
+    const surah = Number(surahSelect.value);
+    return ayahs.map((_, index) => englishTranslationByAyah.get(`${surah}:${ayahStart + index}`) || '');
   }
 
   async function resetSelectedSceneRange() {
@@ -2694,6 +2734,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
         body:JSON.stringify({
           ayahs:ayahText.value.split(/\r?\n/).map(line => line.trim()).filter(Boolean),
           ayah_start:Number(startInput.value || 1),
+          translation_lines:selectedTranslationLines(),
           scenes:sceneRowsForRequest(),
           scene_index:sceneIndex, word_count:count,
         }),
@@ -2739,6 +2780,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
         body:JSON.stringify({
           action:'edit_text', ayahs:ayahText.value.split(/\r?\n/).map(line => line.trim()).filter(Boolean),
           ayah_start:Number(startInput.value || 1), scenes:sceneRowsForRequest(),
+          translation_lines:selectedTranslationLines(),
           scene_index:sceneIndex, text,
         }),
       });
@@ -2776,6 +2818,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
         body:JSON.stringify({
           action:'set_lock', ayahs:ayahText.value.split(/\r?\n/).map(line => line.trim()).filter(Boolean),
           ayah_start:Number(startInput.value || 1), scenes:sceneRowsForRequest(),
+          translation_lines:selectedTranslationLines(),
           scene_index:sceneIndex, locked,
         }),
       });
@@ -2810,6 +2853,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
           action:'split_by_word_count',
           ayahs:ayahText.value.split(/\r?\n/).map(line => line.trim()).filter(Boolean),
           ayah_start:Number(startInput.value || 1),
+          translation_lines:selectedTranslationLines(),
           scenes:sceneRowsForRequest(),
           scene_index:sceneIndex, words_per_scene:appliedWordsPerScene,
         }),
@@ -2850,6 +2894,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
           action:'merge_previous',
           ayahs:ayahText.value.split(/\r?\n/).map(line => line.trim()).filter(Boolean),
           ayah_start:Number(startInput.value || 1),
+          translation_lines:selectedTranslationLines(),
           scenes:sceneRowsForRequest(),
           scene_index:sceneIndex,
         }),
@@ -4223,13 +4268,18 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
   const viewerLayerControls = [
     'viewer-title-enabled','viewer-title-icon-enabled','viewer-header-surah-enabled','viewer-header-surah-language','viewer-header-range-enabled','viewer-header-range-language','viewer-header-range-format','viewer-header-qari-enabled','viewer-title-text','viewer-title-template','viewer-title-color','viewer-title-opacity','viewer-title-size','viewer-title-position',
     'show-translation','translation-text','translation-color','translation-size','translation-font','translation-opacity','translation-line-spacing','translation-gap','translation-align','translation-wrap-width','translation-bg-enabled','translation-bg-color','translation-bg-opacity',
-    'show-waveform','waveform-style','waveform-color','waveform-count','waveform-speed',
+    'show-waveform','waveform-style','waveform-color','waveform-count','waveform-speed','waveform-x-position','waveform-y-position',
     'show-reciter-badge','reciter-label','reciter-color','reciter-background','reciter-opacity',
     'show-progress','progress-color','progress-track-color','progress-height',
   ];
   const refreshViewerLayerControls = () => {
     updateViewerLayerPreview(); hideRenderedVideo(); scheduleProjectAutosave();
   };
+  $('waveform-position-reset').addEventListener('click', () => {
+    $('waveform-x-position').value = '0';
+    $('waveform-y-position').value = '0';
+    refreshViewerLayerControls();
+  });
   viewerLayerControls.forEach(id => {
     $(id).addEventListener('input', refreshViewerLayerControls);
     $(id).addEventListener('change', refreshViewerLayerControls);
@@ -4372,18 +4422,30 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     finally { button.disabled = false; }
   });
 
-  $('generate-video-btn').addEventListener('click', async () => {
-    const button = $('generate-video-btn'), status = $('render-status'), original = button.innerHTML;
-    button.disabled = true;
-    button.innerHTML = '<span class="material-symbols-outlined animate-spin">progress_activity</span><span>Preparing render…</span>';
+  async function startConfiguredRender(previewOnly = false) {
+    if (renderInProgress) return;
+    renderInProgress = true;
+    const button = previewOnly ? $('export-preview-btn') : $('generate-video-btn');
+    const generateButton = $('generate-video-btn');
+    const previewButton = $('export-preview-btn');
+    const status = $('render-status'), original = button.innerHTML;
+    generateButton.disabled = true;
+    previewButton.disabled = true;
+    button.innerHTML = previewOnly
+      ? '<span class="material-symbols-outlined animate-spin">progress_activity</span><span>Preparing Preview…</span>'
+      : '<span class="material-symbols-outlined animate-spin">progress_activity</span><span>Preparing render…</span>';
     status.className = 'rounded-lg px-3 py-2 text-sm bg-brand-50 text-brand-800';
-    $('render-status-message').textContent = 'Preparing selected ayahs, recitation, and video settings…';
+    $('render-status-message').textContent = previewOnly
+      ? 'Saving the latest editor state, then rendering a shareable preview…'
+      : 'Preparing selected ayahs, recitation, and video settings…';
     $('render-progress-row').classList.add('hidden');
     $('render-estimate').textContent = 'Render estimate: Estimating from measured encoder speed…';
     $('render-cancel-btn').classList.add('hidden');
     activeRenderJobId = null;
+    let renderSucceeded = false;
     try {
       if (guardPendingSceneTextDraft() || guardPendingSceneDurationDraft()) return;
+      if (previewOnly) await persistLatestEditorSnapshot();
       await updateEncoderCapabilities(true);
       const selectionAtExport = verseSelectionKey();
       const verses = loadedVerseSelection === selectionAtExport ? previewAyahs : await loadVerses(true);
@@ -4403,6 +4465,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
         throw new Error('Apply or clear the pending scene word-count edit before exporting.');
       }
       const form = new FormData();
+      form.set('preview_only', String(previewOnly));
       form.set('ayah_text', ayahText.value); form.set('aspect_ratio', ratio); form.set('reciter_id', selectedReciter);
       form.set('resolution', $('export-resolution').value);
       form.set('custom_width', $('custom-width').value); form.set('custom_height', $('custom-height').value);
@@ -4435,6 +4498,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
         'translation-bg-enabled':'translation_bg_enabled','translation-bg-color':'translation_bg_color','translation-bg-opacity':'translation_bg_opacity',
         'show-waveform':'show_waveform','waveform-style':'waveform_style','waveform-color':'waveform_color',
         'waveform-count':'waveform_count','waveform-speed':'waveform_speed',
+        'waveform-x-position':'waveform_x_offset','waveform-y-position':'waveform_y_offset',
         'show-reciter-badge':'show_reciter_badge','reciter-label':'reciter_label',
         'reciter-color':'reciter_color','reciter-background':'reciter_background','reciter-opacity':'reciter_opacity',
         'show-progress':'show_progress','progress-color':'progress_color',
@@ -4518,6 +4582,14 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
       status.className = 'rounded-lg px-3 py-2 text-sm bg-emerald-50 text-emerald-800';
       $('render-progress-row').classList.add('hidden');
       $('render-cancel-btn').classList.add('hidden');
+      if (previewOnly) {
+        const previewSize = result.preview_dimensions || {};
+        const finalSize = result.final_dimensions || {};
+        $('render-status-message').textContent = `Preview ready · ${previewSize.width}×${previewSize.height}; final export remains ${finalSize.width}×${finalSize.height}. Opening the shareable result…`;
+        renderSucceeded = true;
+        window.location.assign(result.preview_url);
+        return;
+      }
       const fallbackMessage = result.fallback_reason ? ` · fallback: ${result.fallback_reason}` : '';
       $('render-status-message').replaceChildren(document.createTextNode(
         'Video ready · ' + (result.encoder_name || 'CPU · x264') + fallbackMessage + ' · MP4 playback verified · ' + result.width + '×' + result.height + ' · ' + (result.fps || 30) + ' FPS · ' + result.duration.toFixed(1) + ' seconds · ' + result.reciter + ' · ' + verses.length + ' ayahs · ' + (result.scene_count || previewScenes.length) + ' scenes. ' + (result.timing_note || '')));
@@ -4531,6 +4603,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
       const video = $('rendered-video'); video.src = result.download_url; video.classList.remove('hidden');
       video.volume = Number($('preview-volume').value); video.load();
       button.innerHTML = '<span class="material-symbols-outlined">check_circle</span><span>Video Ready</span>';
+      renderSucceeded = true;
     } catch (error) {
       activeRenderJobId = null;
       if (error.cancelled) {
@@ -4544,11 +4617,15 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
       $('render-cancel-btn').classList.add('hidden');
       button.innerHTML = original;
     } finally {
-      button.disabled = false;
+      generateButton.disabled = false;
+      previewButton.disabled = false;
+      if (!renderSucceeded) button.innerHTML = original;
+      renderInProgress = false;
     }
-  });
+  }
 
-  $('export-preview-btn').addEventListener('click', () => $('generate-video-btn').click());
+  $('generate-video-btn').addEventListener('click', () => startConfiguredRender(false));
+  $('export-preview-btn').addEventListener('click', () => startConfiguredRender(true));
 
   $('save-project-btn').addEventListener('click', () => saveNamedProject());
   $('saved-projects').addEventListener('change', () => {
