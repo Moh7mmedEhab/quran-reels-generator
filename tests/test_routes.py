@@ -18,6 +18,16 @@ class TestConfig:
 def test_studio_renders_light_template_with_all_surahs():
     response = create_app(TestConfig).test_client().get("/")
     assert response.status_code == 200
+    assert b"/static/js/scene_timing.js" in response.data
+    assert b"/static/js/reciter_coverage.js" in response.data
+    assert b"/static/js/auto_split_scenes.js" in response.data
+    assert b'id="auto-split-scenes"' in response.data
+    assert b"Auto-Split Tall Ayahs" in response.data
+    assert b"Calculate from Playhead" in response.data
+    assert b"playheadButton.disabled = !scene.scene_id;" in response.data
+    assert b"button.disabled = !scene;" in response.data
+    assert b"durationInput.disabled = false;" in response.data
+    assert b"Reuse: ${reciter.usage_rights" in response.data
     assert b"Render High-Res Reel" in response.data
     assert "114 · An-Naas".encode() in response.data
     assert b"id=\"rendered-video\"" in response.data
@@ -244,9 +254,13 @@ def test_verse_endpoint_rejects_out_of_range_ayah():
 def test_reciter_endpoint_returns_streamable_recordings_with_source_metadata():
     response = create_app(TestConfig).test_client().get("/api/reciters")
     assert response.status_code == 200
-    assert len(response.json["reciters"]) == len(RECITERS) == 27
+    assert len(response.json["reciters"]) == len(RECITERS) == 31
     assert all(item["audio_base_url"].startswith("https://") for item in response.json["reciters"])
-    assert all(item["source"] == "MP3Quran.net" for item in response.json["reciters"])
+    assert {item["source"] for item in response.json["reciters"]} == {
+        "MP3Quran.net", "Assabile.com", "MP3Quran.net + Way2Quran.com",
+    }
+    assert all(item["name_ar"] and item["audio_delivery"] == "per_surah"
+               for item in response.json["reciters"])
     groups = {}
     for item in response.json["reciters"]:
         groups.setdefault(item["group_id"], []).append(item)
@@ -256,13 +270,128 @@ def test_reciter_endpoint_returns_streamable_recordings_with_source_metadata():
     assert groups["minshawi"][1]["timing_source"] == "Qur'anic Universal Audio v3.2.0"
     assert len(groups["abdul_basit"]) == 2
     assert len(groups["husary"]) == 5
+    assert len(groups["mishary_alafasy"]) == 4
+    hafs = next(item for item in groups["mishary_alafasy"] if item["id"] == "mishary_alafasy")
+    assert hafs["read_id"] == hafs["source_recording_id"] == 123
+    assert hafs["recording_name"] == "Rewayat Hafs A'n Assem - Murattal"
+    assert hafs["available_surahs"] == 114
+    dorai = next(item for item in groups["mishary_alafasy"] if item["id"] == "mishary_alafasy_dorai")
+    assert dorai["name_ar"] == "مشاري بن راشد العفاسي"
+    assert dorai["riwayah"] == "Al-Duri 'an al-Kisa'i"
+    assert dorai["available_surahs"] == 6
+    assert dorai["supports_ayah_selection"] is False
+    assert dorai["timing_granularity"] == "surah_only"
+    california = next(item for item in groups["mishary_alafasy"]
+                      if item["id"] == "mishary_alafasy_california")
+    assert california["recording_name"] == "Hafs 'an Asim - California Murattal (1430 AH)"
+    assert california["style"] == "Murattal"
+    assert california["riwayah"] == "Hafs 'an Asim"
+    assert california["source"] == "Assabile.com"
+    assert california["available_surahs"] == 113
+    assert 44 not in california["available_surah_numbers"]
+    assert california["supports_ayah_selection"] is False
+    assert len(california["audio_urls_by_surah"]) == 113
+    assert california["audio_urls_by_surah"]["1"].endswith(
+        "/mishary-rashid-alafasy/mishary-rashid-alafasy-001-al-fatiha-21377-648.mp3")
+    tarawih = next(item for item in groups["mishary_alafasy"]
+                   if item["id"] == "mishary_alafasy_tarawih_1427")
+    assert tarawih["name_ar"] == "مشاري بن راشد العفاسي"
+    assert tarawih["style"] == "Tarawih prayer"
+    assert tarawih["riwayah"] == "Hafs 'an Asim"
+    assert tarawih["source"] == "Assabile.com"
+    assert tarawih["available_surahs"] == 27
+    assert set(tarawih["available_surah_numbers"]) == {
+        1, 32, 33, 34, 35, 36, 37, 38, 43, 44, 50, 55, 56, 57, 67, 68, 69,
+        70, 78, 79, 80, 81, 82, 83, 84, 85, 86,
+    }
+    assert tarawih["supports_ayah_selection"] is False
+    assert tarawih["audio_url_template"] is None
+    assert len(tarawih["audio_urls_by_surah"]) == 27
+    assert "not stated" in tarawih["usage_rights"]
+    salman = groups["salman_alotaibi"][0]
+    assert salman["name"] == "Salman Al-Utaybi"
+    assert salman["name_ar"] == "سلمان العتيبي"
+    assert salman["source_reciter_id"] == salman["source_recording_id"] == 240
+    assert salman["available_surahs"] == 76
+    assert 16 in salman["available_surah_numbers"]
+    assert salman["supports_ayah_selection"] is False
+    assert salman["audio_url_template"].endswith("{surah:03d}.mp3")
+    assert salman["timing_source"] == "No published ayah timings"
+    assert salman["audio_url_overrides_by_surah"]["16"] == (
+        "https://media.way2quran.com/slman-al-atyby/hafs-an-asim/016.mp3")
+    assert salman["audio_provider_overrides_by_surah"]["16"] == "Way2Quran.com"
     assert {item["read_id"] for item in RECITERS if item["group_id"] == "husary"} == {118, 119, 120, 269, 270}
 
 
+def test_chapter_only_reciter_timings_are_labeled_and_partial_ranges_are_rejected(monkeypatch, tmp_path):
+    import app.routes as routes
+    from app.audio_sources import AudioTrack
+
+    chapter_audio = tmp_path / "chapter.mp3"
+    chapter_audio.write_bytes(b"complete source recording")
+    monkeypatch.setattr(routes, "_chapter_only_preview_track", lambda *_args: AudioTrack(
+        chapter_audio, "https://cdn.mp3quran.net/audio/salman-otaibi/r1/001.mp3",
+        0, 7, [1, 1, 1, 1, 1, 1, 1], None, "chapter_estimate",
+        "Complete Surah only; caption timing is approximate.",
+    ))
+    client = create_app(TestConfig).test_client()
+
+    response = client.get("/api/reciters/salman_alotaibi/timings?surah=1&start=1&end=7")
+    assert response.status_code == 200
+    assert response.json["timing_source"] == "chapter_estimate"
+    assert "approximate" in response.json["timing_note"]
+    assert len(response.json["timings"]) == 7
+    assert response.json["audio_start"] == 0
+    assert response.json["audio_end"] == 7
+
+    partial = client.get("/api/reciters/salman_alotaibi/timings?surah=1&start=2&end=3")
+    assert partial.status_code == 400
+    assert "complete Surah" in partial.json["error"]
+
+
+def test_generate_rejects_partial_range_for_chapter_only_reciter_before_render(monkeypatch):
+    import app.routes as routes
+    monkeypatch.setattr(routes, "hardware_encoder_status", lambda **kwargs: {
+        "nvidia": {"available": False, "name": "NVIDIA NVENC", "reason": "No CUDA device"},
+        "intel": {"available": False, "name": "Intel UHD", "reason": "No media device"},
+    })
+    response = create_app(TestConfig).test_client().post("/api/generate", json={
+        "surah": 1, "ayah_start": 2, "ayah_end": 3,
+        "reciter_id": "salman_alotaibi", "encoder": "auto",
+    })
+    assert response.status_code == 400
+    assert "complete Surah only" in response.json["error"]
+
+
 def test_reciter_preview_builds_selected_chapter_url():
-    response = create_app(TestConfig).test_client().get("/api/reciters/mishary_alafasy/preview?surah=55")
+    client = create_app(TestConfig).test_client()
+    response = client.get("/api/reciters/mishary_alafasy/preview?surah=55")
     assert response.status_code == 200
     assert response.json["audio_url"].endswith("/055.mp3")
+
+    california = client.get("/api/reciters/mishary_alafasy_california/preview?surah=55")
+    assert california.status_code == 200
+    assert california.json["audio_url"].endswith(
+        "/mishary-rashid-alafasy/mishary-rashid-alafasy-055-ar-rahman-21385-864.mp3")
+    missing_california = client.get("/api/reciters/mishary_alafasy_california/preview?surah=44")
+    assert missing_california.status_code == 404
+
+    salman_surah_16 = client.get("/api/reciters/salman_alotaibi/preview?surah=16")
+    assert salman_surah_16.status_code == 200
+    assert salman_surah_16.json["audio_url"] == (
+        "https://media.way2quran.com/slman-al-atyby/hafs-an-asim/016.mp3")
+
+    tarawih = create_app(TestConfig).test_client().get(
+        "/api/reciters/mishary_alafasy_tarawih_1427/preview?surah=1")
+    assert tarawih.status_code == 200
+    assert tarawih.json["audio_url"] == (
+        "https://media.assabile.com/assabile/recitations_7892537823/mp3/"
+        "mishary-rashid-alafasy/mishary-rashid-alafasy-001-al-fatiha-21471-7383.mp3"
+    )
+    missing = create_app(TestConfig).test_client().get(
+        "/api/reciters/mishary_alafasy_tarawih_1427/preview?surah=2")
+    assert missing.status_code == 404
+    assert "no verified audio" in missing.json["error"]
 
 
 def test_mujawwad_recording_preview_uses_its_own_audio_archive():
@@ -999,8 +1128,10 @@ def test_generate_success_uses_local_ayah_text_and_selected_qari(monkeypatch, tm
     words = ayah.split()
     midpoint = len(words) // 2
     scene_overrides = [
-        {"scene_id":"first-half","ayah_number":13,"text":" ".join(words[:midpoint]),"locked":True},
-        {"scene_id":"second-half","ayah_number":13,"text":" ".join(words[midpoint:]),"locked":False},
+        {"scene_id":"first-half","ayah_number":13,"text":" ".join(words[:midpoint]),
+         "locked":True,"manual_duration":2.0},
+        {"scene_id":"second-half","ayah_number":13,"text":" ".join(words[midpoint:]),
+         "locked":False,"manual_duration":2.16},
     ]
     response = client.post("/api/generate", json={
         "surah": 55, "ayah_start": 13, "ayah_end": 13,
@@ -1027,6 +1158,11 @@ def test_generate_success_uses_local_ayah_text_and_selected_qari(monkeypatch, tm
     result = job.json["result"]
     assert result["has_audio"] is True
     assert result["reciter"] == "Mishary Rashid Alafasy"
+    assert result["reciter_id"] == "mishary_alafasy"
+    assert result["recording_name"] == "Rewayat Hafs A'n Assem - Murattal"
+    assert result["recording_style"] == "Murattal"
+    assert result["riwayah"] == "Hafs 'an Asim"
+    assert result["audio_source"] == "MP3Quran.net"
     assert result["theme"] == "desert_dawn"
     assert result["phrase_timing_mode"] == "weighted_estimate"
     assert result["phrase_timing_approximate"] is True

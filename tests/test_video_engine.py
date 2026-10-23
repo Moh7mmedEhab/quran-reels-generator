@@ -10,7 +10,7 @@ def test_full_quran_catalog_and_local_text():
     assert len(SURAHS) == 114
     assert sum(item["ayah_count"] for item in SURAHS) == 6236
     assert len(get_ayahs(55, 13, 13)) == 1
-    assert len(RECITERS) == 27
+    assert len(RECITERS) == 31
 
 
 def test_all_aspect_ratio_dimensions():
@@ -273,6 +273,31 @@ def test_multiple_background_videos_render_as_a_playable_trimmed_sequence(tmp_pa
     finally:
         exported.close()
     assert validate_rendered_output(output_path, expected_size=(240, 426), require_audio=True)["playable"] is True
+
+
+def test_single_video_background_renders_without_empty_composite(tmp_path):
+    from moviepy import ColorClip, VideoFileClip
+
+    background_path = tmp_path / "single-background.mp4"
+    output_path = tmp_path / "single-background-render.mp4"
+    background = ColorClip((96, 54), color=(30, 110, 170), duration=1)
+    background.write_videofile(str(background_path), fps=12, codec="libx264",
+                               preset="ultrafast", logger=None)
+    background.close()
+
+    metadata = render_reel(
+        ayahs=["بِسْمِ اللَّهِ"], output_path=output_path,
+        background_path=background_path, aspect_ratio="9:16",
+        output_size=(240, 426), fps=24, quality="fast", encoder="cpu",
+        duration_per_ayah=.5, transition="cut",
+    )
+    rendered = VideoFileClip(str(output_path))
+    try:
+        assert metadata["duration"] == pytest.approx(.5, abs=.08)
+        assert rendered.duration == pytest.approx(.5, abs=.08)
+        assert rendered.get_frame(.2).mean() > 20
+    finally:
+        rendered.close()
 
 
 def test_independent_label_templates_render_separately_from_the_verse_panel():
@@ -759,7 +784,7 @@ def test_final_caption_can_outlast_selected_audio_without_changing_audio_timing(
         assert "timing_warning" not in scene
 
 
-def test_exact_word_timestamps_keep_caption_start_anchored_and_reject_overlap():
+def test_manual_durations_reflow_word_timed_scenes_without_changing_automatic_boundaries():
     from app.scenes import build_scene_plan
     ayah = "أَوَّلٌ ثَانٍ ثَالِثٌ رَابِعٌ"
     rows = [
@@ -770,11 +795,29 @@ def test_exact_word_timestamps_keep_caption_start_anchored_and_reject_overlap():
               {"start":1.2,"end":1.5},{"start":1.75,"end":2.05}]]
     plan = build_scene_plan([ayah], durations=[3], word_timings=words, scene_overrides=rows)
     assert [scene["duration"] for scene in plan] == pytest.approx([.8, .7])
-    assert [scene["start_time"] for scene in plan] == pytest.approx([.1, 1.2])
-    assert [scene["end_time"] for scene in plan] == pytest.approx([.9, 1.9])
+    assert [scene["start_time"] for scene in plan] == pytest.approx([0, .8])
+    assert [scene["end_time"] for scene in plan] == pytest.approx([.8, 1.5])
+    assert [scene["automatic_start_time"] for scene in plan] == pytest.approx([.1, 1.2])
     rows[0]["manual_duration"] = 1.3
-    with pytest.raises(ValueError, match="overlaps the previous caption"):
-        build_scene_plan([ayah], durations=[3], word_timings=words, scene_overrides=rows)
+    changed = build_scene_plan([ayah], durations=[3], word_timings=words, scene_overrides=rows)
+    assert [scene["duration"] for scene in changed] == pytest.approx([1.3, .7])
+    assert [scene["start_time"] for scene in changed] == pytest.approx([0, 1.3])
+    assert [scene["end_time"] for scene in changed] == pytest.approx([1.3, 2.0])
+    assert changed[1]["timing_warning"] == "Manual scene timing shifts 0.100s after its voice timing."
+
+
+def test_manual_duration_on_earlier_ayah_moves_following_scene_global_start():
+    from app.scenes import build_scene_plan
+    plan = build_scene_plan(
+        ["أَوَّلٌ ثَانٍ", "ثَالِثٌ رَابِعٌ"], durations=[10, 7],
+        scene_overrides=[
+            {"scene_id":"first", "ayah_number":1, "text":"أَوَّلٌ ثَانٍ", "manual_duration":11},
+            {"scene_id":"second", "ayah_number":2, "text":"ثَالِثٌ رَابِعٌ"},
+        ],
+    )
+    assert [scene["duration"] for scene in plan] == pytest.approx([11, 7])
+    assert [scene["start_time"] for scene in plan] == pytest.approx([0, 11])
+    assert [scene["end_time"] for scene in plan] == pytest.approx([11, 18])
 
 
 def test_untimed_word_count_preview_has_no_guessed_times_and_export_keeps_whole_ayah():
@@ -1094,7 +1137,7 @@ def test_exported_video_uses_each_edited_scene_caption_at_word_timed_boundaries(
         video.close()
 
 
-def test_export_applies_manual_caption_durations_without_shifting_recitation(tmp_path, monkeypatch):
+def test_export_uses_playhead_calculated_scene_boundaries_and_keeps_audio_timeline(tmp_path, monkeypatch):
     from moviepy import VideoFileClip
     from PIL import Image
     import subprocess
@@ -1110,7 +1153,7 @@ def test_export_applies_manual_caption_durations_without_shifting_recitation(tmp
     monkeypatch.setattr(engine, "render_caption_image", caption_for_scene)
     audio_path = tmp_path / "manual-timed-recitation.wav"
     sample_rate = 44100
-    source_times = np.arange(sample_rate * 3, dtype=np.float64) / sample_rate
+    source_times = np.arange(sample_rate * 17, dtype=np.float64) / sample_rate
     source_tone = (0.4 * np.sin(2 * np.pi * 220 * source_times) * 32767).astype("int16")
     with wave.open(str(audio_path), "wb") as audio_file:
         audio_file.setnchannels(1)
@@ -1118,31 +1161,33 @@ def test_export_applies_manual_caption_durations_without_shifting_recitation(tmp
         audio_file.setframerate(sample_rate)
         audio_file.writeframes(source_tone.tobytes())
     output_path = tmp_path / "manual-caption-duration.mp4"
+    playhead_time = 17.0
+    second_scene_start = 10.0
+    second_scene_duration = round(playhead_time - second_scene_start, 3)
+    assert second_scene_duration == 7.0
     metadata = render_reel(
         ayahs=[ayah], output_path=output_path, aspect_ratio="9:16",
         output_size=(240, 426), fps=24, quality="fast", encoder="cpu",
-        audio_path=audio_path, audio_start=0, audio_end=3, ayah_durations=[3],
-        word_timings=[[{"start":.1,"end":.35},{"start":.55,"end":.9},
-                       {"start":1.2,"end":1.5},{"start":1.75,"end":2.05}]],
+        audio_path=audio_path, audio_start=0, audio_end=17, ayah_durations=[17],
+        word_timings=[[{"start":0,"end":.5},{"start":5,"end":5.5},
+                       {"start":10,"end":10.5},{"start":15,"end":15.5}]],
         ayah_start=1,
         scene_overrides=[
-            {"scene_id":"first", "ayah_number":1, "text":chunks[0], "manual_duration":.8},
-            {"scene_id":"second", "ayah_number":1, "text":chunks[1], "manual_duration":.6},
+            {"scene_id":"first", "ayah_number":1, "text":chunks[0], "manual_duration":second_scene_start},
+            {"scene_id":"second", "ayah_number":1, "text":chunks[1], "manual_duration":second_scene_duration},
         ],
         show_surah_title=False, show_ayah_number=False, transition="cut",
     )
-    assert metadata["duration"] == pytest.approx(3, abs=.08)
+    assert metadata["duration"] == pytest.approx(playhead_time, abs=.08)
     video = VideoFileClip(str(output_path))
     try:
-        red = video.get_frame(.3)[213, 120].astype("int16")
-        gap = video.get_frame(1.0)[213, 120].astype("int16")
-        green = video.get_frame(1.5)[213, 120].astype("int16")
-        after_manual_window = video.get_frame(1.85)[213, 120].astype("int16")
+        red = video.get_frame(9.5)[213, 120].astype("int16")
+        second_scene = video.get_frame(10.5)[213, 120].astype("int16")
+        final_scene_frame = video.get_frame(16.9)[213, 120].astype("int16")
         assert red[0] > red[1] * 2
-        assert gap[0] < 180 and gap[1] < 180
-        assert green[1] > green[0] * 2
-        assert after_manual_window[1] < 180
-        assert video.audio.duration == pytest.approx(3, abs=.08)
+        assert second_scene[1] > second_scene[0] * 2
+        assert final_scene_frame[1] > final_scene_frame[0] * 2
+        assert video.audio.duration == pytest.approx(playhead_time, abs=.08)
         extracted_audio = tmp_path / "exported-audio.wav"
         subprocess.run([
             "ffmpeg", "-y", "-v", "error", "-i", str(output_path),

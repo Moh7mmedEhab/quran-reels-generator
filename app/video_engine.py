@@ -1139,7 +1139,18 @@ def render_reel(*, ayahs, output_path, aspect_ratio="9:16", audio_path=None,
                         still = _call(still, "set_position", "with_position", "center")
                     background_sources.append(still)
                     layers.append(still)
-            video_scene = CompositeVideoClip(layers, size=(width, height), use_bgclip=True).with_duration(video_duration)
+            # MoviePy treats the first clip as the background when use_bgclip
+            # is enabled, then computes the composite duration from the
+            # remaining overlay clips. With a single video layer that list is
+            # empty, and its max(ends) call raises ``max() iterable argument
+            # is empty``. The fitted video already has the requested duration
+            # in this case, so keep it as the scene directly.
+            if len(layers) == 1:
+                video_scene = _call(layers[0], "set_duration", "with_duration", video_duration)
+            else:
+                video_scene = CompositeVideoClip(
+                    layers, size=(width, height), use_bgclip=True,
+                ).with_duration(video_duration)
             background_sources.append(video_scene)
             dim_layer = ImageClip(np.asarray(Image.new("RGBA", (width, height), (0, 0, 0, 41)))).with_duration(video_duration)
             background_sources.append(dim_layer)

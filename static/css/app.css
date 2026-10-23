@@ -83,6 +83,11 @@ button:disabled { cursor: wait; opacity: .72; }
 .scene-duration-reset:hover { border-color:#94a3b8; background:#f8fafc; }
 .scene-duration-apply:focus-visible,.scene-duration-reset:focus-visible,.scene-duration-step:focus-visible { outline:2px solid #006aff; outline-offset:1px; }
 .scene-duration-apply:disabled,.scene-duration-reset:disabled,.scene-duration-step:disabled { opacity:.5; cursor:not-allowed; }
+.scene-duration-playhead { grid-column:1 / -1; display:flex; min-height:2rem; align-items:center; justify-content:center; gap:.35rem; padding:.3rem .5rem; border:1px solid #a7c9ff; border-radius:.55rem; background:#eaf3ff; color:#0757b5; font-size:.62rem; font-weight:750; cursor:pointer; }
+.scene-duration-playhead:hover { border-color:#006aff; background:#dcecff; }
+.scene-duration-playhead:focus-visible { outline:2px solid #006aff; outline-offset:1px; }
+.scene-duration-playhead:disabled { opacity:.5; cursor:not-allowed; }
+.scene-duration-playhead .material-symbols-outlined { font-size:.9rem; }
 .scene-duration-adjustments { grid-column:1 / -1; display:flex; flex-wrap:wrap; gap:.25rem; min-width:0; }
 .scene-duration-status { grid-column:1 / -1; color:#64748b; font-size:.55rem; line-height:.85rem; overflow-wrap:anywhere; }
 .scene-duration-status.scene-duration-warning { color:#a16207; }

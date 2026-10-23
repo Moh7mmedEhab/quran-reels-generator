@@ -9,9 +9,10 @@ import unicodedata
 from pathlib import Path
 from math import isfinite
 
-from PIL import ImageFont
+from PIL import Image, ImageDraw
 
-from .text_renderer import DEFAULT_FONT, wrap_arabic_lines
+from .text_renderer import (DEFAULT_FONT, load_arabic_font,
+                            measure_arabic_line_width, wrap_arabic_lines)
 from .video_engine import SIZES
 
 PREFERRED_BREAKS = frozenset("،؛.?!ۚۖۗۘۙۛۜ۞۩۝")
@@ -201,6 +202,143 @@ def _split_scene_text(text, *, font, max_width, max_lines, words_per_scene):
         lines = wrap_arabic_lines(word_group, font, max_width)
         chunks.extend(_split_wrapped_lines(lines, max_lines))
     return chunks
+
+
+def _arabic_letter_word_count(text):
+    """Count whitespace-delimited tokens that contain an Arabic-script letter."""
+    count = 0
+    for token in str(text).split():
+        if any(unicodedata.category(character).startswith("L")
+               and "ARABIC" in unicodedata.name(character, "") for character in token):
+            count += 1
+    return count
+
+
+def split_tall_ayah_into_lines(text, *, font, max_width, stroke_width=0,
+                               minimum_arabic_words=3):
+    """Split an ayah into measured one-line chunks while balancing its final group.
+
+    Width checks use the same shaped Arabic, font, and stroke-aware Pillow
+    metrics as the caption renderer. If no partition can keep every chunk at
+    the requested Arabic-word minimum, the greedy one-line layout is retained.
+    """
+    source = str(text or "").strip()
+    if not source:
+        raise ValueError("Ayah text cannot be empty.")
+    try:
+        max_width = int(max_width)
+        stroke_width = max(0, int(stroke_width))
+        minimum_arabic_words = int(minimum_arabic_words)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Arabic layout measurements must be whole numbers.") from exc
+    if max_width < 1 or minimum_arabic_words < 1:
+        raise ValueError("Arabic line width and minimum word count must be positive.")
+
+    matches = list(re.finditer(r"\S+", source))
+    if not matches:
+        raise ValueError("Ayah text cannot be empty.")
+    tokens = [match.group() for match in matches]
+    full_width = measure_arabic_line_width(source, font, stroke_width)
+    if full_width <= max_width:
+        return {"text": source, "chunks": [source], "is_tall": False,
+                "needs_split": False, "minimum_met": True}
+
+    token_weights = [int(bool(_arabic_letter_word_count(token))) for token in tokens]
+    prefix = [0]
+    for weight in token_weights:
+        prefix.append(prefix[-1] + weight)
+    arabic_words = prefix[-1]
+    if arabic_words < minimum_arabic_words:
+        return {"text": source, "chunks": [source], "is_tall": True,
+                "needs_split": False, "minimum_met": True,
+                "reason": "Ayah has fewer than the minimum Arabic words."}
+
+    # Find a minimum-scene partition that keeps every line readable and has
+    # at least three Arabic words. Among equally short layouts, prefer balanced
+    # word counts and then Quranic pause-mark boundaries.
+    best = [None] * (len(tokens) + 1)
+    best[0] = (0, 0, 0, ())
+    draw = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+    for start in range(len(tokens)):
+        previous = best[start]
+        if previous is None:
+            continue
+        for end in range(start + 1, len(tokens) + 1):
+            candidate = source[matches[start].start():matches[end - 1].end()]
+            if measure_arabic_line_width(candidate, font, stroke_width, draw=draw) > max_width:
+                break
+            arabic_count = prefix[end] - prefix[start]
+            if arabic_count < minimum_arabic_words:
+                continue
+            pause_penalty = 0 if tokens[end - 1].rstrip()[-1:] in PREFERRED_BREAKS else 1
+            score = (previous[0] + 1, previous[1] + arabic_count ** 2,
+                     previous[2] + pause_penalty, (*previous[3], end))
+            if best[end] is None or score < best[end]:
+                best[end] = score
+
+    minimum_met = best[-1] is not None
+    if minimum_met:
+        boundaries = (0, *best[-1][3], len(tokens))
+    else:
+        # Readability wins when unusually long words make the 3-word minimum
+        # impossible. The shared renderer's wrapper still keeps whole words.
+        wrapped = wrap_arabic_lines(source, font, max_width, stroke_width)
+        counts = [len(line.split()) for line in wrapped]
+        cursor = 0
+        boundaries_list = [0]
+        for count in counts:
+            cursor += count
+            boundaries_list.append(cursor)
+        if cursor != len(tokens):
+            raise ValueError("Arabic wrapping did not preserve the ayah's complete word sequence.")
+        boundaries = tuple(boundaries_list)
+
+    chunks = [source[matches[start].start():matches[end - 1].end()]
+              for start, end in zip(boundaries, boundaries[1:]) if end > start]
+    short_chunks = any(_arabic_letter_word_count(chunk) < minimum_arabic_words for chunk in chunks)
+    return {"text": source, "chunks": chunks, "is_tall": True,
+            "needs_split": len(chunks) > 1, "minimum_met": minimum_met and not short_chunks}
+
+
+def plan_auto_split_scenes(ayahs, *, ayah_start=1, font, max_width, stroke_width=0,
+                           minimum_arabic_words=3):
+    """Create standard scene override rows for only ayahs that visually wrap."""
+    if not isinstance(ayahs, list) or not ayahs:
+        raise ValueError("At least one ayah is required to auto-split scenes.")
+    try:
+        ayah_start = int(ayah_start)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("The starting ayah must be a whole number.") from exc
+
+    rows = []
+    split_ayahs = []
+    tall_ayahs = []
+    short_fallback_ayahs = []
+    for index, ayah in enumerate(ayahs):
+        ayah_number = ayah_start + index
+        result = split_tall_ayah_into_lines(
+            ayah, font=font, max_width=max_width, stroke_width=stroke_width,
+            minimum_arabic_words=minimum_arabic_words,
+        )
+        if result["is_tall"]:
+            tall_ayahs.append(ayah_number)
+        if result["needs_split"]:
+            split_ayahs.append(ayah_number)
+        if result["needs_split"] and not result["minimum_met"]:
+            short_fallback_ayahs.append(ayah_number)
+        word_offset = 0
+        for chunk in result["chunks"]:
+            count = len(chunk.split())
+            rows.append({
+                "scene_id": f"ayah-{ayah_number}-word-{word_offset}",
+                "ayah_number": ayah_number,
+                "text": chunk,
+                "locked": False,
+            })
+            word_offset += count
+    return {"scenes": rows, "tall_ayahs": tall_ayahs,
+            "split_ayahs": split_ayahs,
+            "short_fallback_ayahs": short_fallback_ayahs}
 
 
 def _effective_line_limit(*, requested, font_size, max_height, show_surah_title, padding_y):
@@ -722,7 +860,7 @@ def build_scene_plan(ayahs, *, ayah_start=1, durations=None, word_timings=None,
     chosen_font = Path(font_path) if font_path else DEFAULT_FONT
     if not chosen_font.exists():
         raise FileNotFoundError(f"Arabic font not found: {chosen_font}")
-    font = ImageFont.truetype(str(chosen_font), font_size)
+    font = load_arabic_font(chosen_font, font_size)
     line_limit = _effective_line_limit(
         requested=max_lines, font_size=font_size, max_height=max_height,
         show_surah_title=show_surah_title, padding_y=int(padding_y),
@@ -929,31 +1067,59 @@ def build_scene_plan(ayahs, *, ayah_start=1, durations=None, word_timings=None,
     by_ayah = {}
     for scene in scenes:
         by_ayah.setdefault(int(scene["ayah_number"]), []).append(scene)
-    for group in by_ayah.values():
-        exact_word_times = all(scene.get("timing_mode") == "word_timestamp" for scene in group)
-        cursor = group[0].get("automatic_start_time")
-        for scene in group:
+    manual_timeline = any(scene.get("manual_duration") is not None for scene in scenes)
+    if manual_timeline:
+        cursor = 0.0
+        for scene in scenes:
             automatic = scene.get("automatic_duration")
             manual = scene.get("manual_duration")
             duration = float(manual) if manual is not None else automatic
             scene["duration"] = duration
-            if duration is None or scene.get("automatic_start_time") is None:
+            if duration is None:
                 scene["start_time"] = scene["end_time"] = None
                 continue
-            if exact_word_times:
-                # Keep each phrase anchored to its source word timestamp. A
-                # manual extension can overlap the next phrase; that conflict
-                # is rejected below instead of shifting the recitation.
-                start = float(scene["automatic_start_time"])
-            elif len(group) > 1:
-                start = float(cursor if cursor is not None else 0.0)
-            else:
-                start = float(scene["automatic_start_time"] or 0.0)
+            start = cursor
             end = start + float(duration)
             scene["start_time"] = round(start, 3)
             scene["end_time"] = round(end, 3)
-            if not exact_word_times:
-                cursor = end
+            cursor = end
+            automatic_start = scene.get("automatic_start_time")
+            automatic_end = scene.get("automatic_end_time")
+            if automatic_start is not None and automatic_end is not None:
+                start_shift = start - float(automatic_start)
+                end_shift = end - float(automatic_end)
+                if abs(start_shift) >= .01 or abs(end_shift) >= .01:
+                    if abs(start_shift) >= .01:
+                        relation = "after" if start_shift > 0 else "before"
+                        scene["timing_warning"] = (
+                            f"Manual scene timing shifts {abs(start_shift):.3f}s {relation} its voice timing."
+                        )
+                    else:
+                        scene["timing_warning"] = (
+                            f"Manual scene duration differs from its voice timing by {abs(end_shift):.3f}s."
+                        )
+    else:
+        for group in by_ayah.values():
+            exact_word_times = all(scene.get("timing_mode") == "word_timestamp" for scene in group)
+            cursor = group[0].get("automatic_start_time")
+            for scene in group:
+                automatic = scene.get("automatic_duration")
+                duration = automatic
+                scene["duration"] = duration
+                if duration is None or scene.get("automatic_start_time") is None:
+                    scene["start_time"] = scene["end_time"] = None
+                    continue
+                if exact_word_times:
+                    start = float(scene["automatic_start_time"])
+                elif len(group) > 1:
+                    start = float(cursor if cursor is not None else 0.0)
+                else:
+                    start = float(scene["automatic_start_time"] or 0.0)
+                end = start + float(duration)
+                scene["start_time"] = round(start, 3)
+                scene["end_time"] = round(end, 3)
+                if not exact_word_times:
+                    cursor = end
 
     total_duration = sum(float(item) for item in durations) if durations is not None else None
     previous = None
@@ -976,10 +1142,14 @@ def build_scene_plan(ayahs, *, ayah_start=1, durations=None, word_timings=None,
         if total_duration is not None and float(end) > total_duration + .002:
             overrun = round(float(end) - total_duration, 3)
             scene["audio_overrun_seconds"] = overrun
-            scene["timing_warning"] = (
+            overrun_warning = (
                 f"Caption remains visible {overrun:.3f}s after the selected recitation ends; "
                 "Quran audio remains cropped to the selected range."
             )
+            if scene.get("timing_warning"):
+                scene["timing_warning"] += f" {overrun_warning}"
+            else:
+                scene["timing_warning"] = overrun_warning
         if previous is not None and float(start) < float(previous["end_time"]) - .002:
             raise ValueError(
                 f"Timing for ayah {scene['ayah_number']} overlaps the previous caption. Shorten or reset one of the scene durations."

@@ -133,6 +133,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
                   </div>
 <div class="truncate text-left">
 <div class="text-sm font-semibold text-gray-900 truncate" id="selected-reciter-name">Mishary Rashid Alafasy</div>
+<div class="text-[11px] text-gray-500 truncate" id="selected-reciter-name-ar" lang="ar" dir="rtl">مشاري بن راشد العفاسي</div>
 <div class="text-xs text-gray-500 truncate flex items-center gap-1.5 mt-0.5">
 <span class="px-1.5 py-0.2 rounded bg-gray-100 text-gray-600 text-[11px] font-medium" id="selected-reciter-style">Murattal</span>
 <span id="selected-reciter-riwayah">Hafs 'an Asim</span>
@@ -155,7 +156,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
 <label class="mt-2 flex flex-col gap-1 text-[11px] font-semibold text-gray-600" for="reciter-style-select">Available recording and reading
 <select id="reciter-style-select" class="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-normal text-gray-800"></select>
 </label>
-<p id="reciter-source-note" class="mt-1 text-[10px] leading-relaxed text-gray-500"></p>
+<p id="reciter-source-note" class="mt-1 whitespace-pre-line text-[10px] leading-relaxed text-gray-500"></p>
 </div>
 </div>
 <!-- 2. Audio & Scripture Settings -->
@@ -206,6 +207,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
 </div>
 </div>
 <p id="ayah-range-validation" class="hidden text-[10px] font-medium text-red-600" role="status" aria-live="polite"></p>
+<p id="recording-range-note" class="hidden text-[10px] leading-relaxed text-amber-700" role="status" aria-live="polite"></p>
 <!-- Ayah Range Stats Pill -->
 <div class="flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-brand-50/80 border border-brand-100 text-brand-900">
 <div class="flex items-center gap-1.5 text-xs font-medium">
@@ -223,6 +225,10 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
 <div class="scene-settings">
 <label class="scene-setting-field" for="words-per-scene"><span>Default words per scene</span><span class="scene-setting-input-row"><input class="scene-setting-input" id="words-per-scene" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" value="8" aria-describedby="words-per-scene-help words-per-scene-status"><button class="scene-setting-apply" id="apply-words-per-scene" type="button">Apply</button></span><small id="words-per-scene-help">Regroup ayahs into scenes with this many whole words.</small><small id="words-per-scene-status" role="status" aria-live="polite">Using 8 words per scene.</small></label>
 <label class="scene-setting-field" for="wrap-width"><span>Long ayah wrapping</span><select class="scene-setting-input" id="wrap-width"><option value="65">Compact · 65%</option><option value="75">Narrow · 75%</option><option value="85" selected>Balanced · 85%</option><option value="95">Wide · 95%</option></select></label>
+</div>
+<div class="mt-2 flex flex-wrap items-center gap-2">
+<button id="auto-split-scenes" type="button" class="rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-[11px] font-semibold text-brand-800 hover:bg-brand-100 disabled:cursor-wait disabled:opacity-60" title="Automatically split long ayahs into single-line scenes, keeping at least 3 words per scene whenever possible.">Auto-Split Tall Ayahs</button>
+<span id="auto-split-status" class="text-[10px] text-gray-500" role="status" aria-live="polite">Splits long ayahs into editable, one-line scenes.</span>
 </div>
 <div class="scene-timeline-list" id="scene-timeline" aria-live="polite"></div>
 <p class="mt-2 text-[10px] text-gray-500" id="scene-timing-note">Scenes split at the selected word count. Audio boundaries use validated recitation word timestamps; without them, the full ayah stays visible.</p>
@@ -815,6 +821,9 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
 
 </div>
 </footer>
+<script src="{{ url_for('static', filename='js/scene_timing.js', v='resume-20261023-2') }}"></script>
+<script src="{{ url_for('static', filename='js/reciter_coverage.js') }}"></script>
+<script src="{{ url_for('static', filename='js/auto_split_scenes.js') }}"></script>
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
@@ -847,6 +856,10 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
   let previewAudioStart = null;
   let previewAudioEnd = null;
   let previewAudioDuration = null;
+  let previewAudioSelectionKey = '';
+  let previewAudioReciter = '';
+  const playbackStartedPlayers = new WeakSet();
+  const lastSceneDurationCalculation = new Map();
   let previewIndex = 0;
   const englishTranslationByAyah = new Map();
   let translationLoadRequest = 0;
@@ -875,6 +888,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
   let loadedVerseSelection = '';
   let scenePlanRequest = 0;
   let scenePlanManual = false;
+  let autoSplitBusy = false;
   let defaultScenesByAyah = {};
   let sceneEditsByAyah = {};
   let previewSceneSourceByAyah = {};
@@ -1782,12 +1796,34 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     const player = $('voice-preview-audio');
     player.ontimeupdate = null;
     player.onpause = null;
+    player.onended = null;
     player.pause();
+    playbackStartedPlayers.delete(player);
+    if (Number.isFinite(player.duration) && player.duration > 0) player.currentTime = 0;
     setPlaybackIcon(false);
+    updateCalculatePlayheadButtons();
   }
   const reciterById = new Map();
   const recitersByGroupId = new Map();
   let selectedReciterGroupId = '';
+
+  function updateAyahRangeCapability(reciter) {
+    const chapterOnly = reciter?.supports_ayah_selection === false;
+    $('recording-range-note').classList.toggle('hidden', !chapterOnly);
+    $('recording-range-note').textContent = chapterOnly
+      ? 'This source has complete Surah files but no verified ayah timings. The whole Surah is selected; caption scene timing is approximate.'
+      : '';
+    [startInput, endInput, $('start-inc'), $('start-dec'), $('end-inc'), $('end-dec')]
+      .forEach(control => { control.disabled = chapterOnly; });
+    if (chapterOnly) {
+      const count = Number(surahSelect.selectedOptions[0]?.dataset.ayahCount || 1);
+      startInput.value = '1';
+      endInput.value = String(count);
+      $('ayah-range-validation').textContent = '';
+      $('ayah-range-validation').classList.add('hidden');
+      updateRangeSummary();
+    }
+  }
 
   function updateReciterSurahAvailability(reciter) {
     const available = Array.isArray(reciter.available_surah_numbers)
@@ -1810,15 +1846,24 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     selectedReciterGroupId = reciter.group_id || reciter.id;
     const recordings = recitersByGroupId.get(selectedReciterGroupId) || [reciter];
     $('selected-reciter-name').textContent = reciter.name;
+    $('selected-reciter-name-ar').textContent = reciter.name_ar || '';
     $('selected-reciter-style').textContent = reciter.style || 'Recording';
     $('selected-reciter-riwayah').textContent = reciter.riwayah || reciter.recording_name || '';
     const timingSource = reciter.timing_source || reciter.source || 'MP3Quran.net';
-    $('reciter-source-note').textContent = `Audio: ${reciter.source || 'MP3Quran.net'} · ${reciter.available_surahs || 114} surahs · timing: ${timingSource}`;
+    const selectedSourceOverride = reciter.audio_provider_overrides_by_surah?.[String(surahSelect.value)];
+    const selectedSourceNote = selectedSourceOverride
+      ? ` Audio for this Surah comes from ${selectedSourceOverride}.` : '';
+    const coverageSummary = window.QuranReciterCoverage.formatSurahCoverage(reciter.available_surah_numbers);
+    const sourceSummary = reciter.supports_ayah_selection === false
+      ? `Audio: ${reciter.source || 'MP3Quran.net'} · ${coverageSummary} · complete Surah only · no verified ayah timings; caption timing is approximate.${selectedSourceNote}`
+      : `Audio: ${reciter.source || 'MP3Quran.net'} · ${coverageSummary} · ayah range selection · timing: ${timingSource}${selectedSourceNote}`;
+    $('reciter-source-note').textContent = `${sourceSummary}\nReuse: ${reciter.usage_rights || 'Check the source terms before redistribution.'}`;
+    updateAyahRangeCapability(reciter);
     reciterStyleSelect.replaceChildren();
     recordings.forEach(recording => {
       const option = document.createElement('option');
       option.value = recording.id;
-      option.textContent = [recording.style, recording.riwayah].filter(Boolean).join(' · ') || recording.recording_name;
+      option.textContent = recording.recording_name || [recording.style, recording.riwayah].filter(Boolean).join(' · ');
       option.title = recording.recording_name || option.textContent;
       reciterStyleSelect.append(option);
     });
@@ -1832,6 +1877,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
 
   function chooseReciterRecording(reciter, refreshAudio = true) {
     if (!reciter) return;
+    const previousSelection = verseSelectionKey();
     stopRecitationPreview();
     selectedReciter = reciter.id;
     previewAyahTimingRows = []; previewTimings = [];
@@ -1841,14 +1887,17 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     refreshSceneLabels(); renderSceneTimeline();
     hideRenderedVideo();
     if (refreshAudio) {
-      if (surahChanged) scheduleVerseLoad();
+      if (surahChanged || previousSelection !== verseSelectionKey()) scheduleVerseLoad();
+      else if (reciter.supports_ayah_selection === false) updateCaptionPreview().catch(showError);
       else loadRecitationTimings({quiet:true}).then(() => updateCaptionPreview()).catch(showError);
     }
   }
 
   function hideRenderedVideo() {
     const video = $('rendered-video');
+    playbackStartedPlayers.delete(video);
     video.pause(); video.removeAttribute('src'); video.load(); video.classList.add('hidden');
+    updateCalculatePlayheadButtons();
   }
 
   function verseSelectionKey() {
@@ -2511,7 +2560,8 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     return JSON.stringify({
       ratio, size:currentOutputSize(), wrapWidth:Number(wrapWidth),
       maxLines:Number($('max-lines').value), wordsPerScene:Number(appliedWordsPerScene),
-      font:$('arabic-font').value, showTitle:$('show-surah-title').checked,
+      font:$('arabic-font').value, captionStyle:$('caption-style').value,
+      showTitle:$('show-surah-title').checked,
       showNumber:$('show-ayah-number').checked,
     });
   }
@@ -2631,6 +2681,120 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
   }
 
   $('reset-scenes').addEventListener('click', () => resetSelectedSceneRange().catch(showError));
+
+  function sameAyahSceneTexts(left, right) {
+    return window.QuranAutoSplit.textPlan(left || []) === window.QuranAutoSplit.textPlan(right || []);
+  }
+
+  async function autoSplitTallAyahs() {
+    const button = $('auto-split-scenes');
+    const status = $('auto-split-status');
+    if (autoSplitBusy || guardPendingSceneTextDraft() || guardPendingSceneDurationDraft()) return;
+    autoSplitBusy = true;
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+    button.textContent = 'Measuring ayah layout…';
+    status.textContent = 'Measuring the selected Arabic text with the active font and output layout…';
+    try {
+      const selectionKey = verseSelectionKey();
+      await updateScenePlan();
+      if (selectionKey !== verseSelectionKey()) return;
+      saveVisibleSceneEdits();
+      const runSelectionKey = verseSelectionKey();
+      const runLayoutSignature = sceneLayoutSignature();
+      const runSourceText = ayahText.value;
+      const runSceneArrangement = JSON.stringify(previewScenes.map(cleanSceneRow));
+      const requestPayload = {
+        ...scenePayload(),
+        caption_style:$('caption-style').value,
+        caption_color:captionColor,
+        text_bg_enabled:$('text-bg-enabled').checked,
+        text_bg_color:$('text-bg-color').value,
+        text_bg_opacity:Number($('text-bg-opacity').value),
+        glow_type:$('glow-type').value,
+        glow_radius:Number($('glow-radius').value),
+      };
+      const response = await fetch('/api/scenes/auto-split', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(requestPayload),
+      });
+      let result;
+      try { result = await response.json(); }
+      catch (_) { throw new Error('The auto-split planner returned an invalid response.'); }
+      if (!response.ok) throw new Error(result.error || 'Could not measure or split the selected ayahs.');
+      if (runSelectionKey !== verseSelectionKey() || runLayoutSignature !== sceneLayoutSignature()
+          || runSourceText !== ayahText.value
+          || runSceneArrangement !== JSON.stringify(previewScenes.map(cleanSceneRow))
+          || hasPendingSceneTextDraft() || hasPendingSceneDurationDraft()) {
+        status.textContent = 'The text, layout, or scene edits changed while measuring. Click Auto-Split again to use the current settings.';
+        return;
+      }
+      if (!result.split_ayahs?.length) {
+        if (result.tall_ayahs?.length) {
+          status.textContent = 'The tall ayah has fewer than 3 Arabic words or cannot be divided into readable whole-word chunks at this layout; it was left intact.';
+        } else {
+          status.textContent = 'No ayahs need splitting at the current font, size, and output width.';
+        }
+        return;
+      }
+
+      const proposedGroups = new Map();
+      result.scenes.forEach(scene => {
+        const number = Number(scene.ayah_number);
+        if (!proposedGroups.has(number)) proposedGroups.set(number, []);
+        proposedGroups.get(number).push(scene);
+      });
+      const replacedManualAyahs = result.split_ayahs.filter(number => {
+        const key = sceneAyahKey(surahSelect.value, number);
+        const saved = sceneEditsByAyah[key];
+        return saved?.scenes && !sameAyahSceneTexts(saved.scenes, proposedGroups.get(Number(number)) || []);
+      });
+      if (replacedManualAyahs.length) {
+        const listing = replacedManualAyahs.map(number => `Ayah ${number}`).join(', ');
+        const accepted = window.confirm(
+          `Auto-Split will replace your existing scene arrangement for ${listing}. Exact matching chunks will keep their manual durations and locks. Continue?`
+        );
+        if (!accepted) {
+          status.textContent = 'Kept your existing scene edits.';
+          return;
+        }
+      }
+
+      const replacement = window.QuranAutoSplit.replaceSplitAyahs(
+        previewScenes, result.scenes, result.split_ayahs,
+      );
+      if (!replacement.changed) {
+        status.textContent = 'These ayahs are already split to fit the current layout; no duplicate scenes were added.';
+        return;
+      }
+      scenePlanRequest++;
+      previewScenes = replacement.scenes;
+      scenePlanManual = true;
+      previewIndex = Math.min(previewIndex, Math.max(0, previewScenes.length - 1));
+      refreshAppliedSceneTimings();
+      hideRenderedVideo();
+      renderSceneTimeline();
+      saveVisibleSceneEdits();
+      await updateCaptionPreview();
+      scheduleProjectAutosave();
+      const splitCount = result.split_ayahs.length;
+      const sceneCount = result.scenes.filter(scene => result.split_ayahs.includes(Number(scene.ayah_number))).length;
+      let message = `Split ${splitCount} tall ayah${splitCount === 1 ? '' : 's'} into ${sceneCount} editable scenes.`;
+      if (replacement.preservedSettings) message += ` Preserved ${replacement.preservedSettings} matching manual setting${replacement.preservedSettings === 1 ? '' : 's'}.`;
+      if (result.short_fallback_ayahs?.length) message += ' Some lines use fewer than 3 words because no readable 3-word division fits this layout.';
+      status.textContent = message;
+    } catch (error) {
+      status.textContent = error.message || 'Auto-Split could not complete.';
+      showError(error);
+    } finally {
+      autoSplitBusy = false;
+      button.disabled = false;
+      button.removeAttribute('aria-busy');
+      button.textContent = 'Auto-Split Tall Ayahs';
+    }
+  }
+
+  $('auto-split-scenes').addEventListener('click', autoSplitTallAyahs);
 
   function applyWordsPerScene() {
     if (guardPendingSceneTextDraft() || guardPendingSceneDurationDraft()) return false;
@@ -2937,6 +3101,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
 
   function applySceneTimingModel(scenes, totalDuration = null) {
     const groups = new Map();
+    const manualTimeline = scenes.some(scene => scene.manual_duration != null);
     scenes.forEach(scene => {
       const ayah = Number(scene.ayah_number);
       if (!groups.has(ayah)) groups.set(ayah, []);
@@ -2947,6 +3112,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
         : automatic != null && Number.isFinite(Number(automatic)) ? Number(automatic) : null;
     });
     for (const group of groups.values()) {
+      if (manualTimeline) continue;
       const wordAnchored = group.every(scene => scene.timing_mode === 'word_timestamp');
       let cursor = group[0].automatic_start_time ?? group[0].start_time;
       for (const scene of group) {
@@ -2976,6 +3142,25 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
         group.at(-1).timing_warning = `This ayah's captions extend ${sceneSeconds(groupEnd - audioEnd)} beyond its measured audio interval.`;
       }
     }
+    if (manualTimeline) {
+      const positions = window.QuranSceneTiming.reflowManualTimeline(scenes);
+      for (const [index, positioned] of positions.entries()) {
+        const scene = scenes[index];
+        scene.start_time = positioned.start_time;
+        scene.end_time = positioned.end_time;
+        if (scene.start_time == null || scene.end_time == null) continue;
+        const automaticStart = scene.automatic_start_time == null ? NaN : Number(scene.automatic_start_time);
+        const automaticEnd = scene.automatic_end_time == null ? NaN : Number(scene.automatic_end_time);
+        if (Number.isFinite(automaticStart) && Number.isFinite(automaticEnd)
+            && (Math.abs(scene.start_time - automaticStart) >= .01
+              || Math.abs(scene.end_time - automaticEnd) >= .01)) {
+          const shift = scene.start_time - automaticStart;
+          scene.timing_warning = Math.abs(shift) >= .01
+            ? `Manual scene timing shifts ${sceneSeconds(Math.abs(shift))} ${shift > 0 ? 'after' : 'before'} its voice timing.`
+            : `Manual scene duration differs from its voice timing by ${sceneSeconds(Math.abs(scene.end_time - automaticEnd))}.`;
+        }
+      }
+    }
     let previous = null;
     for (const scene of scenes) {
       if (scene.start_time == null || scene.end_time == null) continue;
@@ -2983,7 +3168,8 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
         scene.timing_warning = 'This caption overlaps the previous scene; shorten one duration to keep the words readable.';
       }
       if (totalDuration != null && Number(scene.end_time) > totalDuration + .01) {
-        scene.timing_warning = `Caption continues ${sceneSeconds(Number(scene.end_time) - totalDuration)} after the recitation; Quran audio stays within the selected range.`;
+        const overrun = `Caption continues ${sceneSeconds(Number(scene.end_time) - totalDuration)} after the recitation; Quran audio stays within the selected range.`;
+        scene.timing_warning = scene.timing_warning ? `${scene.timing_warning} ${overrun}` : overrun;
       }
       previous = scene;
     }
@@ -3005,6 +3191,87 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     } else {
       applySceneTimingModel(previewScenes);
     }
+  }
+
+  function getCurrentPlaybackTimestamp() {
+    const player = activePlayer();
+    let time;
+    try {
+      time = window.QuranSceneTiming.readTimelineTime(player, playbackStartedPlayers.has(player));
+    } catch (error) { return {time:null, error:error.message}; }
+    if (player === $('voice-preview-audio')
+        && (previewAudioSelectionKey !== verseSelectionKey()
+          || previewAudioReciter !== selectedReciter)) {
+      return {time:null, error:'The audio preview belongs to a different selection. Play the current recitation first.'};
+    }
+    // The audio-preview endpoint serves the selected range from t=0, matching
+    // the rendered reel timeline. `previewAudioStart` is only the source-file
+    // offset used to synchronize captions; adding it here would misplace the playhead.
+    return {time, player};
+  }
+
+  function updateCalculatePlayheadButtons() {
+    const player = activePlayer();
+    let clockReady = false;
+    try {
+      window.QuranSceneTiming.readTimelineTime(player, playbackStartedPlayers.has(player));
+      clockReady = player !== $('voice-preview-audio')
+        || (previewAudioSelectionKey === verseSelectionKey() && previewAudioReciter === selectedReciter);
+    } catch (_) { /* The button remains available and reports how to establish a clock. */ }
+    document.querySelectorAll('[data-calculate-playhead]').forEach(button => {
+      const scene = previewScenes.find(item => item.scene_id === button.dataset.calculatePlayhead);
+      // The selected scene may be the one being measured, so its duration can
+      // be unset. Only preceding scenes need committed durations for the math.
+      button.disabled = !scene;
+      button.title = clockReady
+        ? 'Set this scene duration from the current preview playback position.'
+        : 'Play the recitation or rendered video first, then pause at the scene boundary.';
+      button.setAttribute('aria-disabled', String(button.disabled));
+    });
+  }
+
+  function showSceneDurationFeedback(sceneId, text, isError = false) {
+    const message = document.querySelector(`[data-scene-duration-message="${CSS.escape(sceneId)}"]`);
+    if (!message) return;
+    message.textContent = text;
+    message.classList.toggle('text-red-600', isError);
+    message.classList.toggle('text-emerald-700', !isError);
+    if (isError) message.classList.remove('scene-duration-warning');
+  }
+
+  function calculateSceneDurationFromPlayhead(sceneId) {
+    const sceneIndex = previewScenes.findIndex(scene => scene.scene_id === sceneId);
+    if (sceneIndex < 0) return;
+    if (guardPendingSceneDurationDraft() || guardPendingSceneTextDraft()) {
+      showSceneDurationFeedback(sceneId, 'Apply or reset pending scene edits before calculating.', true);
+      return;
+    }
+    previewIndex = sceneIndex;
+    playbackSceneText = null;
+    renderSceneTimeline();
+    updateViewerLayerPreview();
+    const clock = getCurrentPlaybackTimestamp();
+    if (clock.error) {
+      showSceneDurationFeedback(sceneId, clock.error, true);
+      return;
+    }
+    let calculation;
+    try {
+      calculation = window.QuranSceneTiming.calculateDurationFromPlayhead(
+        previewScenes, sceneId, clock.time,
+      );
+    } catch (error) {
+      showSceneDurationFeedback(sceneId, error.message, true);
+      return;
+    }
+    const previous = lastSceneDurationCalculation.get(sceneId);
+    if (previous && Math.abs(previous.time - clock.time) < .01
+        && performance.now() - previous.at < 750) return;
+    if (!applySceneDuration(sceneIndex, calculation.duration.toFixed(3))) return;
+    lastSceneDurationCalculation.set(sceneId, {time:clock.time, at:performance.now()});
+    showSceneDurationFeedback(
+      sceneId, `Scene ${sceneIndex + 1} duration set to ${sceneSeconds(calculation.duration)}.`,
+    );
   }
 
   function applySceneDuration(sceneIndex, rawValue) {
@@ -3042,6 +3309,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     if (!scene) return;
     delete scene.manual_duration;
     sceneDurationDrafts.delete(scene.scene_id);
+    lastSceneDurationCalculation.delete(scene.scene_id);
     refreshAppliedSceneTimings();
     hideRenderedVideo();
     renderSceneTimeline();
@@ -3096,8 +3364,8 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
       durationInput.dataset.sceneDuration = scene.scene_id;
       durationInput.value = sceneDurationDrafts.get(scene.scene_id)
         ?? (scene.duration != null ? sceneSeconds(scene.duration).replace(/s$/, '') : '');
-      durationInput.placeholder = scene.duration == null ? 'Waiting for voice timing' : 'e.g. 9.25';
-      durationInput.disabled = scene.duration == null;
+      durationInput.placeholder = scene.duration == null ? 'Enter duration in seconds' : 'e.g. 9.25';
+      durationInput.disabled = false;
       durationInput.setAttribute('aria-label', `Duration in seconds for Ayah ${scene.ayah_number}, scene ${scene.segment_index}`);
       durationInput.setAttribute('aria-invalid', 'false');
       const timingButtons = document.createElement('div');
@@ -3112,6 +3380,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
         || (scene.manual_duration == null && !sceneDurationDrafts.has(scene.scene_id));
       const timingStatus = document.createElement('small');
       timingStatus.className = 'scene-duration-status';
+      timingStatus.id = `scene-duration-status-${index}`;
       timingStatus.dataset.sceneDurationMessage = scene.scene_id;
       timingStatus.setAttribute('role', 'status');
       timingStatus.setAttribute('aria-live', 'polite');
@@ -3119,11 +3388,30 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
         ? `Manual · automatic baseline ${sceneSeconds(scene.automatic_duration)}`
         : `Automatic baseline · ${sceneSeconds(scene.automatic_duration)}`);
       if (scene.timing_warning) timingStatus.classList.add('scene-duration-warning');
-      const commitDuration = () => applySceneDuration(index, durationInput.value);
+      const playheadButton = document.createElement('button');
+      playheadButton.type = 'button';
+      playheadButton.className = 'scene-duration-playhead';
+      playheadButton.dataset.calculatePlayhead = scene.scene_id;
+      playheadButton.innerHTML = '<span class="material-symbols-outlined" aria-hidden="true">schedule</span><span>Calculate from Playhead</span>';
+      playheadButton.setAttribute('aria-label', `Calculate scene ${index + 1} duration from the preview playhead`);
+      playheadButton.setAttribute('aria-describedby', timingStatus.id);
+      playheadButton.disabled = !scene.scene_id;
+      playheadButton.addEventListener('click', event => {
+        event.preventDefault(); event.stopPropagation();
+        calculateSceneDurationFromPlayhead(scene.scene_id);
+      });
+      const commitDuration = () => {
+        lastSceneDurationCalculation.delete(scene.scene_id);
+        return applySceneDuration(index, durationInput.value);
+      };
       durationInput.addEventListener('input', () => {
+        lastSceneDurationCalculation.delete(scene.scene_id);
         sceneDurationDrafts.set(scene.scene_id, durationInput.value);
         durationInput.setAttribute('aria-invalid', 'false');
         durationReset.disabled = false;
+        const hasAdjustableDuration = Number.isFinite(Number(durationInput.value))
+          && Number(durationInput.value) > 0;
+        adjustments.querySelectorAll('button').forEach(button => { button.disabled = !hasAdjustableDuration; });
         timingStatus.textContent = 'Pending · Apply to update this scene only.';
         timingStatus.classList.remove('text-red-600', 'scene-duration-warning');
       });
@@ -3137,7 +3425,8 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
       [[-1, '−1.0s'], [1, '+1.0s'], [-.1, '−0.1s'], [.1, '+0.1s']].forEach(([delta, label]) => {
         const adjust = document.createElement('button');
         adjust.type = 'button'; adjust.className = 'scene-duration-step';
-        adjust.textContent = label; adjust.disabled = durationInput.disabled;
+        adjust.disabled = !(Number.isFinite(Number(durationInput.value)) && Number(durationInput.value) > 0);
+        adjust.textContent = label;
         adjust.setAttribute('aria-label', `${label} for scene ${index + 1}`);
         adjust.addEventListener('click', () => {
           const baseText = durationInput.value.trim() || String(scene.duration || '');
@@ -3155,7 +3444,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
         adjustments.append(adjust);
       });
       timingButtons.append(durationApply, durationReset);
-      timingControl.append(durationLabel, durationInput, timingButtons, adjustments, timingStatus);
+      timingControl.append(durationLabel, durationInput, timingButtons, adjustments, playheadButton, timingStatus);
       row.append(timingControl);
 
       const actions = document.createElement('div');
@@ -3333,6 +3622,7 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
           : 'Unsplit scenes follow measured ayah boundaries.';
     const warnings = previewScenes.filter(scene => scene.timing_warning).length;
     if (warnings) $('scene-timing-note').textContent += ` ${warnings} timing warning${warnings === 1 ? ' is' : 's are'} marked on the affected scene${warnings === 1 ? '' : 's'}.`;
+    updateCalculatePlayheadButtons();
   }
 
   async function updateScenePlan() {
@@ -3522,6 +3812,37 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
   }
 
+  function syncRecitationPreviewScene(player, audioStart, timelineTime = player.currentTime) {
+    const elapsed = audioStart + timelineTime;
+    const timingIndex = previewTimings.findIndex(timing =>
+      elapsed >= (timing.caption_start ?? timing.start)
+      && elapsed < (timing.caption_end ?? timing.end));
+    if (timingIndex >= 0) {
+      const timing = previewTimings[timingIndex];
+      const current = Number(timing.scene_index) || 0;
+      if (current !== previewIndex || playbackSceneText !== timing.text) {
+        paintPreviewAyah(current, timing.text);
+      }
+    } else if (playbackSceneText !== '') {
+      playbackSceneText = '';
+      hideCaptionPreview();
+    }
+  }
+
+  function waitForMediaSeek(player) {
+    if (!player.seeking) return Promise.resolve();
+    return new Promise(resolve => player.addEventListener('seeked', resolve, {once:true}));
+  }
+
+  async function resumeRecitationPreview() {
+    const player = $('voice-preview-audio');
+    const audioStart = previewAudioStart ?? previewTimings[0]?.audio_start ?? previewTimings[0]?.start ?? 0;
+    await waitForMediaSeek(player);
+    syncRecitationPreviewScene(player, audioStart);
+    syncTimeline(player);
+    await player.play();
+  }
+
   function paintPreviewAyah(index = 0, textOverride = null) {
     previewIndex = index;
     playbackSceneText = textOverride;
@@ -3545,7 +3866,10 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     if (!Number.isInteger(first) || !Number.isInteger(last) || first < 1 || last < first) return;
     const count = Math.max(0, last - first + 1);
     document.querySelector('.scope-count').textContent = `${count} ${count === 1 ? 'Ayah' : 'Ayahs'}`;
-    document.querySelector('.scope-duration').textContent = `Audio timed to ${count} ${count === 1 ? 'ayah' : 'ayahs'}`;
+    const chapterOnly = reciterById.get(selectedReciter)?.supports_ayah_selection === false;
+    document.querySelector('.scope-duration').textContent = chapterOnly
+      ? 'Full Surah · captions approximate'
+      : `Audio timed to ${count} ${count === 1 ? 'ayah' : 'ayahs'}`;
   }
 
   async function loadVerses(updateEditor = true) {
@@ -3600,7 +3924,8 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
       $('render-progress-row').classList.add('hidden');
       $('render-cancel-btn').classList.add('hidden');
     }
-    document.querySelector('.scope-duration').textContent = 'Audio timed to selected ayahs';
+    document.querySelector('.scope-duration').textContent = reciterById.get(selectedReciter)?.supports_ayah_selection === false
+      ? 'Full Surah · captions approximate' : 'Audio timed to selected ayahs';
     hideRenderedVideo();
     await updateScenePlan();
     if (requestId !== verseLoadRequest || selectionKey !== verseSelectionKey()) return previewAyahs;
@@ -3813,9 +4138,10 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     return expanded;
   }
 
-  async function loadRecitationTimings({quiet=false} = {}) {
+  async function loadRecitationTimings({quiet=false, force=false} = {}) {
     const selectionKey = verseSelectionKey();
     const reciter = selectedReciter;
+    if (!force && reciterById.get(reciter)?.supports_ayah_selection === false) return null;
     const cacheKey = `${reciter}|${selectionKey}`;
     const requestId = ++previewTimingRequest;
     let result = recitationTimingCache.get(cacheKey);
@@ -3867,9 +4193,15 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
   async function startRecitationPreview() {
     const requestedSelection = verseSelectionKey();
     const requestedReciter = selectedReciter;
-    const result = await loadRecitationTimings();
-    if (!result || requestedSelection !== verseSelectionKey() || requestedReciter !== selectedReciter) return;
     const player = $('voice-preview-audio');
+    const sameSelection = previewAudioSelectionKey === requestedSelection
+      && previewAudioReciter === requestedReciter;
+    if (window.QuranSceneTiming.canResumePlayback(player, sameSelection)) {
+      await resumeRecitationPreview();
+      return;
+    }
+    const result = await loadRecitationTimings({force:true});
+    if (!result || requestedSelection !== verseSelectionKey() || requestedReciter !== selectedReciter) return;
     previewAyahs = await loadVerses(false);
     if (requestedSelection !== verseSelectionKey() || requestedReciter !== selectedReciter
         || previewTimingSelectionKey !== requestedSelection || previewTimingReciter !== requestedReciter) return;
@@ -3884,7 +4216,11 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     }
     const previewAudioUrl = new URL(result.audio_url, window.location.href);
     previewAudioUrl.hash = '';
-    if (player.src !== previewAudioUrl.href) {
+    const sourceChanged = player.src !== previewAudioUrl.href;
+    if (sourceChanged) {
+      playbackStartedPlayers.delete(player);
+      previewAudioSelectionKey = '';
+      previewAudioReciter = '';
       player.src = previewAudioUrl.href;
       await new Promise((resolve, reject) => {
         player.addEventListener('loadedmetadata', resolve, {once:true});
@@ -3894,9 +4230,16 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     } else if (player.readyState < 1) {
       await new Promise(resolve => player.addEventListener('loadedmetadata', resolve, {once:true}));
     }
+    previewAudioSelectionKey = requestedSelection;
+    previewAudioReciter = requestedReciter;
+    updateCalculatePlayheadButtons();
     player.playbackRate = speed;
-    player.currentTime = 0;
-    paintPreviewAyah(Number(previewTimings[0].scene_index) || 0, previewTimings[0].text);
+    const requestedResumeTime = window.QuranSceneTiming.resumePlaybackTime(player, sourceChanged);
+    if (sourceChanged) player.currentTime = requestedResumeTime;
+    await waitForMediaSeek(player);
+    const resumeTime = window.QuranSceneTiming.resumePlaybackTime(player, sourceChanged);
+    syncRecitationPreviewScene(player, audioStart, resumeTime);
+    syncTimeline(player);
     const finishPreview = () => {
       player.pause();
       player.currentTime = 0;
@@ -3905,28 +4248,13 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
       setPlaybackIcon(false);
     };
     player.onpause = () => {
-      if (player.currentTime >= audioDuration - .05) {
-        player.currentTime = 0;
-        paintPreviewAyah(Number(previewTimings[0].scene_index) || 0, previewTimings[0].text);
-        syncTimeline(player);
-      }
+      syncRecitationPreviewScene(player, audioStart);
+      syncTimeline(player);
       setPlaybackIcon(false);
     };
     player.onended = finishPreview;
     player.ontimeupdate = () => {
-      const elapsed = audioStart + player.currentTime;
-      const timingIndex = previewTimings.findIndex(timing =>
-        elapsed >= (timing.caption_start ?? timing.start)
-        && elapsed < (timing.caption_end ?? timing.end));
-      if (timingIndex >= 0) {
-        const current = Number(previewTimings[timingIndex]?.scene_index) || 0;
-        if (current !== previewIndex || playbackSceneText !== previewTimings[timingIndex]?.text) {
-          paintPreviewAyah(current, previewTimings[timingIndex].text);
-        }
-      } else if (playbackSceneText !== '') {
-        playbackSceneText = '';
-        hideCaptionPreview();
-      }
+      syncRecitationPreviewScene(player, audioStart);
       syncTimeline(player);
     };
     await player.play();
@@ -3945,10 +4273,14 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
       const reciter = recordings[0];
       const item = document.createElement('li');
       item.className = 'reciter-option flex items-center justify-between px-3 py-2 rounded-lg hover:bg-gray-50 text-gray-700 cursor-pointer transition-colors';
-      item.dataset.name = reciter.name; item.dataset.groupId = groupId;
-      item.dataset.search = [reciter.name, ...recordings.flatMap(recording => [recording.style, recording.riwayah, recording.recording_name])]
+      item.dataset.name = reciter.name; item.dataset.nameAr = reciter.name_ar || ''; item.dataset.groupId = groupId;
+      item.dataset.search = [reciter.name, reciter.name_ar, ...recordings.flatMap(recording => [recording.style, recording.riwayah, recording.recording_name])]
         .filter(Boolean).join(' ').toLowerCase();
-      const name = document.createElement('span'); name.className = 'text-sm font-medium'; name.textContent = reciter.name;
+      const name = document.createElement('span'); name.className = 'flex min-w-0 flex-col';
+      const englishName = document.createElement('span'); englishName.className = 'text-sm font-medium'; englishName.textContent = reciter.name;
+      const arabicName = document.createElement('span'); arabicName.className = 'text-[11px] text-gray-500'; arabicName.textContent = reciter.name_ar || '';
+      arabicName.lang = 'ar'; arabicName.dir = 'rtl';
+      name.append(englishName, arabicName);
       const type = document.createElement('span'); type.className = 'text-[11px] text-gray-500 bg-gray-100 px-2 py-0.5 rounded-md';
       type.textContent = recordings.length > 1 ? `${recordings.length} recordings` : [reciter.style, reciter.riwayah].filter(Boolean).join(' · ');
       item.append(name, type);
@@ -3982,7 +4314,17 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     const button = $('preview-sample-btn');
     button.disabled = true;
     try {
-      await startRecitationPreview();
+      const video = $('rendered-video');
+      if (!video.classList.contains('hidden') && video.src) {
+        // A visible rendered reel is the active preview clock and already
+        // contains the selected recitation. Reuse it instead of starting a
+        // second, independent audio clock at t=0.
+        stopRecitationPreview();
+        video.currentTime = 0;
+        await video.play();
+      } else {
+        await startRecitationPreview();
+      }
     } catch (error) { showError(error.message); }
     finally { button.disabled = false; }
   });
@@ -4022,7 +4364,12 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
     scenePlanTimer = setTimeout(() => updateScenePlan().then(() => paintPreviewAyah(0)).catch(showError), 250);
   });
   surahSelect.addEventListener('change', () => {
-    startInput.value = 1; endInput.value = 1; scheduleVerseLoad();
+    startInput.value = 1; endInput.value = 1;
+    updateSurahInfo();
+    const reciter = reciterById.get(selectedReciter);
+    updateSelectedReciterView(reciter);
+    updateAyahRangeCapability(reciter);
+    scheduleVerseLoad();
   });
 
   document.querySelectorAll('.aspect-ratio-btn').forEach(button => button.addEventListener('click', () => {
@@ -4325,9 +4672,17 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
   });
   ['voice-preview-audio', 'rendered-video'].forEach(id => {
     const player = $(id);
-    ['loadedmetadata', 'timeupdate', 'durationchange'].forEach(name => player.addEventListener(name, () => syncTimeline(player)));
-    player.addEventListener('play', () => { setPlaybackIcon(true); });
-    player.addEventListener('pause', () => { setPlaybackIcon(false); });
+    ['loadedmetadata', 'timeupdate', 'durationchange'].forEach(name => player.addEventListener(name, () => {
+      syncTimeline(player); updateCalculatePlayheadButtons();
+    }));
+    player.addEventListener('play', () => {
+      playbackStartedPlayers.add(player);
+      setPlaybackIcon(true); updateCalculatePlayheadButtons();
+    });
+    player.addEventListener('pause', () => { setPlaybackIcon(false); updateCalculatePlayheadButtons(); });
+    player.addEventListener('emptied', () => {
+      playbackStartedPlayers.delete(player); updateCalculatePlayheadButtons();
+    });
   });
   $('rewind-preview').addEventListener('click', () => {
     const player = activePlayer();
@@ -4341,8 +4696,21 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
       if (rendered.paused) rendered.play().catch(error => showError(error.message)); else rendered.pause();
       return;
     }
-    if (!$('voice-preview-audio').src || $('voice-preview-audio').paused) startRecitationPreview().catch(error => showError(error.message));
-    else { $('voice-preview-audio').pause(); setPlaybackIcon(false); }
+    const audio = $('voice-preview-audio');
+    if (!audio.paused) {
+      audio.pause();
+      setPlaybackIcon(false);
+      return;
+    }
+    const sameSelection = previewAudioSelectionKey === verseSelectionKey()
+      && previewAudioReciter === selectedReciter;
+    if (window.QuranSceneTiming.canResumePlayback(audio, sameSelection)) {
+      // A paused preview already owns the authoritative timeline position.
+      // Resume that media element directly without refetching or rebuilding it.
+      resumeRecitationPreview().catch(error => showError(error.message));
+      return;
+    }
+    startRecitationPreview().catch(error => showError(error.message));
   });
   const speeds = [1.0, 1.15, 0.9]; let speedIndex = 0;
   $('speed-cycle-btn').addEventListener('click', () => {
@@ -4600,8 +4968,11 @@ window.tailwind.config = {theme:{extend:{colors:{brand:{50:'#e5f1ff',100:'#cce2f
       $('render-status-message').append(link);
       $('youtube-metadata-panel').classList.remove('hidden');
       loadYoutubeMetadata().catch(error => { $('metadata-copy-status').textContent = error.message; });
-      const video = $('rendered-video'); video.src = result.download_url; video.classList.remove('hidden');
+      stopRecitationPreview();
+      const video = $('rendered-video'); playbackStartedPlayers.delete(video);
+      video.src = result.download_url; video.classList.remove('hidden');
       video.volume = Number($('preview-volume').value); video.load();
+      updateCalculatePlayheadButtons();
       button.innerHTML = '<span class="material-symbols-outlined">check_circle</span><span>Video Ready</span>';
       renderSucceeded = true;
     } catch (error) {

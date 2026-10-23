@@ -69,6 +69,159 @@ def test_multi_ayah_audio_ends_at_final_selected_ayah_boundary(monkeypatch, tmp_
     assert sum(track.ayah_durations) == pytest.approx(track.end - track.start)
 
 
+def test_chapter_only_recording_keeps_full_surah_and_marks_estimated_captions(monkeypatch, tmp_path):
+    requests = []
+
+    def open_audio(request, timeout):
+        requests.append(request.full_url)
+        assert timeout > 0
+        return FakeAudioResponse()
+
+    monkeypatch.setattr(audio_sources, "urlopen", open_audio)
+    monkeypatch.setattr(audio_sources, "probe_audio_duration", lambda _path: 90.0)
+    reciter = RECITERS_BY_ID["salman_alotaibi"]
+    verses = ["بِسْمِ اللَّهِ", "الْحَمْدُ لِلَّهِ", "الرَّحْمَٰنِ",
+              "مَالِكِ يَوْمِ الدِّينِ", "إِيَّاكَ نَعْبُدُ", "اهْدِنَا", "صِرَاطَ الَّذِينَ"]
+
+    track = audio_sources.download_recitation(
+        reciter, 1, 1, 7, tmp_path, expected_ayahs=verses,
+    )
+
+    assert requests == ["https://cdn.mp3quran.net/audio/salman-otaibi/r1/001.mp3"]
+    assert track.start == 0
+    assert track.end == 90
+    assert len(track.ayah_durations) == 7
+    assert sum(track.ayah_durations) == pytest.approx(90)
+    assert track.timing_source == "chapter_estimate"
+    assert "approximate" in track.timing_note
+    assert "Partial ayah ranges are disabled" in track.timing_note
+    assert track.path.read_bytes() == b"test"
+
+
+def test_mishary_tarawih_recording_uses_its_explicit_surah_map(monkeypatch, tmp_path):
+    requests = []
+
+    def open_audio(request, timeout):
+        requests.append(request.full_url)
+        assert timeout > 0
+        return FakeAudioResponse()
+
+    monkeypatch.setattr(audio_sources, "urlopen", open_audio)
+    monkeypatch.setattr(audio_sources, "probe_audio_duration", lambda _path: 49.0)
+    verses = ["بِسْمِ اللَّهِ", "الْحَمْدُ لِلَّهِ", "الرَّحْمَٰنِ",
+              "مَالِكِ يَوْمِ الدِّينِ", "إِيَّاكَ نَعْبُدُ", "اهْدِنَا", "صِرَاطَ الَّذِينَ"]
+
+    track = audio_sources.download_recitation(
+        RECITERS_BY_ID["mishary_alafasy_tarawih_1427"], 1, 1, 7, tmp_path,
+        expected_ayahs=verses,
+    )
+
+    assert requests == [
+        "https://media.assabile.com/assabile/recitations_7892537823/mp3/"
+        "mishary-rashid-alafasy/mishary-rashid-alafasy-001-al-fatiha-21471-7383.mp3"
+    ]
+    assert track.start == 0
+    assert track.end == 49
+    assert len(track.ayah_durations) == 7
+    assert track.timing_source == "chapter_estimate"
+    assert "approximate" in track.timing_note
+
+
+@pytest.mark.parametrize(("reciter_id", "surah_number"), [
+    ("salman_alotaibi", 1),
+    ("mishary_alafasy_tarawih_1427", 1),
+    ("mishary_alafasy_dorai", 97),
+])
+def test_chapter_only_recording_rejects_partial_ranges_before_fetch(
+        monkeypatch, tmp_path, reciter_id, surah_number):
+    monkeypatch.setattr(audio_sources, "urlopen", lambda *_args, **_kwargs: pytest.fail(
+        "A chapter-only recording must not fetch audio for a partial ayah selection"))
+    with pytest.raises(audio_sources.AudioSourceError, match="complete Surah"):
+        audio_sources.download_recitation(
+            RECITERS_BY_ID[reciter_id], surah_number, 2, 3, tmp_path,
+            expected_ayahs=["الْحَمْدُ", "لِلَّهِ"],
+        )
+
+
+def test_mishary_dorai_recording_uses_its_own_source_url_and_reports_coverage():
+    from app.audio_sources import get_audio_url
+
+    reciter = RECITERS_BY_ID["mishary_alafasy_dorai"]
+    assert get_audio_url(reciter, 12) == "https://cdn.mp3quran.net/audio/mishary-alafasy/r2/012.mp3"
+    assert reciter["riwayah"] == "Al-Duri 'an al-Kisa'i"
+    assert reciter["available_surah_numbers"] == [12, 14, 25, 87, 97, 99]
+
+
+def test_mishary_california_murattal_is_a_distinct_partial_source_catalog():
+    from app.audio_sources import get_audio_url
+
+    main = RECITERS_BY_ID["mishary_alafasy"]
+    alternate = RECITERS_BY_ID["mishary_alafasy_california"]
+    assert alternate["name"] == "Mishary Rashid Alafasy"
+    assert alternate["name_ar"] == "مشاري بن راشد العفاسي"
+    assert alternate["style"] == "Murattal"
+    assert alternate["riwayah"] == "Hafs 'an Asim"
+    assert alternate["timing_provider"] == "chapter_only"
+    assert alternate["read_id"] is None
+    assert alternate["recording_name"] == "Hafs 'an Asim - California Murattal (1430 AH)"
+    assert alternate["available_surah_numbers"] == [number for number in range(1, 115) if number != 44]
+    assert len(alternate["audio_urls_by_surah"]) == 113
+    assert get_audio_url(alternate, 1) == (
+        "https://media.assabile.com/assabile/recitations_7892537823/mp3/"
+        "mishary-rashid-alafasy/mishary-rashid-alafasy-001-al-fatiha-21377-648.mp3"
+    )
+    assert get_audio_url(alternate, 55) == (
+        "https://media.assabile.com/assabile/recitations_7892537823/mp3/"
+        "mishary-rashid-alafasy/mishary-rashid-alafasy-055-ar-rahman-21385-864.mp3"
+    )
+    with pytest.raises(audio_sources.AudioSourceError, match="no verified audio"):
+        get_audio_url(alternate, 44)
+    assert get_audio_url(alternate, 114) != get_audio_url(main, 114)
+
+
+def test_mishary_california_download_uses_its_own_per_surah_recording(monkeypatch, tmp_path):
+    requests = []
+
+    def open_audio(request, timeout):
+        requests.append(request.full_url)
+        assert timeout > 0
+        return FakeAudioResponse()
+
+    monkeypatch.setattr(audio_sources, "urlopen", open_audio)
+    monkeypatch.setattr(audio_sources, "probe_audio_duration", lambda _path: 83.0)
+    verses = ["بِسْمِ اللَّهِ", "الْحَمْدُ لِلَّهِ", "الرَّحْمَٰنِ",
+              "مَالِكِ يَوْمِ الدِّينِ", "إِيَّاكَ نَعْبُدُ", "اهْدِنَا", "صِرَاطَ الَّذِينَ"]
+
+    track = audio_sources.download_recitation(
+        RECITERS_BY_ID["mishary_alafasy_california"], 1, 1, 7, tmp_path,
+        expected_ayahs=verses,
+    )
+
+    assert requests == [
+        "https://media.assabile.com/assabile/recitations_7892537823/mp3/"
+        "mishary-rashid-alafasy/mishary-rashid-alafasy-001-al-fatiha-21377-648.mp3"
+    ]
+    assert track.start == 0
+    assert track.end == 83
+    assert len(track.ayah_durations) == 7
+    assert track.timing_source == "chapter_estimate"
+    assert "approximate" in track.timing_note
+
+
+def test_salman_surah_16_uses_verified_way2quran_override():
+    from app.audio_sources import get_audio_url
+
+    reciter = RECITERS_BY_ID["salman_alotaibi"]
+    assert 16 in reciter["available_surah_numbers"]
+    assert len(reciter["available_surah_numbers"]) == 76
+    assert get_audio_url(reciter, 16) == (
+        "https://media.way2quran.com/slman-al-atyby/hafs-an-asim/016.mp3"
+    )
+    assert get_audio_url(reciter, 1) == (
+        "https://cdn.mp3quran.net/audio/salman-otaibi/r1/001.mp3"
+    )
+
+
 @pytest.mark.parametrize("recording_id,expected_read_id", [
     ("abdul_basit_mujawwad", 51),
     ("husary_warsh", 120),

@@ -39,7 +39,7 @@ def _text_options():
     return {"direction": "rtl", "language": "ar"} if PIL_HAS_RAQM else {}
 
 
-def _load_font(font_path, size):
+def load_arabic_font(font_path, size):
     """Load Arabic fonts with RAQM explicitly so Arabic joining and bidi are stable."""
     layout = getattr(ImageFont, "Layout", None)
     raqm = getattr(layout, "RAQM", None) if layout is not None else None
@@ -48,17 +48,26 @@ def _load_font(font_path, size):
     return ImageFont.truetype(str(font_path), int(size))
 
 
+# Preserve the former private name for existing callers and regression tests.
+_load_font = load_arabic_font
+
+
+def measure_arabic_line_width(text: str, font, stroke_width: int = 0, *, draw=None) -> int:
+    """Measure shaped Arabic with the same RAQM/bidi and stroke metrics as rendering."""
+    visual = shape_arabic(text)
+    probe = draw or ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+    bounds = probe.textbbox((0, 0), visual, font=font,
+                            stroke_width=max(0, int(stroke_width)), **_text_options())
+    return max(0, int(bounds[2] - bounds[0]))
+
+
 def wrap_arabic_lines(text: str, font, max_width: int, stroke_width: int = 0) -> list[str]:
     """Wrap logical Arabic words using the same bidi-aware metrics as raster output."""
     probe = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
-    text_options = _text_options()
     lines, current = [], []
     for word in text.split():
         candidate = " ".join((*current, word))
-        visual = shape_arabic(candidate)
-        bounds = probe.textbbox((0, 0), visual, font=font, stroke_width=stroke_width,
-                                **text_options)
-        if current and bounds[2] - bounds[0] > max_width:
+        if current and measure_arabic_line_width(candidate, font, stroke_width, draw=probe) > max_width:
             lines.append(" ".join(current))
             current = [word]
         else:
@@ -180,7 +189,7 @@ def render_arabic_text(text: str, *, font_path=None, font_size=72, color=(255,25
             return (*fallback, int(255 * max(0, min(1, float(opacity)))))
 
     def layout(size):
-        font = _load_font(chosen_font, size)
+        font = load_arabic_font(chosen_font, size)
         lines = wrap_arabic_lines(text, font, max_width, stroke_width)
         shaped = [shape_arabic(item) for item in lines]
         boxes = [draw.textbbox((0, 0), item, font=font, stroke_width=stroke_width,
@@ -192,7 +201,7 @@ def render_arabic_text(text: str, *, font_path=None, font_size=72, color=(255,25
         header_items = []
         header_max_w = 0
         if show_surah_title and surah_title:
-            h_font = _load_font(Path(surah_style.get("font_path") or surah_font),
+            h_font = load_arabic_font(Path(surah_style.get("font_path") or surah_font),
                                 max(24, int(size * float(surah_style["font_scale"]))))
             s_shaped = shape_arabic(str(surah_title))
             s_box = draw.textbbox((0, 0), s_shaped, font=h_font, **text_options)
@@ -206,7 +215,7 @@ def render_arabic_text(text: str, *, font_path=None, font_size=72, color=(255,25
         if show_ayah_number and ayah_number is not None:
             arabic_digits = str(ayah_number).translate(str.maketrans("0123456789", "٠١٢٣٤٥٦٧٨٩"))
             badge_txt = shape_arabic(arabic_digits)
-            b_font = _load_font(Path(number_style.get("font_path") or number_font),
+            b_font = load_arabic_font(Path(number_style.get("font_path") or number_font),
                                 max(20, int(size * float(number_style["font_scale"]))))
             b_box = draw.textbbox((0, 0), badge_txt, font=b_font, **text_options)
             item_w = b_box[2] - b_box[0] + int(number_style["padding_x"]) * 2
@@ -228,7 +237,7 @@ def render_arabic_text(text: str, *, font_path=None, font_size=72, color=(255,25
         translation_height = 0
         if translation_text:
             scaled_translation_size = max(6, round(base_translation_size * size / max(1, int(font_size))))
-            translation_font_obj = _load_font(translation_path, scaled_translation_size)
+            translation_font_obj = load_arabic_font(translation_path, scaled_translation_size)
             translation_lines = wrap_latin_lines(
                 translation_text, translation_font_obj, draw, translation_wrap_width,
             )

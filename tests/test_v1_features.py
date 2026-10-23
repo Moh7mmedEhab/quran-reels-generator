@@ -277,7 +277,7 @@ def test_version_and_metadata_endpoints_use_selected_surah_range_and_reciter():
     client = create_app().test_client()
     version = client.get("/api/version")
     assert version.status_code == 200
-    assert version.json["version"] == "1.3.0"
+    assert version.json["version"] == "1.4.0"
     metadata = client.get(
         "/api/youtube-metadata?surah=55&start=13&end=14&reciter_id=mishary_alafasy"
     )
@@ -320,7 +320,7 @@ def test_template_exposes_image_video_tabs_and_release_version():
     assert b'id="api-curl-command"' in page.data
     assert b"function currentRenderCurl()" in page.data
     assert b"window.location.origin + '/api/generate'" in page.data
-    assert b"Studio v1.3" in page.data
+    assert b"Studio v1.4" in page.data
     assert b'id="show-translation" type="checkbox">' in page.data
     assert b"if (updateEditor && $('show-translation').checked)" in page.data
     assert b"Misty Forest Drift" in page.data

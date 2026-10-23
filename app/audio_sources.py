@@ -2,6 +2,7 @@
 from dataclasses import dataclass
 from functools import lru_cache
 import json
+import math
 from pathlib import Path
 import shutil
 import subprocess
@@ -11,6 +12,7 @@ from urllib.request import Request, urlopen
 from uuid import uuid4
 
 from .job_errors import JobCancelled
+from .quran_data import SURAHS_BY_NUMBER
 from .qud_timings import (QudTimingError, get_chapter_audio_url,
                           get_recitation_timings as get_qud_recitation_timings)
 
@@ -54,11 +56,30 @@ def get_audio_url(reciter: dict, surah_number: int) -> str:
             return get_chapter_audio_url(reciter["timing_slug"], surah_number)
         except (KeyError, QudTimingError) as exc:
             raise AudioSourceError(str(exc)) from exc
+    overrides = reciter.get("audio_url_overrides_by_surah")
+    if isinstance(overrides, dict) and str(int(surah_number)) in overrides:
+        audio_url = overrides[str(int(surah_number))]
+        if not isinstance(audio_url, str) or not audio_url.startswith("https://"):
+            raise AudioSourceError("This recording has no verified audio for the selected Surah.")
+        return audio_url
+    audio_urls_by_surah = reciter.get("audio_urls_by_surah")
+    if isinstance(audio_urls_by_surah, dict):
+        audio_url = audio_urls_by_surah.get(str(int(surah_number)))
+        if not isinstance(audio_url, str) or not audio_url.startswith("https://"):
+            raise AudioSourceError("This recording has no verified audio for the selected Surah.")
+        return audio_url
+    template = reciter.get("audio_url_template")
+    if template:
+        return template.format(surah=int(surah_number))
     return f"{reciter['audio_base_url']}{surah_number:03d}.mp3"
 
 
 def get_recitation_timings(reciter: dict, surah_number: int, ayah_start: int, ayah_end: int) -> list[dict]:
     """Return millisecond timings for an inclusive ayah range."""
+    if reciter.get("timing_provider") == "chapter_only":
+        raise AudioSourceError(
+            "This recording is available by Surah only and has no verified ayah boundaries."
+        )
     if reciter.get("timing_provider") == "qud":
         try:
             return get_qud_recitation_timings(
@@ -74,6 +95,49 @@ def get_recitation_timings(reciter: dict, surah_number: int, ayah_start: int, ay
     if any(int(row["end_time"]) <= int(row["start_time"]) for row in selected):
         raise AudioSourceError("The recitation service returned invalid verse timings.")
     return selected
+
+
+def probe_audio_duration(audio_path: Path) -> float:
+    """Read the downloaded chapter's measured duration with FFprobe."""
+    ffprobe = shutil.which("ffprobe")
+    if not ffprobe:
+        raise AudioSourceError("FFprobe is required to read this chapter recording's duration.")
+    try:
+        result = subprocess.run(
+            [ffprobe, "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", str(audio_path)],
+            check=False, capture_output=True, text=True, timeout=25,
+        )
+        duration = float(result.stdout.strip())
+    except (OSError, subprocess.TimeoutExpired, TypeError, ValueError) as exc:
+        raise AudioSourceError("Could not read the downloaded chapter audio duration.") from exc
+    if result.returncode != 0 or not math.isfinite(duration) or duration <= 0:
+        raise AudioSourceError("The chapter audio has an invalid or unreadable duration.")
+    return duration
+
+
+def estimate_ayah_durations(expected_ayahs, total_duration: float) -> list[float]:
+    """Distribute chapter time by Quran text length when no verse times exist.
+
+    These estimates are explicitly approximate and must not be used to cut a
+    chapter-level recording into a partial ayah range.
+    """
+    from .word_alignment import normalize_arabic_word
+
+    if not expected_ayahs or not math.isfinite(float(total_duration)) or total_duration <= 0:
+        raise AudioSourceError("Cannot estimate ayah display timing for this chapter.")
+    weights = [
+        max(1, sum(len(normalize_arabic_word(word)) for word in str(ayah).split()))
+        for ayah in expected_ayahs
+    ]
+    total_weight = sum(weights)
+    if total_weight <= 0:
+        raise AudioSourceError("Cannot estimate ayah display timing for this chapter.")
+    durations = [float(total_duration) * weight / total_weight for weight in weights]
+    durations[-1] += float(total_duration) - sum(durations)
+    if any(not math.isfinite(value) or value <= 0 for value in durations):
+        raise AudioSourceError("The chapter duration could not be divided into ayah timings.")
+    return durations
 
 
 def _stitch_qud_ayah_windows(source_path: Path, selected: list[dict], destination_dir: Path,
@@ -180,17 +244,43 @@ def download_recitation(reciter: dict, surah_number: int, ayah_start: int, ayah_
         raise JobCancelled()
     from .word_alignment import get_chapter_word_timing
 
-    word_timing_data = None
-    fallback_note = "Word timing is not configured for this reciter; full ayahs use ayah-level timing."
-    if expected_ayahs is not None and reciter.get("timing_provider") != "qud":
-        try:
-            word_timing_data = get_chapter_word_timing(
-                reciter["id"], surah_number, ayah_start, ayah_end, expected_ayahs,
+    chapter_only = reciter.get("timing_provider") == "chapter_only"
+    if chapter_only:
+        expected_count = int(SURAHS_BY_NUMBER[surah_number]["ayah_count"])
+        if (ayah_start != 1 or ayah_end != expected_count or expected_ayahs is None
+                or len(expected_ayahs) != expected_count):
+            raise AudioSourceError(
+                "This recording has chapter-level audio only. Select the complete Surah; "
+                "partial ayah exports need verified ayah timings."
             )
-        except RuntimeError as exc:
-            fallback_note = f"Word-level alignment unavailable ({exc}); full ayahs use ayah-level timing."
+        if surah_number not in reciter.get("available_surah_numbers", ()):
+            raise AudioSourceError("This recording has no verified audio for the selected Surah.")
+        word_timing_data = None
+        fallback_note = ""
+        selected = []
+        audio_url = get_audio_url(reciter, surah_number)
+        timing_source = "chapter_estimate"
+        provider = reciter.get("source") or "This provider"
+        timing_note = (
+            f"{provider} provides this recording as per-Surah audio; no matching ayah timings are "
+            "integrated for it. "
+            "The complete Surah audio is kept intact; caption/scene boundaries are approximate, "
+            "estimated from the Arabic text length. Partial ayah ranges are disabled."
+        )
+    else:
+        word_timing_data = None
+        fallback_note = "Word timing is not configured for this reciter; full ayahs use ayah-level timing."
+        if expected_ayahs is not None and reciter.get("timing_provider") != "qud":
+            try:
+                word_timing_data = get_chapter_word_timing(
+                    reciter["id"], surah_number, ayah_start, ayah_end, expected_ayahs,
+                )
+            except RuntimeError as exc:
+                fallback_note = f"Word-level timing unavailable ({exc}); full ayahs use ayah-level timing."
 
-    if word_timing_data:
+    if chapter_only:
+        pass
+    elif word_timing_data:
         selected = word_timing_data["ayahs"]
         audio_url = word_timing_data["audio_url"]
         timing_source = "quran_foundation_word"
@@ -208,23 +298,27 @@ def download_recitation(reciter: dict, surah_number: int, ayah_start: int, ayah_
             timing_note = fallback_note
     if cancel_event is not None and cancel_event.is_set():
         raise JobCancelled()
-    start_ms = int(selected[0]["start_time"])
-    end_ms = int(selected[-1]["end_time"])
-    if end_ms <= start_ms:
-        raise AudioSourceError("The recitation service returned an invalid ayah time range.")
-
-    # Assign inter-ayah pauses to the ayah before them so display durations sum to the audio span.
-    starts = [int(row["start_time"]) for row in selected]
-    if timing_source == "qud_ayah":
-        durations = [(int(row["end_time"]) - int(row["start_time"])) / 1000
-                     for row in selected]
+    if chapter_only:
+        start_ms = end_ms = 0
+        durations = []
     else:
-        durations = [
-            ((starts[index + 1] if index + 1 < len(starts) else end_ms) - starts[index]) / 1000
-            for index in range(len(starts))
-        ]
-    if any(duration <= 0 for duration in durations):
-        raise AudioSourceError("The recitation service returned invalid verse timings.")
+        start_ms = int(selected[0]["start_time"])
+        end_ms = int(selected[-1]["end_time"])
+        if end_ms <= start_ms:
+            raise AudioSourceError("The recitation service returned an invalid ayah time range.")
+
+        # Assign inter-ayah pauses to the ayah before them so display durations sum to the audio span.
+        starts = [int(row["start_time"]) for row in selected]
+        if timing_source == "qud_ayah":
+            durations = [(int(row["end_time"]) - int(row["start_time"])) / 1000
+                         for row in selected]
+        else:
+            durations = [
+                ((starts[index + 1] if index + 1 < len(starts) else end_ms) - starts[index]) / 1000
+                for index in range(len(starts))
+            ]
+        if any(duration <= 0 for duration in durations):
+            raise AudioSourceError("The recitation service returned invalid verse timings.")
 
     word_timings = None
     if word_timing_data:
@@ -281,9 +375,28 @@ def download_recitation(reciter: dict, surah_number: int, ayah_start: int, ayah_
     except AudioSourceError:
         audio_path.unlink(missing_ok=True)
         raise
-    except (HTTPError, URLError, TimeoutError, OSError) as exc:
+    except HTTPError as exc:
         audio_path.unlink(missing_ok=True)
-        raise AudioSourceError("Could not download the selected recitation. Check your connection or upload an audio file.") from exc
+        if exc.code == 404:
+            raise AudioSourceError(
+                "The selected provider has no audio file for this Surah. Choose another available Surah."
+            ) from exc
+        if exc.code == 429:
+            raise AudioSourceError(
+                "The audio provider is rate limiting requests. Wait a moment and try again."
+            ) from exc
+        if exc.code >= 500:
+            raise AudioSourceError(
+                "The audio provider is temporarily unavailable. Try again shortly."
+            ) from exc
+        raise AudioSourceError(
+            f"The audio provider rejected the request (HTTP {exc.code})."
+        ) from exc
+    except (URLError, TimeoutError, OSError) as exc:
+        audio_path.unlink(missing_ok=True)
+        raise AudioSourceError(
+            "Could not download the selected recitation. Check your connection and try again."
+        ) from exc
     if total == 0:
         audio_path.unlink(missing_ok=True)
         raise AudioSourceError("The recitation service returned an empty audio file.")
@@ -309,7 +422,16 @@ def download_recitation(reciter: dict, surah_number: int, ayah_start: int, ayah_
             offset_ms += duration_ms
         start_ms, end_ms = 0, offset_ms
 
-    if word_timings is None and expected_ayahs is not None:
+    if chapter_only:
+        try:
+            total_duration = probe_audio_duration(audio_path)
+        except AudioSourceError:
+            audio_path.unlink(missing_ok=True)
+            raise
+        durations = estimate_ayah_durations(expected_ayahs, total_duration)
+        start_ms, end_ms = 0, round(total_duration * 1000)
+
+    if word_timings is None and expected_ayahs is not None and not chapter_only:
         from .forced_alignment import forced_align_arabic_audio
 
         aligned_timings, alignment_note = forced_align_arabic_audio(

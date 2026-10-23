@@ -21,12 +21,14 @@ from flask import Blueprint, current_app, jsonify, render_template, request, sen
 from PIL import Image, ImageColor
 from werkzeug.utils import secure_filename
 
-from .audio_sources import AudioSourceError, download_recitation, get_audio_url, get_recitation_timings
+from .audio_sources import (AudioSourceError, AudioTrack, download_recitation,
+                            estimate_ayah_durations, get_audio_url,
+                            get_recitation_timings, probe_audio_duration)
 from .quraa_data import RECITERS, RECITERS_BY_ID
 from .quran_data import SURAHS, SURAHS_BY_NUMBER, get_ayahs
 from .video_engine import (BACKGROUND_FIT_MODES, BACKGROUND_VIDEO_EXTENSIONS,
                            CAPTION_COLORS, QUALITY_PRESETS, RESOLUTION_PRESETS, SIZES,
-                           THEMES, THEME_CATEGORIES, _background, output_dimensions,
+                           THEMES, THEME_CATEGORIES, _background, caption_render_options, output_dimensions,
                            render_caption_image, render_reel)
 from .video_templates import DEFAULT_VIDEO_TEMPLATE, VIDEO_TEMPLATES
 from .background_motion import IMAGE_ANIMATION_PRESETS, MOTION_DIRECTIONS, resolve_motion_preset
@@ -37,7 +39,9 @@ from .background_video_templates import (BACKGROUND_VIDEO_TEMPLATES,
 from .font_catalog import DEFAULT_FONT_ID, FONT_CATALOG, resolve_font
 from .scenes import (build_scene_plan, edit_scene_text, merge_scene_with_previous,
                      compose_scene_plan_overrides, redistribute_scene_words, set_scene_lock,
-                     split_scene_by_word_count, synchronize_scene_translations)
+                     plan_auto_split_scenes, split_scene_by_word_count,
+                     synchronize_scene_translations)
+from .text_renderer import load_arabic_font
 from .media_validation import validate_rendered_output
 from .ffmpeg_encoder import hardware_encoder_status
 from .word_alignment import get_chapter_word_timing
@@ -1240,6 +1244,79 @@ def scene_plan():
                     "timing_note": "Caption groups use the selected word count. Export uses validated word timestamps when available; otherwise split boundaries use a clearly marked word-length estimate, while an unsplit ayah keeps its measured ayah timing."})
 
 
+@bp.post("/api/scenes/auto-split")
+def auto_split_scene_plan():
+    """Build one-line scene rows for currently tall ayahs using render metrics."""
+    payload = request.get_json(silent=True) or {}
+    try:
+        template_id = payload.get("template_id", DEFAULT_VIDEO_TEMPLATE)
+        template = _template_catalog().get(template_id)
+        if template is None:
+            return jsonify(error="Choose a supported video template."), 400
+        ayahs = payload.get("ayahs")
+        if not isinstance(ayahs, list) or not ayahs or any(not str(text).strip() for text in ayahs):
+            return jsonify(error="Provide one or more non-empty ayah text lines."), 400
+        ayah_start = int(payload.get("ayah_start", 1))
+        wrap_width = int(payload.get("wrap_width", 85))
+        ratio = payload.get("aspect_ratio", "9:16")
+        dimensions = output_dimensions(ratio, payload.get("resolution", "1080p"),
+                                       payload.get("custom_width"), payload.get("custom_height"))
+        if wrap_width not in {65, 75, 85, 95}:
+            raise ValueError("Text wrap width must be 65, 75, 85, or 95 percent.")
+        show_header = payload.get("show_surah_title", template.get("show_surah_title", False))
+        if isinstance(show_header, str):
+            show_header = show_header.lower() in {"true", "1", "yes", "on"}
+        show_number = payload.get("show_ayah_number", show_header)
+        if isinstance(show_number, str):
+            show_number = show_number.lower() in {"true", "1", "yes", "on"}
+
+        font_id = payload.get("font_id", template.get("font_id", DEFAULT_FONT_ID))
+        font_path = resolve_font(font_id, current_app.config.get("ARABIC_FONT"))
+        font_size = max(26, int(dimensions[0] * .07))
+        font = load_arabic_font(font_path, font_size)
+        caption_style = payload.get("caption_style", template.get("caption_style", "classic"))
+        caption_color = payload.get("caption_color", template.get("caption_color", "white"))
+        custom_options = _caption_options(template, payload)
+        _text_color, text_options = caption_render_options(
+            caption_style, caption_color, **custom_options,
+        )
+        layout = plan_auto_split_scenes(
+            ayahs, ayah_start=ayah_start, font=font,
+            max_width=int(dimensions[0] * wrap_width / 100),
+            stroke_width=text_options.get("stroke_width", 0),
+            minimum_arabic_words=3,
+        )
+        scenes = build_scene_plan(
+            ayahs, ayah_start=ayah_start, aspect_ratio=ratio,
+            wrap_width=wrap_width, max_lines=8, font_path=font_path,
+            show_surah_title=show_header or show_number,
+            padding_y=text_options.get("padding_y", 24),
+            scene_overrides=layout["scenes"], default_duration=3.0,
+            output_size=dimensions, words_per_scene=30,
+        )
+        translation_lines = payload.get("translation_lines")
+        if translation_lines not in (None, []) and (
+                not isinstance(translation_lines, list) or len(translation_lines) != len(ayahs)):
+            raise ValueError("English translations must contain one line per selected ayah.")
+        scenes = synchronize_scene_translations(scenes, translation_lines, ayah_start=ayah_start)
+    except (TypeError, ValueError, FileNotFoundError) as exc:
+        return jsonify(error=str(exc)), 400
+    return jsonify({
+        "scenes": scenes,
+        "scene_count": len(scenes),
+        "tall_ayahs": layout["tall_ayahs"],
+        "split_ayahs": layout["split_ayahs"],
+        "short_fallback_ayahs": layout["short_fallback_ayahs"],
+        "minimum_arabic_words": 3,
+        "layout": {"aspect_ratio": ratio, "dimensions": dimensions,
+                   "wrap_width": wrap_width, "font_id": font_id,
+                   "font_size": font_size, "stroke_width": text_options.get("stroke_width", 0)},
+        "timing_note": ("Scenes remain linked to their original ayahs. Export uses validated word timestamps "
+                        "when available; otherwise their caption boundaries use the existing labeled "
+                        "Arabic-word-length estimate while recitation audio continues once."),
+    })
+
+
 @bp.post("/api/scenes/redistribute")
 def scene_redistribute():
     payload = request.get_json(silent=True) or {}
@@ -1469,12 +1546,54 @@ def caption_preview():
 def list_reciters():
     return jsonify({"reciters": [
         {key: item[key] for key in (
-            "id", "group_id", "name", "recording_name", "style", "riwayah",
+            "id", "group_id", "name", "name_ar", "recording_name", "style", "riwayah",
+            "read_id", "source_reciter_id", "source_recording_id", "audio_format", "audio_delivery",
+            "timing_granularity", "supports_ayah_selection", "usage_rights",
             "available_surahs", "available_surah_numbers", "source", "source_url",
-            "audio_base_url", "timing_provider", "timing_source", "timing_source_url",
+            "recording_page_url",
+            "audio_base_url", "audio_url_template", "timing_provider", "timing_source",
+            "audio_urls_by_surah", "audio_url_overrides_by_surah",
+            "audio_provider_overrides_by_surah", "timing_source_url",
         )}
         for item in RECITERS
     ]})
+
+
+def _chapter_preview_cache_path(reciter, surah, cache_dir):
+    cache_key = hashlib.sha256(f"{reciter['id']}:{surah}:complete-surah".encode()).hexdigest()
+    return cache_dir / f"chapter-{cache_key}.mp3"
+
+
+def _chapter_only_preview_track(reciter, surah, cache_dir):
+    """Reuse one full chapter download for timing metadata and audio preview."""
+    chapter = SURAHS_BY_NUMBER[int(surah)]
+    ayah_count = int(chapter["ayah_count"])
+    verses = get_ayahs(int(surah), 1, ayah_count)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    audio_path = _chapter_preview_cache_path(reciter, surah, cache_dir)
+    try:
+        if audio_path.is_file() and audio_path.stat().st_size >= 1024:
+            duration = probe_audio_duration(audio_path)
+            durations = estimate_ayah_durations(verses, duration)
+            return AudioTrack(
+                audio_path, get_audio_url(reciter, surah), 0, duration, durations,
+                None, "chapter_estimate",
+                f"{reciter.get('source') or 'This provider'} publishes this recitation by Surah "
+                "without matching ayah timings integrated in the app. "
+                "The complete Surah remains intact; caption/scene boundaries are approximate, "
+                "estimated from Arabic text length. Partial ayah ranges are disabled.",
+            )
+        track = download_recitation(
+            reciter, int(surah), 1, ayah_count, cache_dir, expected_ayahs=verses,
+        )
+        track.path.replace(audio_path)
+        return AudioTrack(
+            audio_path, track.url, track.start, track.end, track.ayah_durations,
+            track.word_timings, track.timing_source, track.timing_note,
+        )
+    except (OSError, AudioSourceError):
+        audio_path.unlink(missing_ok=True)
+        raise
 
 
 @bp.get("/api/reciters/<reciter_id>/preview")
@@ -1509,6 +1628,34 @@ def preview_reciter_timings(reciter_id):
         verses = get_ayahs(surah, start, end)
         if surah not in reciter.get("available_surah_numbers", range(1, 115)):
             return jsonify(error="This recording has no verified audio for the selected Surah."), 404
+        if reciter.get("timing_provider") == "chapter_only":
+            expected_end = int(SURAHS_BY_NUMBER[surah]["ayah_count"])
+            if start != 1 or end != expected_end:
+                return jsonify(error=("This recording has chapter-level audio only. Select the complete "
+                                      "Surah; partial ayah preview needs verified ayah timings.")), 400
+            cache_dir = Path(current_app.config.get(
+                "AUDIO_PREVIEW_FOLDER", Path(tempfile.gettempdir()) / "quran-reels-audio-previews",
+            ))
+            with _AUDIO_PREVIEW_CACHE_LOCK:
+                track = _chapter_only_preview_track(reciter, surah, cache_dir)
+            cursor = 0
+            rows = []
+            for index, duration in enumerate(track.ayah_durations):
+                start_time = cursor
+                cursor += round(duration * 1000)
+                rows.append({"ayah": start + index, "start_time": start_time, "end_time": cursor})
+            rows[-1]["end_time"] = round(track.end * 1000)
+            return jsonify({
+                "audio_url": url_for("main.preview_reciter_audio", reciter_id=reciter_id,
+                                      surah=surah, start=start, end=end),
+                "audio_start": 0,
+                "audio_end": track.end,
+                "audio_duration": track.end,
+                "timings": [{"ayah": int(row["ayah"]), "start": row["start_time"] / 1000,
+                             "end": row["end_time"] / 1000} for row in rows],
+                "timing_source": track.timing_source,
+                "timing_note": track.timing_note,
+            })
         word_data = (None if reciter.get("timing_provider") == "qud"
                      else get_chapter_word_timing(reciter_id, surah, start, end, verses))
         rows = word_data["ayahs"] if word_data else get_recitation_timings(reciter, surah, start, end)
@@ -1567,7 +1714,7 @@ def preview_reciter_timings(reciter_id):
 
 @bp.get("/api/reciters/<reciter_id>/audio-preview")
 def preview_reciter_audio(reciter_id):
-    """Serve a PCM excerpt containing only the selected ayah range."""
+    """Serve the selected recording, trimming only when matching ayah timings exist."""
     reciter = RECITERS_BY_ID.get(reciter_id)
     if reciter is None:
         return jsonify(error="Choose a reciter from the list."), 404
@@ -1580,6 +1727,23 @@ def preview_reciter_audio(reciter_id):
             return jsonify(error="This recording has no verified audio for the selected Surah."), 404
     except (TypeError, ValueError) as exc:
         return jsonify(error=str(exc)), 400
+
+    if reciter.get("timing_provider") == "chapter_only":
+        expected_end = int(SURAHS_BY_NUMBER[surah]["ayah_count"])
+        if start != 1 or end != expected_end:
+            return jsonify(error=("This recording has chapter-level audio only. Select the complete "
+                                  "Surah; partial ayah preview needs verified ayah timings.")), 400
+        cache_dir = Path(current_app.config.get(
+            "AUDIO_PREVIEW_FOLDER", Path(tempfile.gettempdir()) / "quran-reels-audio-previews",
+        ))
+        try:
+            with _AUDIO_PREVIEW_CACHE_LOCK:
+                track = _chapter_only_preview_track(reciter, surah, cache_dir)
+        except (AudioSourceError, OSError, RuntimeError, ValueError) as exc:
+            current_app.logger.exception("Could not prepare the complete chapter preview")
+            return jsonify(error=str(exc)), 502
+        return send_file(track.path, mimetype="audio/mpeg", conditional=True,
+                         max_age=3600, download_name=f"surah-{surah:03d}.mp3")
 
     cache_dir = Path(current_app.config.get(
         "AUDIO_PREVIEW_FOLDER", Path(tempfile.gettempdir()) / "quran-reels-audio-previews",
@@ -1598,6 +1762,12 @@ def preview_reciter_audio(reciter_id):
                         cached.unlink(missing_ok=True)
                     else:
                         cached_segments.append((modified, cached))
+                except OSError:
+                    continue
+            for cached in cache_dir.glob("chapter-*.mp3"):
+                try:
+                    if now - cached.stat().st_mtime > 24 * 60 * 60:
+                        cached.unlink(missing_ok=True)
                 except OSError:
                     continue
             if not preview_path.is_file() or preview_path.stat().st_size < 1024:
@@ -1697,6 +1867,12 @@ def generate():
         except ValueError as exc:
             return jsonify(error=str(exc)), 400
         chapter = SURAHS_BY_NUMBER[surah]
+        if surah not in reciter.get("available_surah_numbers", range(1, 115)):
+            return jsonify(error="This recording has no verified audio for the selected Surah."), 400
+        if (not reciter.get("supports_ayah_selection", True)
+                and (ayah_start != 1 or ayah_end != int(chapter["ayah_count"]))):
+            return jsonify(error=("This recording is available by complete Surah only and has no "
+                                  "verified ayah timings. Select the full Surah or choose a timed recording.")), 400
         metadata_defaults = generate_youtube_metadata(
             surah_number=surah, surah_english=chapter["english_name"],
             surah_arabic=chapter["name_arabic"], ayah_start=ayah_start,
@@ -2094,7 +2270,8 @@ def generate():
 
                 track = download_recitation(
                     reciter, surah, ayah_start, ayah_end, upload_dir,
-                    expected_ayahs=official_ayahs if ayahs == official_ayahs else None,
+                    expected_ayahs=(official_ayahs if reciter.get("timing_provider") == "chapter_only"
+                                    or ayahs == official_ayahs else None),
                     cancel_event=cancel_event, on_progress=audio_progress,
                 )
                 update(progress=15, phase="preparing", message="Preparing Arabic scenes and video layers.")
@@ -2191,7 +2368,12 @@ def generate():
                     "filename": output_path.name,
                     "download_url": download_url,
                     "download_title": download_title,
+                    "reciter_id": reciter["id"],
                     "reciter": reciter["name"],
+                    "recording_name": reciter.get("recording_name"),
+                    "recording_style": reciter.get("style"),
+                    "riwayah": reciter.get("riwayah"),
+                    "audio_source": reciter.get("source"),
                     "surah": SURAHS_BY_NUMBER[surah]["english_name"],
                     "ayah_start": ayah_start,
                     "ayah_end": ayah_end,
