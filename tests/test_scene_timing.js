@@ -7,6 +7,78 @@ const reflow = globalThis.QuranSceneTiming.reflowManualTimeline;
 const readTimelineTime = globalThis.QuranSceneTiming.readTimelineTime;
 const resumePlaybackTime = globalThis.QuranSceneTiming.resumePlaybackTime;
 const canResumePlayback = globalThis.QuranSceneTiming.canResumePlayback;
+const isExplicitSeekTime = globalThis.QuranSceneTiming.isExplicitSeekTime;
+const scenePageBounds = globalThis.QuranSceneTiming.scenePageBounds;
+const sceneResizeBounds = globalThis.QuranSceneTiming.sceneResizeBounds;
+const effectiveAudioDuration = globalThis.QuranSceneTiming.effectiveAudioDuration;
+const splitQuranWords = globalThis.QuranSceneTiming.splitQuranWords;
+const resizedSceneDuration = globalThis.QuranSceneTiming.resizedSceneDuration;
+
+test('missing seek argument does not become an explicit seek to zero', () => {
+  assert.equal(isExplicitSeekTime(null), false);
+  assert.equal(isExplicitSeekTime(undefined), false);
+  assert.equal(isExplicitSeekTime(''), false);
+  assert.equal(isExplicitSeekTime(0), true);
+  assert.equal(isExplicitSeekTime('2.5'), true);
+});
+
+test('scene page ranges expose up to six scenes and clamp at the final group', () => {
+  assert.deepEqual(scenePageBounds(18, 0), {page:0, pageCount:3, start:0, end:6});
+  assert.deepEqual(scenePageBounds(18, 2), {page:2, pageCount:3, start:12, end:18});
+  assert.deepEqual(scenePageBounds(7, 99), {page:1, pageCount:2, start:6, end:7});
+});
+
+test('audio lock uses the trimmed selected range and not the untrimmed file duration', () => {
+  assert.equal(effectiveAudioDuration({
+    trimEnabled:true, trimStart:1.25, trimEnd:2.5, untrimmedDuration:10,
+    effectiveDuration:10, baseDuration:10,
+  }), 6.25);
+  assert.equal(effectiveAudioDuration({
+    trimEnabled:false, untrimmedDuration:10, effectiveDuration:6.25, baseDuration:10,
+  }), 6.25);
+  assert.equal(effectiveAudioDuration({trimEnabled:true, trimStart:2, trimEnd:1, baseDuration:10}), 7);
+});
+
+test('Uthmani hair spaces stay inside Quran word tokens', () => {
+  assert.deepEqual(splitQuranWords('بَنِیۤ إِسۡرَ\u200aٰ\u2060ۤءِیلَ وَعَهْدٌ'), [
+    'بَنِیۤ', 'إِسۡرَ\u200aٰ\u2060ۤءِیلَ', 'وَعَهْدٌ',
+  ]);
+});
+
+test('drag resizing keeps positive durations and clamps scene end to the audio timeline', () => {
+  assert.equal(resizedSceneDuration(2, -10, 12, 4), .01);
+  assert.equal(resizedSceneDuration(2, 10, 12, 4), 8);
+  assert.equal(resizedSceneDuration(2, 10, 10000, 0), 12);
+});
+
+test('locked resize reserves every later scene duration and marks its permitted boundary', () => {
+  const scenes = [
+    {scene_id:'scene-1', duration:4},
+    {scene_id:'scene-2', duration:3},
+    {scene_id:'scene-3', duration:3},
+  ];
+  const bounds = sceneResizeBounds(scenes, 0, 10);
+  assert.equal(bounds.known, true);
+  assert.equal(bounds.maxDuration, 4);
+  assert.equal(bounds.timelineEnd, 10);
+  assert.equal(resizedSceneDuration(4, 3, 10, 0, [3, 3], true), 4);
+  assert.equal(resizedSceneDuration(3, 4, 10, 4, [3], true), 3);
+});
+
+test('unlocked resize may exceed audio while preserving all later scene lengths', () => {
+  const scenes = [
+    {scene_id:'scene-1', duration:4},
+    {scene_id:'scene-2', duration:3},
+    {scene_id:'scene-3', duration:3},
+  ];
+  const nextFirstDuration = resizedSceneDuration(4, 3, 10, 0, [3, 3], false);
+  assert.equal(nextFirstDuration, 7);
+  const timeline = reflow([
+    {...scenes[0], duration:nextFirstDuration}, ...scenes.slice(1),
+  ]);
+  assert.deepEqual(timeline.map(scene => scene.duration), [7, 3, 3]);
+  assert.deepEqual(timeline.map(scene => [scene.start_time, scene.end_time]), [[0, 7], [7, 10], [10, 13]]);
+});
 
 test('two scenes: subtract the selected scene start from the global playback time', () => {
   const result = calculate([

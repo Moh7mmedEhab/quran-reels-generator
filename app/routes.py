@@ -5,6 +5,7 @@ import hashlib
 import http.client
 import ipaddress
 import json
+import math
 import os
 import re
 import secrets
@@ -16,18 +17,20 @@ import time
 from io import BytesIO
 from threading import Lock
 from uuid import uuid4
-from urllib.parse import quote, urljoin, urlsplit
+from urllib.parse import quote, urlencode, urljoin, urlsplit
 
-from flask import Blueprint, current_app, jsonify, render_template, request, send_file, send_from_directory, url_for
+from flask import (Blueprint, current_app, jsonify, redirect, render_template,
+                   request, send_file, send_from_directory, session, url_for)
 from PIL import Image, ImageColor
 from werkzeug.utils import secure_filename
 
 from .audio_sources import (AudioSourceError, AudioTrack, download_recitation,
-                            estimate_ayah_durations, get_audio_url,
+                            estimate_ayah_durations, get_audio_url, materialize_audio_track,
                             get_recitation_timings, probe_audio_duration,
-                            select_audio_word_range)
+                            select_audio_word_range, trim_audio_track)
 from .quraa_data import RECITERS, RECITERS_BY_ID
 from .quran_data import SURAHS, SURAHS_BY_NUMBER, get_ayahs
+from .quran_words import split_quran_words
 from .video_engine import (BACKGROUND_FIT_MODES, BACKGROUND_VIDEO_EXTENSIONS,
                            CAPTION_COLORS, QUALITY_PRESETS, RESOLUTION_PRESETS, SIZES,
                            THEMES, THEME_CATEGORIES, _background, caption_render_options, output_dimensions,
@@ -58,6 +61,11 @@ from .reel_viewer import (DEFAULT_WAVEFORM_X_OFFSET, DEFAULT_WAVEFORM_Y_OFFSET,
                           WAVEFORM_Y_OFFSET_RANGE, render_playback_layer,
                           render_static_layer)
 from .youtube_metadata import generate_youtube_metadata
+from .publishing import (PublishError, TIKTOK_PUBLISH_SCOPE, TIKTOK_UPLOAD_SCOPE,
+                         TIKTOK_USER_SCOPE, YOUTUBE_READ_SCOPE, YOUTUBE_UPLOAD_SCOPE,
+                         exchange_tiktok_code, exchange_youtube_code, is_configured,
+                         refresh_upload_status, setup_message, tiktok_creator_info,
+                         tiktok_user_info, youtube_channel_info, _refresh_account)
 from .file_names import unique_download_filename
 from .preview_storage import (PREVIEW_RETENTION_SECONDS, cleanup_expired_previews,
                               load_preview, new_preview_id, preview_paths,
@@ -71,31 +79,122 @@ _POLLINATIONS_MODEL_CACHE_LOCK = Lock()
 _POLLINATIONS_MODEL_CACHE = {"expires": 0.0, "models": []}
 
 
+def _publisher_session_id():
+    """Return this browser's random identity, signed by Flask's session cookie."""
+    session_id = session.get("publisher_session_id")
+    if not session_id:
+        session_id = secrets.token_urlsafe(32)
+        session["publisher_session_id"] = session_id
+    return session_id
+
+
+def _publisher_owner():
+    store = current_app.extensions["publisher_store"]
+    return store.owner_key(_publisher_session_id())
+
+
+def _publisher_csrf():
+    token = session.get("publisher_csrf")
+    if not token:
+        token = secrets.token_urlsafe(32)
+        session["publisher_csrf"] = token
+    return token
+
+
+def _publisher_csrf_valid():
+    supplied = str(request.headers.get("X-Publisher-CSRF", ""))
+    expected = str(session.get("publisher_csrf", ""))
+    return bool(supplied and expected and secrets.compare_digest(supplied, expected))
+
+
+def _scope_set(scopes):
+    return {item.strip() for item in re.split(r"[ ,]+", str(scopes or "")) if item.strip()}
+
+
+def _public_publisher_account(account):
+    if not account:
+        return None
+    return {key: account.get(key) for key in ("platform", "external_id", "display_name", "scopes", "updated_at", "unreadable")}
+
+
+def _generated_publish_metadata(defaults, chapter):
+    """Map the existing bilingual metadata output to platform upload fields."""
+    arabic = defaults.get("arabic") or {}
+    english = defaults.get("english") or {}
+    arabic_title = str(arabic.get("title") or "").split(" | ", 1)[0].strip()
+    english_name = str(chapter.get("english_name") or "").strip()
+    title = f"{arabic_title} . Surah {english_name}".strip()
+    descriptions = [str(english.get("description") or "").strip(),
+                    str(arabic.get("description") or "").strip()]
+    description = "\n\n".join(item for item in descriptions if item)
+    tags, seen = [], set()
+    for tag in [*(english.get("tags") or []), *(arabic.get("tags") or [])]:
+        item = " ".join(str(tag).split()).strip()
+        if item and item.casefold() not in seen:
+            seen.add(item.casefold())
+            tags.append(item)
+    hashtags, seen_hashtags = [], set()
+    for tag in [*(english.get("hashtags") or []), *(arabic.get("hashtags") or [])]:
+        item = " ".join(str(tag).split()).strip()
+        if item and item.casefold() not in seen_hashtags:
+            seen_hashtags.add(item.casefold())
+            hashtags.append(item)
+    return {
+        "title": title,
+        "description": description,
+        "tags": tags,
+        "hashtags": hashtags,
+        "caption": f"{title}\n\n{description}" if description else title,
+        "generated": defaults,
+    }
+
+
 def _parse_word_selection(values, verses, ayah_start):
     """Read one-based word boundaries shared by preview and render requests."""
     try:
         start_raw = values.get("start_word", "1")
-        end_raw = values.get("end_word", str(len(str(verses[-1]).split())))
+        end_raw = values.get("end_word", str(len(split_quran_words(verses[-1]))))
         start_word = int(start_raw) if str(start_raw).strip() else 1
-        end_word = int(end_raw) if str(end_raw).strip() else len(str(verses[-1]).split())
+        end_word = int(end_raw) if str(end_raw).strip() else len(split_quran_words(verses[-1]))
     except (TypeError, ValueError) as exc:
         raise ValueError("Start and end word positions must be whole numbers.") from exc
-    if not 1 <= start_word <= len(str(verses[0]).split()):
-        raise ValueError(f"Start word must be from 1 to {len(str(verses[0]).split())}.")
-    if not 1 <= end_word <= len(str(verses[-1]).split()):
-        raise ValueError(f"End word must be from 1 to {len(str(verses[-1]).split())}.")
+    if not 1 <= start_word <= len(split_quran_words(verses[0])):
+        raise ValueError(f"Start word must be from 1 to {len(split_quran_words(verses[0]))}.")
+    if not 1 <= end_word <= len(split_quran_words(verses[-1])):
+        raise ValueError(f"End word must be from 1 to {len(split_quran_words(verses[-1]))}.")
     if len(verses) == 1 and end_word < start_word:
         raise ValueError("The end word cannot come before the start word in the same ayah.")
     mode = str(values.get("word_mode", "automatic") or "automatic").strip().lower()
     if mode not in {"automatic", "manual"}:
         raise ValueError("Choose automatic verified word timing or manual audio trim.")
-    partial = start_word > 1 or end_word < len(str(verses[-1]).split())
+    partial = start_word > 1 or end_word < len(split_quran_words(verses[-1]))
     manual_start = values.get("manual_start")
     manual_end = values.get("manual_end")
     if mode == "manual" and partial and (
             manual_start in (None, "") or manual_end in (None, "")):
-        raise ValueError("Enter both manual audio times in seconds for the selected partial-word range.")
+        # Without explicit seconds, keep the normal full-ayah recording usable;
+        # users can choose the actual interval visually with audio trim.
+        start_word, end_word, mode, manual_start, manual_end, partial = (
+            1, len(split_quran_words(verses[-1])), "automatic", None, None, False,
+        )
     return start_word, end_word, mode, manual_start, manual_end, partial
+
+
+def _parse_audio_trim(values):
+    """Parse optional seconds removed from the selected ayah range ends."""
+    enabled_value = values.get("audio_trim_enabled", False)
+    enabled = (enabled_value if isinstance(enabled_value, bool)
+               else str(enabled_value).strip().lower() in {"true", "1", "yes", "on"})
+    if not enabled:
+        return False, 0.0, 0.0
+    try:
+        trim_start = float(values.get("audio_trim_start_seconds", 0) or 0)
+        trim_end = float(values.get("audio_trim_end_seconds", 0) or 0)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Audio trim values must be numbers of seconds removed from the range ends.") from exc
+    if not all(math.isfinite(value) for value in (trim_start, trim_end)) or min(trim_start, trim_end) < 0:
+        raise ValueError("Audio trim from start and end must be zero or a positive number of seconds.")
+    return True, trim_start, trim_end
 
 
 def _preview_dimensions(size, max_edge=960):
@@ -313,7 +412,7 @@ def _caption_position_coordinates(data, template, *, has_translation=False):
     preset = data.get("caption_position", template.get("caption_position", "center"))
     if preset not in {"upper", "center", "lower"}:
         raise ValueError("Choose upper, center, or lower-third caption placement.")
-    default_y = {"upper": 34, "center": 43 if has_translation else 54, "lower": 72}[preset]
+    default_y = {"upper": 34, "center": 50, "lower": 72}[preset]
     try:
         x = float(data.get("caption_x", 50))
         y = float(data.get("caption_y", default_y))
@@ -538,8 +637,8 @@ def _render_template_preview(template_id, ratio):
             max_height_ratio=.44,
             **_caption_options(template, {}),
         )
-        anchor = {"upper": .34, "center": .54, "lower": .72}.get(
-            template.get("caption_position", "center"), .54
+        anchor = {"upper": .34, "center": .50, "lower": .72}.get(
+            template.get("caption_position", "center"), .50
         )
         y = max(int(height * .12), min(int(height * anchor - caption.height / 2),
                                         height - caption.height - int(height * .12)))
@@ -588,6 +687,13 @@ def studio():
                            background_video_templates=available_background_video_templates(
                                static_folder=current_app.static_folder),
                            app_version=APP_VERSION, display_version=DISPLAY_VERSION)
+
+
+@bp.get("/publish")
+def publish_video():
+    return render_template("publish.html", display_version=DISPLAY_VERSION,
+                           copyright_year=datetime.now().year,
+                           initial_render_job_id=request.args.get("render_job_id", ""))
 
 
 @bp.get("/images")
@@ -1005,11 +1111,483 @@ def youtube_metadata():
     if reciter is None:
         return jsonify(error="Choose a reciter from the list."), 400
     chapter = SURAHS_BY_NUMBER[surah]
-    return jsonify(generate_youtube_metadata(
+    metadata = generate_youtube_metadata(
         surah_number=surah, surah_english=chapter["english_name"],
         surah_arabic=chapter["name_arabic"], ayah_start=ayah_start,
         ayah_end=ayah_end, reciter_name=reciter["name"],
-    ))
+    )
+    metadata["publish_title"] = _generated_publish_metadata(metadata, chapter)["title"]
+    return jsonify(metadata)
+
+
+def _publishing_home(notice, render_job_id=""):
+    render_job_id = render_job_id or session.pop("publisher_oauth_return_render_id", "")
+    params = {"publishing": str(notice)}
+    if re.fullmatch(r"[a-f0-9]{32}", str(render_job_id or "")):
+        params["render_job_id"] = str(render_job_id)
+    response = redirect(url_for("main.publish_video") + "?" + urlencode(params))
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
+def _public_completed_render(render_job_id, owner):
+    """Resolve a session-owned completed output, including after a server restart."""
+    if not re.fullmatch(r"[a-f0-9]{32}", str(render_job_id or "")):
+        return None
+    store = current_app.extensions["publisher_store"]
+    record = store.get_render(render_job_id, owner)
+    if not record:
+        return None
+    job = current_app.extensions["render_job_manager"].get(render_job_id)
+    live_result = ((job or {}).get("result") or {}) if (job or {}).get("status") == "complete" else {}
+    if job and job.get("status") not in {"complete", "failed", "cancelled"}:
+        return {"pending": True}
+    result = dict(record.get("metadata") or {})
+    result.update({key: value for key, value in live_result.items() if value is not None})
+    filename = record.get("filename") or result.get("filename") or f"{render_job_id}.mp4"
+    if filename != f"{render_job_id}.mp4":
+        return None
+    output_root = Path(current_app.config["OUTPUT_FOLDER"]).resolve()
+    source_path = (output_root / filename).resolve()
+    if source_path.parent != output_root or not source_path.is_file() or source_path.stat().st_size < 1024:
+        return {"unavailable": True, "render_job_id": render_job_id}
+    return {
+        "render_job_id": render_job_id,
+        "project_id": record.get("project_id") or "draft",
+        "filename": filename,
+        "download_title": result.get("download_title") or filename,
+        "download_url": url_for("main.download", filename=filename,
+                                 title=result.get("download_title") or ""),
+        "preview_url": url_for("main.published_render_video", render_job_id=render_job_id),
+        "publish_metadata": result.get("publish_metadata") or {},
+        "surah": result.get("surah") or "",
+        "ayah_start": result.get("ayah_start"),
+        "ayah_end": result.get("ayah_end"),
+        "reciter": result.get("reciter") or "",
+        "duration": result.get("duration"),
+        "created_at": record.get("created_at"),
+    }
+
+
+@bp.get("/api/publishing/renders")
+def publishing_renders():
+    store = current_app.extensions["publisher_store"]
+    owner = _publisher_owner()
+    renders = []
+    for record in store.list_renders(owner):
+        item = _public_completed_render(record["render_job_id"], owner)
+        if item and not item.get("pending") and not item.get("unavailable"):
+            renders.append(item)
+    return jsonify({"renders": renders})
+
+
+@bp.get("/api/publishing/renders/<render_job_id>")
+def publishing_render(render_job_id):
+    item = _public_completed_render(render_job_id, _publisher_owner())
+    if not item:
+        return jsonify(error="This completed render is not available in this browser session."), 404
+    if item.get("pending"):
+        return jsonify(error="This render is still in progress."), 409
+    if item.get("unavailable"):
+        return jsonify(error="The rendered MP4 is no longer available."), 404
+    if not item.get("publish_metadata"):
+        item["metadata_error"] = "Generated metadata was not saved with this render. Return to the editor and render again to create a metadata snapshot."
+    return jsonify(item)
+
+
+@bp.get("/publishing/video/<render_job_id>")
+def published_render_video(render_job_id):
+    item = _public_completed_render(render_job_id, _publisher_owner())
+    if not item or item.get("pending") or item.get("unavailable"):
+        return jsonify(error="This completed render is not available in this browser session."), 404
+    return send_from_directory(current_app.config["OUTPUT_FOLDER"], item["filename"],
+                               mimetype="video/mp4", as_attachment=False,
+                               conditional=True, max_age=0)
+
+
+@bp.get("/api/publishing")
+def publishing_state():
+    store = current_app.extensions["publisher_store"]
+    owner = _publisher_owner()
+    accounts = {account["platform"]: account for account in store.list_accounts(owner)}
+    providers = {}
+    for platform in ("youtube", "tiktok"):
+        account = accounts.get(platform)
+        scopes = _scope_set((account or {}).get("scopes"))
+        if platform == "youtube":
+            required = {YOUTUBE_UPLOAD_SCOPE}
+        else:
+            required = {TIKTOK_UPLOAD_SCOPE}
+        missing = sorted(required - scopes) if account else []
+        missing_direct = ([TIKTOK_PUBLISH_SCOPE] if account and platform == "tiktok"
+                          and current_app.config.get("TIKTOK_DIRECT_POST_ENABLED")
+                          and TIKTOK_PUBLISH_SCOPE not in scopes else [])
+        secrets_saved = (account is not None and not account.get("unreadable")
+                         and bool((account.get("secrets") or {}).get("access_token")))
+        if secrets_saved:
+            tokens = account["secrets"]
+            try:
+                expires_at = float(tokens.get("expires_at") or 0)
+                refresh_expires_at = float(tokens.get("refresh_expires_at") or 0)
+            except (TypeError, ValueError):
+                expires_at, refresh_expires_at = 0, 0
+            access_current = (expires_at > time.time() + 30 if "expires_at" in tokens
+                              and tokens.get("expires_at") is not None else True)
+            refresh_current = bool(tokens.get("refresh_token")) and (
+                not tokens.get("refresh_expires_at") or refresh_expires_at > time.time() + 30)
+            credentials_ready = access_current or refresh_current
+        else:
+            credentials_ready = False
+        configured = is_configured(current_app, platform)
+        ready = bool(configured and account and credentials_ready and not missing)
+        direct_ready = bool(platform == "tiktok" and ready
+                            and current_app.config.get("TIKTOK_DIRECT_POST_ENABLED")
+                            and not missing_direct)
+        providers[platform] = {
+            "configured": configured,
+            "setup_message": setup_message(current_app, platform),
+            "connected": bool(account),
+            "ready": ready,
+            "credential_ready": credentials_ready,
+            "credential_message": "" if credentials_ready or not account else
+                "Saved credentials are missing, expired, or unreadable. Reconnect this account.",
+            "account": _public_publisher_account(account),
+            "missing_scopes": missing,
+            "direct_missing_scopes": missing_direct,
+            "required_scopes": sorted(required),
+            "direct_post_enabled": bool(current_app.config.get("TIKTOK_DIRECT_POST_ENABLED")) if platform == "tiktok" else False,
+            "direct_post_ready": direct_ready,
+        }
+    return jsonify({"csrf_token": _publisher_csrf(), "providers": providers,
+                    "uploads": store.list_uploads(owner)})
+
+
+@bp.get("/api/publishing/youtube/connect")
+def connect_youtube():
+    render_job_id = request.args.get("render_job_id", "")
+    if not is_configured(current_app, "youtube"):
+        return _publishing_home("youtube_setup", render_job_id)
+    state = secrets.token_urlsafe(32)
+    session["publisher_oauth_youtube"] = {"state": state, "created_at": time.time(),
+                                           "render_job_id": render_job_id}
+    query = urlencode({
+        "client_id": current_app.config["YOUTUBE_CLIENT_ID"],
+        "redirect_uri": current_app.config["YOUTUBE_REDIRECT_URI"],
+        "response_type": "code",
+        "scope": f"{YOUTUBE_UPLOAD_SCOPE} {YOUTUBE_READ_SCOPE}",
+        "access_type": "offline",
+        "include_granted_scopes": "false",
+        "prompt": "consent",
+        "state": state,
+    })
+    return redirect("https://accounts.google.com/o/oauth2/v2/auth?" + query)
+
+
+@bp.get("/api/publishing/tiktok/connect")
+def connect_tiktok():
+    render_job_id = request.args.get("render_job_id", "")
+    if not is_configured(current_app, "tiktok"):
+        return _publishing_home("tiktok_setup", render_job_id)
+    state = secrets.token_urlsafe(32)
+    session["publisher_oauth_tiktok"] = {"state": state, "created_at": time.time(),
+                                          "render_job_id": render_job_id}
+    scopes = [TIKTOK_USER_SCOPE, TIKTOK_UPLOAD_SCOPE]
+    if current_app.config.get("TIKTOK_DIRECT_POST_ENABLED"):
+        scopes.append(TIKTOK_PUBLISH_SCOPE)
+    query = urlencode({
+        "client_key": current_app.config["TIKTOK_CLIENT_KEY"],
+        "response_type": "code", "scope": ",".join(scopes),
+        "redirect_uri": current_app.config["TIKTOK_REDIRECT_URI"], "state": state,
+    })
+    return redirect("https://www.tiktok.com/v2/auth/authorize/?" + query)
+
+
+def _valid_oauth_callback(platform):
+    attempt = session.pop(f"publisher_oauth_{platform}", None)
+    session.pop("publisher_oauth_return_render_id", None)
+    supplied = str(request.args.get("state", ""))
+    expected = str((attempt or {}).get("state", ""))
+    created = float((attempt or {}).get("created_at") or 0)
+    if not expected or not supplied or not secrets.compare_digest(expected, supplied) or time.time() - created > 600:
+        return False
+    render_job_id = str((attempt or {}).get("render_job_id") or "")
+    if re.fullmatch(r"[a-f0-9]{32}", render_job_id):
+        session["publisher_oauth_return_render_id"] = render_job_id
+    return True
+
+
+@bp.get("/oauth/youtube/callback")
+def youtube_oauth_callback():
+    if not _valid_oauth_callback("youtube"):
+        return _publishing_home("youtube_state_error")
+    if request.args.get("error"):
+        return _publishing_home("youtube_denied")
+    code = str(request.args.get("code", ""))
+    if not code or not is_configured(current_app, "youtube"):
+        return _publishing_home("youtube_setup")
+    try:
+        tokens = exchange_youtube_code(current_app, code)
+        channel_id = channel_name = ""
+        try:
+            channel_id, channel_name = youtube_channel_info(tokens["access_token"])
+        except PublishError:
+            current_app.logger.info("YouTube connected but channel identity could not be read.")
+        lifetime = int(tokens.get("expires_in") or 0)
+        stored = {**tokens, "expires_at": time.time() + max(0, lifetime)}
+        if tokens.get("refresh_token"):
+            stored["refresh_expires_at"] = None
+        current_app.extensions["publisher_store"].save_account(
+            _publisher_owner(), "youtube", stored, external_id=channel_id,
+            display_name=channel_name, scopes=tokens.get("scope", ""))
+    except PublishError:
+        current_app.logger.info("YouTube OAuth callback failed.")
+        return _publishing_home("youtube_connection_error")
+    response = _publishing_home("youtube_connected")
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
+@bp.get("/oauth/tiktok/callback")
+def tiktok_oauth_callback():
+    if not _valid_oauth_callback("tiktok"):
+        return _publishing_home("tiktok_state_error")
+    if request.args.get("error"):
+        return _publishing_home("tiktok_denied")
+    code = str(request.args.get("code", ""))
+    if not code or not is_configured(current_app, "tiktok"):
+        return _publishing_home("tiktok_setup")
+    try:
+        tokens = exchange_tiktok_code(current_app, code)
+        account_id = str(tokens.get("open_id") or "")
+        display_name = ""
+        try:
+            account_id, display_name = tiktok_user_info(tokens["access_token"])
+        except PublishError:
+            current_app.logger.info("TikTok connected but profile identity could not be read.")
+        stored = {**tokens, "expires_at": time.time() + max(0, int(tokens.get("expires_in") or 0)),
+                  "refresh_expires_at": time.time() + max(0, int(tokens.get("refresh_expires_in") or 0))}
+        current_app.extensions["publisher_store"].save_account(
+            _publisher_owner(), "tiktok", stored, external_id=account_id,
+            display_name=display_name, scopes=tokens.get("scope", ""))
+    except PublishError:
+        current_app.logger.info("TikTok OAuth callback failed.")
+        return _publishing_home("tiktok_connection_error")
+    response = _publishing_home("tiktok_connected")
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
+@bp.post("/api/publishing/<platform>/disconnect")
+def disconnect_publishing_account(platform):
+    if platform not in {"youtube", "tiktok"}:
+        return jsonify(error="Choose YouTube or TikTok."), 404
+    if not _publisher_csrf_valid():
+        return jsonify(error="The security token expired. Refresh the page and try again."), 403
+    store = current_app.extensions["publisher_store"]
+    owner = _publisher_owner()
+    try:
+        account = store.get_account(owner, platform)
+    except RuntimeError:
+        account = None
+    if account:
+        access_token = account["secrets"].get("access_token")
+        try:
+            if platform == "youtube" and access_token:
+                from .publishing import _request, YOUTUBE_REVOKE_URL
+                _request("POST", YOUTUBE_REVOKE_URL, platform="YouTube", data={"token": access_token})
+            elif platform == "tiktok" and access_token and current_app.config.get("TIKTOK_CLIENT_KEY"):
+                from .publishing import _request, TIKTOK_REVOKE_URL
+                _request("POST", TIKTOK_REVOKE_URL, platform="TikTok", data={
+                    "client_key": current_app.config["TIKTOK_CLIENT_KEY"],
+                    "client_secret": current_app.config["TIKTOK_CLIENT_SECRET"],
+                    "token": access_token,
+                }, headers={"Content-Type": "application/x-www-form-urlencoded"})
+        except PublishError:
+            current_app.logger.info("Provider revocation failed during disconnect; local credentials were deleted.")
+    store.delete_account(owner, platform)
+    return jsonify(ok=True)
+
+
+@bp.post("/api/publishing/tiktok/creator-info")
+def publishing_tiktok_creator_info():
+    if not _publisher_csrf_valid():
+        return jsonify(error="The security token expired. Refresh the page and try again."), 403
+    if not current_app.config.get("TIKTOK_DIRECT_POST_ENABLED"):
+        return jsonify(error="TikTok direct posting is not enabled for this developer app."), 403
+    owner = _publisher_owner()
+    try:
+        account, token = _refresh_account(current_app, current_app.extensions["publisher_store"], owner, "tiktok")
+        if TIKTOK_PUBLISH_SCOPE not in _scope_set(account["scopes"]):
+            return jsonify(error="This TikTok account did not grant video.publish. Reconnect after the scope is approved."), 403
+        creator = tiktok_creator_info(token)
+    except PublishError as exc:
+        return jsonify(error=str(exc)), 400
+    return jsonify({key: creator.get(key) for key in (
+        "creator_username", "creator_nickname", "privacy_level_options", "comment_disabled",
+        "duet_disabled", "stitch_disabled", "max_video_post_duration_sec")})
+
+
+@bp.post("/api/publishing/uploads")
+def start_social_upload():
+    if not _publisher_csrf_valid():
+        return jsonify(error="The security token expired. Refresh the page and try again."), 403
+    data = request.get_json(silent=True) or {}
+    platform = str(data.get("platform") or "").strip().lower()
+    if platform not in {"youtube", "tiktok"}:
+        return jsonify(error="Choose YouTube or TikTok."), 400
+    if not is_configured(current_app, platform):
+        return jsonify(error=setup_message(current_app, platform)), 503
+    owner = _publisher_owner()
+    store = current_app.extensions["publisher_store"]
+    try:
+        account = store.get_account(owner, platform)
+    except RuntimeError:
+        return jsonify(error="Stored credentials could not be decrypted. Reconnect this account with the current encryption key."), 409
+    if account is None:
+        return jsonify(error=f"Connect your {platform.title()} account before uploading."), 409
+    scopes = _scope_set(account["scopes"])
+    if platform == "youtube" and YOUTUBE_UPLOAD_SCOPE not in scopes:
+        return jsonify(error="The connected Google account did not grant youtube.upload. Reconnect and approve the upload permission."), 403
+    render_job_id = str(data.get("render_job_id") or "")
+    render = _public_completed_render(render_job_id, owner)
+    if not render:
+        return jsonify(error="The completed render could not be found in this browser session."), 404
+    if render.get("pending"):
+        return jsonify(error="Wait for the render to finish before uploading."), 409
+    if render.get("unavailable"):
+        return jsonify(error="The rendered MP4 is no longer available. Download or render it again."), 404
+    output_root = Path(current_app.config["OUTPUT_FOLDER"]).resolve()
+    source_path = (output_root / render["filename"]).resolve()
+    if source_path.parent != output_root or not source_path.is_file() or source_path.stat().st_size < 1024:
+        return jsonify(error="The rendered MP4 is no longer available. Download or render it again."), 404
+
+    previous = store.latest_upload(owner, render_job_id, platform)
+    saved_attempt = None
+    if previous and previous.get("status") == "failed":
+        saved_attempt = store.get_upload(previous["id"], owner, internal=True)
+    saved_metadata = (saved_attempt or {}).get("metadata")
+    saved_settings = (saved_attempt or {}).get("settings")
+    effective_data = dict(data)
+    if isinstance(saved_settings, dict):
+        if platform == "youtube":
+            effective_data["privacy"] = saved_settings.get("privacy", effective_data.get("privacy"))
+            effective_data["category_id"] = saved_settings.get("category_id", effective_data.get("category_id"))
+        else:
+            effective_data["mode"] = saved_settings.get("mode", effective_data.get("mode"))
+            effective_data["privacy"] = saved_settings.get("privacy", effective_data.get("privacy"))
+            effective_data["allow_comments"] = not saved_settings.get("disable_comment", False)
+            effective_data["allow_duet"] = not saved_settings.get("disable_duet", False)
+            effective_data["allow_stitch"] = not saved_settings.get("disable_stitch", False)
+    if platform == "tiktok":
+        mode = str(effective_data.get("mode") or "draft")
+        if mode not in {"draft", "direct"}:
+            return jsonify(error="Choose TikTok draft upload or approved direct publishing."), 400
+        needed = TIKTOK_PUBLISH_SCOPE if mode == "direct" else TIKTOK_UPLOAD_SCOPE
+        if needed not in scopes:
+            return jsonify(error=f"The TikTok account did not grant {needed}. Reconnect after the scope is approved."), 403
+        if mode == "direct" and not current_app.config.get("TIKTOK_DIRECT_POST_ENABLED"):
+            return jsonify(error="TikTok direct posting is not enabled for this developer app."), 403
+
+    supplied_metadata = saved_metadata if isinstance(saved_metadata, dict) else (data.get("metadata") or {})
+    try:
+        if platform == "youtube":
+            metadata = {
+                "title": str(supplied_metadata.get("title") or "").strip(),
+                "description": str(supplied_metadata.get("description") or ""),
+                "tags": supplied_metadata.get("tags") or [],
+            }
+            if isinstance(metadata["tags"], str):
+                metadata["tags"] = [item.strip() for item in metadata["tags"].split(",") if item.strip()]
+            if not metadata["title"] or len(metadata["title"]) > 100:
+                raise ValueError("YouTube titles must contain 1–100 characters.")
+            if len(metadata["description"]) > 5000:
+                raise ValueError("The YouTube description exceeds 5,000 characters. Review it before uploading.")
+            if not isinstance(metadata["tags"], list) or any(not isinstance(tag, str) for tag in metadata["tags"]):
+                raise ValueError("YouTube tags must be a list of text values.")
+            if sum(len(tag) + (1 if index else 0) for index, tag in enumerate(metadata["tags"])) > 500:
+                raise ValueError("YouTube tags exceed the 500-character limit. Review them before uploading.")
+            privacy = str(effective_data.get("privacy") or "private").lower()
+            if privacy not in {"private", "unlisted", "public"}:
+                raise ValueError("Choose private, unlisted, or public YouTube visibility.")
+            category_id = str(effective_data.get("category_id") or current_app.config.get("YOUTUBE_DEFAULT_CATEGORY_ID", "10"))
+            if not category_id.isdigit():
+                raise ValueError("YouTube category ID must be numeric.")
+            settings = {"privacy": privacy, "category_id": category_id}
+        else:
+            mode = str(effective_data.get("mode") or "draft")
+            metadata = {"caption": str(supplied_metadata.get("caption") or "").strip()}
+            if mode not in {"draft", "direct"}:
+                raise ValueError("Choose TikTok draft upload or approved direct publishing.")
+            if mode == "direct" and not metadata["caption"]:
+                raise ValueError("Add a TikTok caption before publishing.")
+            if len(metadata["caption"].encode("utf-16-le")) // 2 > 2200:
+                raise ValueError("The TikTok caption exceeds 2,200 UTF-16 characters. Review and shorten it before uploading.")
+            def selected_setting(name, default=True):
+                value = effective_data.get(name, default)
+                if isinstance(value, bool):
+                    return value
+                return str(value).strip().lower() in {"1", "true", "yes", "on"}
+            settings = {"mode": mode, "privacy": str(effective_data.get("privacy") or ""),
+                        "disable_comment": not selected_setting("allow_comments"),
+                        "disable_duet": not selected_setting("allow_duet"),
+                        "disable_stitch": not selected_setting("allow_stitch")}
+    except (TypeError, ValueError) as exc:
+        return jsonify(error=str(exc)), 400
+
+    try:
+        # A retry reuses the immutable values the user approved for the failed
+        # attempt, even if the editable page fields changed later.
+        project_id = render["project_id"]
+        snapshot, started = current_app.extensions["upload_manager"].start(
+            owner=owner, platform=platform, render_job_id=render_job_id, project_id=project_id,
+            source_path=str(source_path), metadata=metadata, settings=settings)
+    except PublishError as exc:
+        return jsonify(error=str(exc)), 409
+    return jsonify({"upload": snapshot, "started": started}), (202 if started else 200)
+
+
+@bp.get("/api/publishing/uploads/<upload_id>")
+def social_upload_status(upload_id):
+    if not re.fullmatch(r"[a-f0-9]{32}", upload_id):
+        return jsonify(error="Upload operation was not found."), 404
+    upload = current_app.extensions["publisher_store"].get_upload(upload_id, _publisher_owner())
+    if not upload:
+        return jsonify(error="Upload operation was not found."), 404
+    return jsonify(upload)
+
+
+@bp.post("/api/publishing/uploads/<upload_id>/refresh")
+def refresh_social_upload_status(upload_id):
+    if not _publisher_csrf_valid():
+        return jsonify(error="The security token expired. Refresh the page and try again."), 403
+    if not re.fullmatch(r"[a-f0-9]{32}", upload_id):
+        return jsonify(error="Upload operation was not found."), 404
+    try:
+        upload = refresh_upload_status(current_app, current_app.extensions["publisher_store"],
+                                       _publisher_owner(), upload_id)
+    except PublishError as exc:
+        return jsonify(error=str(exc)), 400
+    if not upload:
+        return jsonify(error="Upload operation was not found."), 404
+    return jsonify(upload)
+
+
+@bp.post("/api/publishing/uploads/<upload_id>/cancel")
+def cancel_social_upload(upload_id):
+    if not _publisher_csrf_valid():
+        return jsonify(error="The security token expired. Refresh the page and try again."), 403
+    if not re.fullmatch(r"[a-f0-9]{32}", upload_id):
+        return jsonify(error="Upload operation was not found."), 404
+    try:
+        upload = current_app.extensions["upload_manager"].cancel(upload_id, _publisher_owner())
+    except PublishError as exc:
+        return jsonify(error=str(exc)), 409
+    if not upload:
+        return jsonify(error="Upload operation was not found."), 404
+    return jsonify(upload), 202
 
 
 @bp.get("/api/surahs")
@@ -1154,7 +1732,7 @@ def list_background_video_templates():
 @bp.get("/api/video-templates")
 def list_video_templates():
     return jsonify({"templates": _template_catalog(), "viewer_templates": REEL_VIEWER_TEMPLATES,
-                    "default": "cinematic_nature"})
+                    "default": DEFAULT_VIDEO_TEMPLATE})
 
 
 @bp.get("/api/background-sequence-templates")
@@ -1233,7 +1811,13 @@ def scene_plan():
             overrides = [
                 {"scene_id":scene["scene_id"], "ayah_number":scene["ayah_number"],
                  "text":scene["text"], "locked":scene["locked"],
-                 "manual_duration":scene.get("manual_duration")}
+                 "manual_duration":scene.get("manual_duration"),
+                 "source_text":scene.get("source_text"),
+                 "canonical_source_text":scene.get("canonical_source_text"),
+                 "text_edited":scene.get("text_edited", False),
+                 "scene_index":scene.get("scene_index"),
+                 "word_start_index":scene.get("word_start_index"),
+                 "word_end_index":scene.get("word_end_index")}
                 for scene in composition["default_scenes"]
             ]
             resolved_defaults = build_scene_plan(
@@ -1245,7 +1829,13 @@ def scene_plan():
             edited_overrides = [
                 {"scene_id":scene["scene_id"], "ayah_number":scene["ayah_number"],
                  "text":scene["text"], "locked":scene["locked"],
-                 "manual_duration":scene.get("manual_duration")}
+                 "manual_duration":scene.get("manual_duration"),
+                 "source_text":scene.get("source_text"),
+                 "canonical_source_text":scene.get("canonical_source_text"),
+                 "text_edited":scene.get("text_edited", False),
+                 "scene_index":scene.get("scene_index"),
+                 "word_start_index":scene.get("word_start_index"),
+                 "word_end_index":scene.get("word_end_index")}
                 for scene in composition["scenes"]
             ]
             scenes = build_scene_plan(
@@ -1254,6 +1844,17 @@ def scene_plan():
                 show_surah_title=show_header or show_number, output_size=dimensions,
                 words_per_scene=words_per_scene, scene_overrides=edited_overrides,
             )
+        canonical_ayahs = payload.get("canonical_ayahs")
+        if canonical_ayahs is not None:
+            if not isinstance(canonical_ayahs, list) or len(canonical_ayahs) != len(ayahs):
+                raise ValueError("Canonical source text must contain one ayah per selected range line.")
+            for plan in (resolved_defaults, scenes):
+                for scene in plan:
+                    source_index = int(scene["ayah_number"]) - ayah_start
+                    canonical_text = str(canonical_ayahs[source_index])
+                    scene["canonical_source_text"] = canonical_text
+                    if str(ayahs[source_index]) != canonical_text:
+                        scene["text_edited"] = True
         translation_lines = payload.get("translation_lines")
         if translation_lines not in (None, []) and (
                 not isinstance(translation_lines, list) or len(translation_lines) != len(ayahs)):
@@ -1313,7 +1914,7 @@ def auto_split_scene_plan():
             ayahs, ayah_start=ayah_start, font=font,
             max_width=int(dimensions[0] * wrap_width / 100),
             stroke_width=text_options.get("stroke_width", 0),
-            minimum_arabic_words=3,
+            minimum_arabic_words=2,
         )
         scenes = build_scene_plan(
             ayahs, ayah_start=ayah_start, aspect_ratio=ratio,
@@ -1336,7 +1937,7 @@ def auto_split_scene_plan():
         "tall_ayahs": layout["tall_ayahs"],
         "split_ayahs": layout["split_ayahs"],
         "short_fallback_ayahs": layout["short_fallback_ayahs"],
-        "minimum_arabic_words": 3,
+        "minimum_arabic_words": 2,
         "layout": {"aspect_ratio": ratio, "dimensions": dimensions,
                    "wrap_width": wrap_width, "font_id": font_id,
                    "font_size": font_size, "stroke_width": text_options.get("stroke_width", 0)},
@@ -1383,15 +1984,22 @@ def scene_redistribute():
             )
         else:
             raise ValueError("Choose a supported scene operation.")
-        # Structural edits recalculate timing for changed word allocations.
-        # Keep a manual duration only when that exact scene and text survived.
+        # Text-only edits keep the same scene interval; structural edits keep
+        # a manual duration only when that exact scene and text survived.
         old_rows = payload.get("scenes") or []
-        old_timing = {
-            (str(row.get("scene_id") or ""), str(row.get("text", "")).strip()): row.get("manual_duration")
-            for row in old_rows if isinstance(row, dict) and row.get("manual_duration") not in (None, "")
-        }
+        if action == "edit_text":
+            old_timing = {
+                str(row.get("scene_id") or ""): row.get("manual_duration")
+                for row in old_rows if isinstance(row, dict) and row.get("manual_duration") not in (None, "")
+            }
+        else:
+            old_timing = {
+                (str(row.get("scene_id") or ""), str(row.get("text", "")).strip()): row.get("manual_duration")
+                for row in old_rows if isinstance(row, dict) and row.get("manual_duration") not in (None, "")
+            }
         for row in result.get("scenes", []):
-            key = (str(row.get("scene_id") or ""), str(row.get("text", "")).strip())
+            key = (str(row.get("scene_id") or "") if action == "edit_text" else
+                   (str(row.get("scene_id") or ""), str(row.get("text", "")).strip()))
             if key in old_timing:
                 row["manual_duration"] = old_timing[key]
         translation_lines = payload.get("translation_lines")
@@ -1502,6 +2110,15 @@ def caption_preview():
         return jsonify(error="Text wrap width must be 65, 75, 85, or 95 percent."), 400
     if wrap_width not in {65, 75, 85, 95}:
         return jsonify(error="Text wrap width must be 65, 75, 85, or 95 percent."), 400
+    raw_caption_scale = payload.get("caption_scale", 1.0)
+    if isinstance(raw_caption_scale, bool):
+        return jsonify(error="Arabic caption size scale must be between 0.80 and 1.10."), 400
+    try:
+        caption_scale = float(raw_caption_scale)
+    except (TypeError, ValueError):
+        return jsonify(error="Arabic caption size scale must be between 0.80 and 1.10."), 400
+    if not 0.80 <= caption_scale <= 1.10:
+        return jsonify(error="Arabic caption size scale must be between 0.80 and 1.10."), 400
     custom_opts = _caption_options(template, payload)
     try:
         label_options = _label_style_options(payload, font_id)
@@ -1551,6 +2168,7 @@ def caption_preview():
             text, aspect_ratio=ratio,
             font_path=resolve_font(font_id, current_app.config.get("ARABIC_FONT")),
             caption_style=style, caption_color=color, wrap_width=wrap_width,
+            caption_scale=caption_scale,
             show_surah_title=show_surah, surah_title=surah_title,
             ayah_number=ayah_num, surah_color=surah_color,
             show_ayah_number=show_ayah_number, surah_template=surah_template,
@@ -1763,6 +2381,11 @@ def preview_reciter_audio(reciter_id):
         start_word, end_word, word_mode, manual_start, manual_end, partial_words = (
             _parse_word_selection(request.args, verses, start)
         )
+        trim_enabled, trim_start, trim_end = _parse_audio_trim({
+            "audio_trim_enabled": request.args.get("audio_trim_enabled", "false"),
+            "audio_trim_start_seconds": request.args.get("audio_trim_start_seconds", 0),
+            "audio_trim_end_seconds": request.args.get("audio_trim_end_seconds", 0),
+        })
         if surah not in reciter.get("available_surah_numbers", range(1, 115)):
             return jsonify(error="This recording has no verified audio for the selected Surah."), 404
     except (TypeError, ValueError) as exc:
@@ -1777,7 +2400,7 @@ def preview_reciter_audio(reciter_id):
     cache_dir = Path(current_app.config.get(
         "AUDIO_PREVIEW_FOLDER", Path(tempfile.gettempdir()) / "quran-reels-audio-previews",
     ))
-    if chapter_only and not partial_words:
+    if chapter_only and not partial_words and not trim_enabled:
         try:
             with _AUDIO_PREVIEW_CACHE_LOCK:
                 track = _chapter_only_preview_track(reciter, surah, cache_dir)
@@ -1801,6 +2424,9 @@ def preview_reciter_audio(reciter_id):
         "start_word": start_word, "end_word": end_word, "mode": word_mode,
         "manual_start": manual_start if word_mode == "manual" else None,
         "manual_end": manual_end if word_mode == "manual" else None,
+        "trim_enabled": trim_enabled,
+        "trim_start_seconds": trim_start if trim_enabled else None,
+        "trim_end_seconds": trim_end if trim_enabled else None,
     }
     cache_key = hashlib.sha256(json.dumps(cache_payload, sort_keys=True).encode()).hexdigest()
     preview_path = cache_dir / f"{cache_key}.wav"
@@ -1837,23 +2463,13 @@ def preview_reciter_audio(reciter_id):
                     end_word=end_word, mode=word_mode,
                     manual_start=manual_start, manual_end=manual_end,
                 )
+                if trim_enabled:
+                    track, _trim_first_ayah, _trim_last_ayah = trim_audio_track(
+                        track, trim_start, trim_end,
+                    )
                 partial_path = preview_path.with_name(f".{preview_path.stem}-{uuid4().hex}.partial.wav")
-                source_audio = selected_audio = None
                 try:
-                    from moviepy import AudioFileClip
-                    source_audio = AudioFileClip(str(track.path))
-                    source_duration = float(source_audio.duration or 0)
-                    if (track.start < 0 or track.end <= track.start
-                            or track.start >= source_duration
-                            or track.end > source_duration + .05):
-                        raise ValueError("Selected recitation boundaries fall outside the downloaded audio.")
-                    selected_audio = source_audio.subclipped(
-                        float(track.start), min(float(track.end), source_duration),
-                    )
-                    selected_audio.write_audiofile(
-                        str(partial_path), fps=48000, nbytes=2,
-                        codec="pcm_s16le", logger=None,
-                    )
+                    materialize_audio_track(track, partial_path, sample_rate=48000)
                     if not partial_path.is_file() or partial_path.stat().st_size < 1024:
                         raise AudioSourceError("Could not create the selected recitation preview segment.")
                     partial_path.replace(preview_path)
@@ -1861,10 +2477,6 @@ def preview_reciter_audio(reciter_id):
                     for _modified, old_preview in sorted(cached_segments, key=lambda item: item[0])[:-24]:
                         old_preview.unlink(missing_ok=True)
                 finally:
-                    if selected_audio is not None:
-                        selected_audio.close()
-                    if source_audio is not None:
-                        source_audio.close()
                     partial_path.unlink(missing_ok=True)
                     if not getattr(track, "persistent", False):
                         track.path.unlink(missing_ok=True)
@@ -1881,6 +2493,9 @@ def preview_reciter_audio(reciter_id):
 def generate():
     data = request.form if request.form else (request.get_json(silent=True) or {})
     try:
+        project_id = str(data.get("project_id") or "draft").strip()
+        if not re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", project_id):
+            project_id = "draft"
         preview_only = str(data.get("preview_only", "false")).strip().lower() in {"true", "1", "yes", "on"}
         ratio = data.get("aspect_ratio", "9:16")
         if ratio not in SIZES:
@@ -1940,21 +2555,28 @@ def generate():
             surah_arabic=chapter["name_arabic"], ayah_start=ayah_start,
             ayah_end=ayah_end, reciter_name=reciter["name"],
         )
-        download_title = str(data.get("video_title", "")).strip()[:100] or metadata_defaults["title"]
+        publish_metadata = _generated_publish_metadata(metadata_defaults, chapter)
+        download_title = str(data.get("video_title", "")).strip()[:100] or publish_metadata["title"]
 
-        entered_text = str(data.get("ayah_text", "")).strip()
-        ayahs = [line.strip() for line in entered_text.splitlines() if line.strip()] if entered_text else official_ayahs
-        if len(ayahs) != len(official_ayahs):
-            return jsonify(error="Enter one ayah text line for each ayah in the selected range."), 400
+        entered_text = str(data.get("ayah_text", ""))
+        if "ayah_text" in data:
+            if not entered_text.strip():
+                return jsonify(error=("The selected Arabic text is empty. Enter one line per ayah, or clear a specific "
+                                     "scene's displayed text to create an intentional blank scene.")), 400
+            ayahs = [line.strip() for line in entered_text.splitlines()]
+            if len(ayahs) != len(official_ayahs) or any(not line for line in ayahs):
+                return jsonify(error=("Enter one non-empty Arabic text line for each ayah in the selected range. "
+                                     "Clear text in an individual scene to make only that scene blank.")), 400
+        else:
+            ayahs = official_ayahs
         try:
             start_word, end_word, word_mode, manual_start, manual_end, partial_words = (
                 _parse_word_selection(data, official_ayahs, ayah_start)
             )
+            audio_trim_enabled, audio_trim_start, audio_trim_end = _parse_audio_trim(data)
         except ValueError as exc:
             return jsonify(error=str(exc)), 400
-        if partial_words and ayahs != official_ayahs:
-            return jsonify(error=("Partial-word audio boundaries need the original selected Quran text. "
-                                  "Restore the official ayah text or reset the word range.")), 400
+        edited_display_text = ayahs != official_ayahs
         translation_text = str(data.get("translation_text", ""))
         if len(translation_text) > 10000:
             return jsonify(error="Translation text is too long (maximum 10,000 characters)."), 400
@@ -1980,7 +2602,12 @@ def generate():
             if any(line.strip() for line in translation_lines) and len(translation_lines) != len(official_ayahs):
                 return jsonify(error="Enter one translation line per selected ayah, including blank lines where needed."), 400
 
-        template_id = data.get("template_id", DEFAULT_VIDEO_TEMPLATE)
+        # Keep requests from older API clients on the legacy composition;
+        # the editor submits its selected template explicitly, including the
+        # v1.5 default for new projects.
+        template_id = data.get("template_id")
+        if template_id is None:
+            template_id = "golden_calligraphy"
         template = _template_catalog().get(template_id)
         if template is None:
             return jsonify(error="Choose a supported video template."), 400
@@ -2016,6 +2643,15 @@ def generate():
             return jsonify(error="Text wrap width must be 65, 75, 85, or 95 percent."), 400
         if wrap_width not in {65, 75, 85, 95}:
             return jsonify(error="Text wrap width must be 65, 75, 85, or 95 percent."), 400
+        raw_caption_scale = data.get("caption_scale", 1.0)
+        if isinstance(raw_caption_scale, bool):
+            return jsonify(error="Arabic caption size scale must be between 0.80 and 1.10."), 400
+        try:
+            caption_scale = float(raw_caption_scale)
+        except (TypeError, ValueError):
+            return jsonify(error="Arabic caption size scale must be between 0.80 and 1.10."), 400
+        if not 0.80 <= caption_scale <= 1.10:
+            return jsonify(error="Arabic caption size scale must be between 0.80 and 1.10."), 400
         try:
             max_lines = int(data.get("max_lines", template.get("max_lines", 5)))
         except (TypeError, ValueError):
@@ -2208,6 +2844,11 @@ def generate():
             raw_clip_settings = raw_clip_settings[:1] if raw_clip_settings else []
 
         job_id = uuid4().hex
+        publisher_owner = _publisher_owner()
+        try:
+            current_app.extensions["publisher_store"].register_render(job_id, publisher_owner, project_id)
+        except Exception as exc:
+            current_app.logger.warning("Could not register render ownership for publishing (%s).", type(exc).__name__)
         upload_dir = Path(tempfile.gettempdir()) / "quran-reels-uploads"
         upload_dir.mkdir(parents=True, exist_ok=True)
         background_path = None
@@ -2326,6 +2967,10 @@ def generate():
 
         def execute_render_job(update, cancel_event):
             track = None
+            source_track = None
+            materialized_audio_path = None
+            selected_source_audio_start = None
+            selected_source_audio_end = None
             try:
                 update(progress=1, phase="audio", message="Fetching recitation timing for the selected ayahs.")
 
@@ -2339,26 +2984,56 @@ def generate():
                         amount = f"{received / 1024 / 1024:.1f} MB received"
                     update(progress=progress, phase="audio", message=f"Downloading recitation · {amount}")
 
-                track = download_recitation(
+                source_track = download_recitation(
                     reciter, surah, ayah_start, ayah_end, upload_dir,
                     expected_ayahs=(official_ayahs if reciter.get("timing_provider") == "chapter_only"
                                     or ayahs == official_ayahs else None),
                     cancel_event=cancel_event, on_progress=audio_progress,
                 )
+                track = source_track
                 track, render_ayahs, word_ranges = select_audio_word_range(
                     track, official_ayahs, ayah_start=ayah_start,
                     start_word=start_word, end_word=end_word, mode=word_mode,
                     manual_start=manual_start, manual_end=manual_end,
                 )
-                render_scene_overrides = clip_scene_overrides_to_word_ranges(
-                    official_ayahs, ayah_start, raw_scenes, word_ranges,
-                ) if partial_words else raw_scenes
+                # Word selection remains anchored to the canonical recording,
+                # while the captions use the user's current display text.
+                # Its word alignment is intentionally dropped below because
+                # edited words no longer identify those source timestamps.
+                if edited_display_text:
+                    render_ayahs = list(ayahs)
+                effective_ayah_start = ayah_start
+                render_scene_overrides = (
+                    clip_scene_overrides_to_word_ranges(official_ayahs, ayah_start, raw_scenes, word_ranges)
+                    if partial_words and not edited_display_text else raw_scenes
+                )
                 render_translation_lines = list(translation_lines)
                 if partial_words and render_translation_lines:
                     if start_word > 1:
                         render_translation_lines[0] = ""
-                    if end_word < len(official_ayahs[-1].split()):
+                    if end_word < len(split_quran_words(official_ayahs[-1])):
                         render_translation_lines[-1] = ""
+                if audio_trim_enabled:
+                    track, trim_first_ayah, trim_last_ayah = trim_audio_track(
+                        track, audio_trim_start, audio_trim_end,
+                    )
+                    render_ayahs = render_ayahs[trim_first_ayah:trim_last_ayah]
+                    effective_ayah_start += trim_first_ayah
+                    render_translation_lines = render_translation_lines[trim_first_ayah:trim_last_ayah]
+                    if isinstance(render_scene_overrides, list):
+                        effective_ayah_end = effective_ayah_start + len(render_ayahs) - 1
+                        render_scene_overrides = [
+                            scene for scene in render_scene_overrides
+                            if effective_ayah_start <= int(scene.get("ayah_number", effective_ayah_start)) <= effective_ayah_end
+                        ]
+                    if not render_ayahs:
+                        raise AudioSourceError("Audio trim removed all ayahs from the selected range.")
+                selected_source_audio_start = float(track.start)
+                selected_source_audio_end = float(track.end)
+                if (float(track.start) > .0001
+                        or (audio_trim_enabled and (audio_trim_start > 0 or audio_trim_end > 0))):
+                    materialized_audio_path = upload_dir / f"{uuid4().hex}-selected.wav"
+                    track = materialize_audio_track(track, materialized_audio_path, sample_rate=audio_fps)
                 update(progress=15, phase="preparing", message="Preparing Arabic scenes and video layers.")
 
                 def render_progress(fraction, render_speed_fps=None, estimated_remaining_seconds=None):
@@ -2381,6 +3056,7 @@ def generate():
                     background_clips=background_clip_specs,
                     theme=theme, transition=transition, caption_style=caption_style, speed=speed,
                     caption_color=caption_color, wrap_width=wrap_width,
+                    caption_scale=caption_scale,
                     font_path=font_path, max_lines=max_lines, words_per_scene=words_per_scene,
                     scene_overrides=render_scene_overrides,
                     background_fit=background_fit, crop_x=crop_x, crop_y=crop_y,
@@ -2405,7 +3081,7 @@ def generate():
                     background_atmosphere_start=atmosphere_start,
                     transitions_enabled=transitions_enabled,
                     background_transition_color=transition_color,
-                    ayah_start=ayah_start, show_surah_title=show_surah,
+                    ayah_start=effective_ayah_start, show_surah_title=show_surah,
                     show_quran_text=show_quran_text,
                     show_ayah_number=show_ayah_number, surah_template=surah_template,
                     ayah_number_template=ayah_number_template, ayah_color=ayah_color,
@@ -2453,6 +3129,7 @@ def generate():
                     "filename": output_path.name,
                     "download_url": download_url,
                     "download_title": download_title,
+                    "publish_metadata": publish_metadata,
                     "reciter_id": reciter["id"],
                     "reciter": reciter["name"],
                     "recording_name": reciter.get("recording_name"),
@@ -2464,9 +3141,16 @@ def generate():
                     "ayah_end": ayah_end,
                     "start_word": start_word,
                     "end_word": end_word,
-                    "recitation_audio_start": float(track.start),
-                    "recitation_audio_end": float(track.end),
-                    "selected_recitation_duration": round(float(track.end) - float(track.start), 3),
+                    "recitation_audio_start": selected_source_audio_start,
+                    "recitation_audio_end": selected_source_audio_end,
+                    "selected_recitation_duration": round(
+                        selected_source_audio_end - selected_source_audio_start, 3,
+                    ),
+                    "audio_trim_enabled": audio_trim_enabled,
+                    "audio_trim_start_seconds": audio_trim_start if audio_trim_enabled else 0.0,
+                    "audio_trim_end_seconds": audio_trim_end if audio_trim_enabled else 0.0,
+                    "effective_ayah_start": effective_ayah_start,
+                    "effective_ayah_end": effective_ayah_start + len(render_ayahs) - 1,
                     "timing_source": (getattr(track, "timing_source", "mp3quran_ayah")
                                       if ayahs == official_ayahs else "ayah_only_custom_text"),
                     "timing_note": timing_note,
@@ -2479,6 +3163,7 @@ def generate():
                     "words_per_scene": words_per_scene,
                     "caption_color": caption_color,
                     "caption_style": caption_style,
+                    "caption_scale": caption_scale,
                     "caption_position": caption_position,
                     "wrap_width": wrap_width,
                     "show_surah_title": show_surah, "show_ayah_number": show_ayah_number,
@@ -2535,13 +3220,16 @@ def generate():
                             "surah_name": SURAHS_BY_NUMBER[surah]["english_name"],
                             "ayah_start": ayah_start,
                             "ayah_end": ayah_end,
+                            "audio_trim_enabled": audio_trim_enabled,
+                            "audio_trim_start_seconds": audio_trim_start if audio_trim_enabled else 0.0,
+                            "audio_trim_end_seconds": audio_trim_end if audio_trim_enabled else 0.0,
                             "start_word": start_word,
                             "end_word": end_word,
                             "word_boundary_mode": word_mode,
                             "manual_start_seconds": (float(manual_start) if partial_words and word_mode == "manual" else None),
                             "manual_end_seconds": (float(manual_end) if partial_words and word_mode == "manual" else None),
-                            "audio_start_seconds": float(track.start),
-                            "audio_end_seconds": float(track.end),
+                            "audio_start_seconds": selected_source_audio_start,
+                            "audio_end_seconds": selected_source_audio_end,
                             "timing_source": result.get("timing_source"),
                         },
                         "ayah_text": ayahs,
@@ -2566,6 +3254,7 @@ def generate():
                         "caption_settings": {
                             "font_id": font_id, "font_path": str(font_path),
                             "caption_style": caption_style, "caption_color": caption_color,
+                            "caption_scale": caption_scale,
                             "caption_position": caption_position,
                             "caption_x": caption_x, "caption_y": caption_y,
                             "wrap_width": wrap_width, "max_lines": max_lines,
@@ -2604,6 +3293,12 @@ def generate():
                 partial_path.replace(output_path)
                 if preview_only:
                     write_preview_metadata(preview_metadata_path, preview_record)
+                else:
+                    try:
+                        app.extensions["publisher_store"].complete_render(job_id, publisher_owner, result)
+                    except Exception as exc:
+                        app.logger.warning("Could not persist render publishing metadata for %s (%s).",
+                                           job_id, type(exc).__name__)
                 return result
             except Exception:
                 app.logger.exception("Video render job %s failed", job_id)
@@ -2612,8 +3307,10 @@ def generate():
                     preview_metadata_path.unlink(missing_ok=True)
                 raise
             finally:
-                if track is not None and not getattr(track, "persistent", False):
-                    track.path.unlink(missing_ok=True)
+                if source_track is not None and not getattr(source_track, "persistent", False):
+                    source_track.path.unlink(missing_ok=True)
+                if materialized_audio_path is not None:
+                    materialized_audio_path.unlink(missing_ok=True)
                 for uploaded_path in background_paths:
                     uploaded_path.unlink(missing_ok=True)
                 partial_path.unlink(missing_ok=True)

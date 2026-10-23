@@ -14,6 +14,7 @@ from PIL import Image, ImageDraw
 from .text_renderer import (DEFAULT_FONT, load_arabic_font,
                             measure_arabic_line_width, wrap_arabic_lines)
 from .video_engine import SIZES
+from .quran_words import QURAN_WORD_PATTERN, split_quran_words
 
 PREFERRED_BREAKS = frozenset("،؛.?!ۚۖۗۘۙۛۜ۞۩۝")
 
@@ -95,6 +96,7 @@ def synchronize_scene_translations(scene_rows, translation_lines, *, ayah_start=
     scenes = [dict(scene) for scene in scene_rows]
     for scene in scenes:
         scene["translation_text"] = ""
+        scene["translation_alignment_warning"] = bool(scene.get("text_edited"))
     if translation_lines is None or translation_lines == []:
         return scenes
     if not isinstance(translation_lines, list):
@@ -114,6 +116,11 @@ def synchronize_scene_translations(scene_rows, translation_lines, *, ayah_start=
         grouped.setdefault(ayah_number, []).append((index, scene))
 
     for ayah_number, indexed_scenes in grouped.items():
+        if any(scene.get("text_edited") for _, scene in indexed_scenes):
+            # The source translation still belongs to the original ayah, but
+            # the edited display text no longer provides a trustworthy phrase
+            # boundary mapping. Leave it for review instead of inventing one.
+            continue
         translation_index = ayah_number - int(ayah_start)
         translation = translations[translation_index] if 0 <= translation_index < len(translations) else ""
         has_word_spans = all(
@@ -126,7 +133,7 @@ def synchronize_scene_translations(scene_rows, translation_lines, *, ayah_start=
         else:
             ordered = indexed_scenes
         segments = split_translation_across_scenes(
-            translation, [len(str(scene.get("text", "")).split()) for _, scene in ordered],
+            translation, [len(split_quran_words(scene.get("text", ""))) for _, scene in ordered],
         )
         for (scene_index, _scene), segment in zip(ordered, segments):
             scenes[scene_index]["translation_text"] = segment
@@ -150,7 +157,7 @@ def split_ayah_at_word_boundaries(text: str, *, max_words=18, max_characters=180
     if max_words < 1 or max_characters < 1:
         raise ValueError("Word and character limits must be positive.")
 
-    words = text.split()
+    words = split_quran_words(text)
     groups: list[list[str]] = []
     pending: list[str] = []
     for word in words:
@@ -207,7 +214,7 @@ def _split_scene_text(text, *, font, max_width, max_lines, words_per_scene):
 def _arabic_letter_word_count(text):
     """Count whitespace-delimited tokens that contain an Arabic-script letter."""
     count = 0
-    for token in str(text).split():
+    for token in split_quran_words(text):
         if any(unicodedata.category(character).startswith("L")
                and "ARABIC" in unicodedata.name(character, "") for character in token):
             count += 1
@@ -215,12 +222,12 @@ def _arabic_letter_word_count(text):
 
 
 def split_tall_ayah_into_lines(text, *, font, max_width, stroke_width=0,
-                               minimum_arabic_words=3):
+                               minimum_arabic_words=2):
     """Split an ayah into measured one-line chunks while balancing its final group.
 
     Width checks use the same shaped Arabic, font, and stroke-aware Pillow
     metrics as the caption renderer. If no partition can keep every chunk at
-    the requested Arabic-word minimum, the greedy one-line layout is retained.
+    the requested Arabic-word minimum, the ayah remains intact.
     """
     source = str(text or "").strip()
     if not source:
@@ -234,7 +241,7 @@ def split_tall_ayah_into_lines(text, *, font, max_width, stroke_width=0,
     if max_width < 1 or minimum_arabic_words < 1:
         raise ValueError("Arabic line width and minimum word count must be positive.")
 
-    matches = list(re.finditer(r"\S+", source))
+    matches = list(QURAN_WORD_PATTERN.finditer(source))
     if not matches:
         raise ValueError("Ayah text cannot be empty.")
     tokens = [match.group() for match in matches]
@@ -254,7 +261,7 @@ def split_tall_ayah_into_lines(text, *, font, max_width, stroke_width=0,
                 "reason": "Ayah has fewer than the minimum Arabic words."}
 
     # Find a minimum-scene partition that keeps every line readable and has
-    # at least three Arabic words. Among equally short layouts, prefer balanced
+    # at least two Arabic words. Among equally short layouts, prefer balanced
     # word counts and then Quranic pause-mark boundaries.
     best = [None] * (len(tokens) + 1)
     best[0] = (0, 0, 0, ())
@@ -277,21 +284,13 @@ def split_tall_ayah_into_lines(text, *, font, max_width, stroke_width=0,
                 best[end] = score
 
     minimum_met = best[-1] is not None
-    if minimum_met:
-        boundaries = (0, *best[-1][3], len(tokens))
-    else:
-        # Readability wins when unusually long words make the 3-word minimum
-        # impossible. The shared renderer's wrapper still keeps whole words.
-        wrapped = wrap_arabic_lines(source, font, max_width, stroke_width)
-        counts = [len(line.split()) for line in wrapped]
-        cursor = 0
-        boundaries_list = [0]
-        for count in counts:
-            cursor += count
-            boundaries_list.append(cursor)
-        if cursor != len(tokens):
-            raise ValueError("Arabic wrapping did not preserve the ayah's complete word sequence.")
-        boundaries = tuple(boundaries_list)
+    if not minimum_met:
+        # Keep the ayah intact instead of creating a one-word scene when the
+        # shaped width makes a readable two-word partition impossible.
+        return {"text": source, "chunks": [source], "is_tall": True,
+                "needs_split": False, "minimum_met": False,
+                "reason": "No readable split can keep at least two Arabic words per scene."}
+    boundaries = (0, *best[-1][3], len(tokens))
 
     chunks = [source[matches[start].start():matches[end - 1].end()]
               for start, end in zip(boundaries, boundaries[1:]) if end > start]
@@ -301,7 +300,7 @@ def split_tall_ayah_into_lines(text, *, font, max_width, stroke_width=0,
 
 
 def plan_auto_split_scenes(ayahs, *, ayah_start=1, font, max_width, stroke_width=0,
-                           minimum_arabic_words=3):
+                           minimum_arabic_words=2):
     """Create standard scene override rows for only ayahs that visually wrap."""
     if not isinstance(ayahs, list) or not ayahs:
         raise ValueError("At least one ayah is required to auto-split scenes.")
@@ -328,7 +327,7 @@ def plan_auto_split_scenes(ayahs, *, ayah_start=1, font, max_width, stroke_width
             short_fallback_ayahs.append(ayah_number)
         word_offset = 0
         for chunk in result["chunks"]:
-            count = len(chunk.split())
+            count = len(split_quran_words(chunk))
             rows.append({
                 "scene_id": f"ayah-{ayah_number}-word-{word_offset}",
                 "ayah_number": ayah_number,
@@ -348,13 +347,12 @@ def _effective_line_limit(*, requested, font_size, max_height, show_surah_title,
     return max(1, min(requested, available // line_height))
 
 
-def _manual_scenes(ayahs, ayah_start, overrides):
+def _manual_scenes(ayahs, ayah_start, overrides, *, allow_custom_text=False):
     if not isinstance(overrides, list) or not overrides or len(overrides) > 300:
         raise ValueError("Manual scene data must contain between 1 and 300 scenes.")
     grouped = [[] for _ in ayahs]
     scenes = []
     scene_ids = set()
-    last_ayah_index = 0
     for row in overrides:
         if not isinstance(row, dict):
             raise ValueError("Each manual scene must be an object with an ayah number and text.")
@@ -365,27 +363,75 @@ def _manual_scenes(ayahs, ayah_start, overrides):
         ayah_index = ayah_number - ayah_start
         if ayah_index < 0 or ayah_index >= len(ayahs):
             raise ValueError("A manual scene references an ayah outside the selected range.")
-        if ayah_index < last_ayah_index:
-            raise ValueError("Scene order must preserve the Quran's original ayah order.")
-        last_ayah_index = ayah_index
-        text = str(row.get("text", "")).strip()
-        if not text:
+        text = str(row.get("text", ""))
+        if not allow_custom_text:
+            text = text.strip()
+        if not text.strip() and not allow_custom_text:
             raise ValueError("A manual scene cannot have empty text.")
-        word_count = len(text.split())
+        if len(text) > 10000:
+            raise ValueError("A scene's displayed text cannot exceed 10,000 characters.")
+        word_count = len(split_quran_words(text))
         locked = row.get("locked", False)
         if not isinstance(locked, bool):
             raise ValueError("Scene lock state must be true or false.")
-        word_offset = sum(len(part.split()) for part in grouped[ayah_index])
+        word_offset = sum(len(split_quran_words(part)) for part in grouped[ayah_index])
+        source_words = split_quran_words(row.get("source_text") or "")
+        source_start = row.get("word_start_index")
+        source_end = row.get("word_end_index")
+        try:
+            source_start = int(source_start) if source_start not in (None, "") else word_offset
+        except (TypeError, ValueError):
+            source_start = word_offset
+        canonical_text = str(ayahs[ayah_index])
+        canonical_matches = list(QURAN_WORD_PATTERN.finditer(canonical_text))
+        canonical_words = [match.group() for match in canonical_matches]
+        if not source_words:
+            source_words = canonical_words[source_start:source_start + word_count]
+        try:
+            source_end = int(source_end) if source_end not in (None, "") else source_start + len(source_words) - 1
+        except (TypeError, ValueError):
+            source_end = source_start + len(source_words) - 1
+        if source_start < 0 or source_end >= len(canonical_words) or source_end < source_start - 1:
+            source_start = word_offset
+            source_end = source_start + len(source_words) - 1
+        canonical_span = canonical_words[source_start:source_end + 1] if source_end >= source_start else []
+        if source_words != canonical_span:
+            # Older saved editor data may not carry stable source offsets. In
+            # that case its current word span is inferred only if it matches.
+            inferred = canonical_words[word_offset:word_offset + len(source_words)]
+            if source_words != inferred:
+                if not allow_custom_text:
+                    raise ValueError("Scene source text no longer matches its Quran ayah.")
+                source_start = source_end = None
+                source_words = []
+            else:
+                source_start = word_offset
+                source_end = word_offset + len(source_words) - 1
+        source_text = (canonical_text[canonical_matches[source_start].start():canonical_matches[source_end].end()]
+                       if source_words and source_start is not None and source_end is not None
+                       and 0 <= source_start <= source_end < len(canonical_matches) else "")
+        source_mismatch = False
+        if not source_words:
+            source_mismatch = bool(str(row.get("source_text") or ""))
+        # Quran source strings may contain hair spaces and zero-width joiners
+        # that different font line-breakers normalize. Compare display words
+        # while retaining the original source span verbatim.
+        text_edited = bool(row.get("text_edited")) or split_quran_words(text) != source_words or source_mismatch
+        if not allow_custom_text and text_edited:
+            raise ValueError("Manual scenes must preserve every character and its order.")
         scene_id = str(row.get("scene_id") or f"ayah-{ayah_number}-word-{word_offset}").strip()
         if not scene_id or len(scene_id) > 128 or scene_id in scene_ids:
             raise ValueError("Every scene needs a unique identifier no longer than 128 characters.")
         scene_ids.add(scene_id)
         grouped[ayah_index].append(text)
         scene = {"ayah_number": ayah_number, "text": text,
+                 "source_text": source_text, "text_edited": text_edited,
+                 "canonical_source_text": str(row.get("canonical_source_text") or ayahs[ayah_index]),
                  "scene_id": scene_id, "locked": locked,
+                 "scene_index": len(scenes),
                  "segment_index": len(grouped[ayah_index]), "word_count": word_count, "weight": 1,
-                 "word_start_index": word_offset,
-                 "word_end_index": word_offset + word_count - 1}
+                 "word_start_index": source_start,
+                 "word_end_index": source_end}
         if row.get("manual_duration") not in (None, ""):
             if isinstance(row["manual_duration"], bool):
                 raise ValueError("Scene duration must be a positive decimal number of seconds.")
@@ -411,16 +457,16 @@ def _manual_scenes(ayahs, ayah_start, overrides):
     for index, ayah in enumerate(ayahs):
         if not grouped[index]:
             raise ValueError(f"Manual scenes must include every selected ayah; ayah {ayah_start + index} is missing.")
-        actual = "".join("".join(part.split()) for part in grouped[index])
-        expected = "".join(str(ayah).split())
-        if actual != expected:
-            raise ValueError(
-                f"Manual scenes for ayah {ayah_start + index} must preserve every character and its order."
-            )
-        if grouped[index]:
-            source_words = str(ayah).split()
+        if not allow_custom_text:
+            actual = "".join("".join(part.split()) for part in grouped[index])
+            expected = "".join(str(ayah).split())
+            if actual != expected:
+                raise ValueError(
+                    f"Manual scenes for ayah {ayah_start + index} must preserve every character and its order."
+                )
+            source_words = split_quran_words(ayah)
             scene_words = [word for scene in scenes if scene["ayah_number"] == ayah_start + index
-                           for word in scene["text"].split()]
+                           for word in split_quran_words(scene["text"])]
             if source_words != scene_words:
                 raise ValueError(
                     f"Manual scenes for ayah {ayah_start + index} must split only at word boundaries."
@@ -467,7 +513,7 @@ def clip_scene_overrides_to_word_ranges(ayahs, ayah_start, overrides, word_range
             ayah_number = int(ayah_start) + index
         except (TypeError, ValueError, IndexError) as exc:
             raise ValueError("Word selection contains an invalid ayah boundary.") from exc
-        source_words = str(ayah).split()
+        source_words = split_quran_words(ayah)
         if lower < 1 or upper < lower or upper > len(source_words):
             raise ValueError(f"Word selection is invalid for ayah {ayah_number}.")
         matching_rows = []
@@ -484,7 +530,7 @@ def clip_scene_overrides_to_word_ranges(ayahs, ayah_start, overrides, word_range
             continue
         scene_cursor = 0
         for row in matching_rows:
-            scene_words = str(row.get("text", "")).strip().split()
+            scene_words = split_quran_words(str(row.get("text", "")).strip())
             scene_end = scene_cursor + len(scene_words)
             overlap_start = max(scene_cursor, lower - 1)
             overlap_end = min(scene_end, upper)
@@ -576,6 +622,12 @@ def compose_scene_plan_overrides(ayahs, default_scenes, *, ayah_start=1,
                 result[number].append({
                     "ayah_number": number,
                     "text": row.get("text", ""),
+                    "source_text": row.get("source_text", ""),
+                    "canonical_source_text": row.get("canonical_source_text", ""),
+                    "text_edited": bool(row.get("text_edited", False)),
+                    "word_start_index": row.get("word_start_index"),
+                    "word_end_index": row.get("word_end_index"),
+                    "scene_index": row.get("scene_index"),
                     "scene_id": row.get("scene_id"),
                     "locked": row.get("locked", False),
                     "manual_duration": row.get("manual_duration"),
@@ -584,6 +636,32 @@ def compose_scene_plan_overrides(ayahs, default_scenes, *, ayah_start=1,
 
     default_cache = cached_groups(saved_defaults, "scene defaults")
     edit_cache = cached_groups(saved_edits, "scene edits")
+
+    def discard_stale_source_spans(cache):
+        """Ignore cached plans written before Quran hair-space tokenization.
+
+        Older browser saves counted U+200A hair spaces as word separators.
+        Their scene rows can therefore point into the middle of a canonical
+        word. Validate stored source spans independently of displayed text so
+        valid custom captions survive while stale token offsets are rebuilt.
+        """
+        for number, rows in list(cache.items()):
+            # Custom display-text scenes may intentionally have no source
+            # span. Leave those records to the normal custom-text validator.
+            if not rows or any(not str(row.get("source_text") or "").strip() for row in rows):
+                continue
+            source_rows = [{**row, "text":row["source_text"], "text_edited":False}
+                           for row in rows]
+            ayah = ayahs[number - ayah_start]
+            try:
+                _manual_scenes([ayah], number, source_rows)
+            except ValueError as exc:
+                if str(exc) != "Scene source text no longer matches its Quran ayah.":
+                    raise
+                del cache[number]
+
+    discard_stale_source_spans(default_cache)
+    discard_stale_source_spans(edit_cache)
     default_rows = []
     edited_rows = []
     for index, ayah in enumerate(ayahs):
@@ -592,8 +670,13 @@ def compose_scene_plan_overrides(ayahs, default_scenes, *, ayah_start=1,
         default_rows.extend(defaults)
         edited_rows.extend(edit_cache.get(number, defaults))
 
+    if edited_rows and all(row.get("scene_index") not in (None, "") for row in edited_rows):
+        edited_rows.sort(key=lambda row: int(row["scene_index"]))
+    if default_rows and all(row.get("scene_index") not in (None, "") for row in default_rows):
+        default_rows.sort(key=lambda row: int(row["scene_index"]))
+
     validated_defaults = _manual_scenes(ayahs, ayah_start, default_rows)
-    validated_edits = _manual_scenes(ayahs, ayah_start, edited_rows)
+    validated_edits = _manual_scenes(ayahs, ayah_start, edited_rows, allow_custom_text=True)
     return {
         "default_scenes": validated_defaults,
         "scenes": validated_edits,
@@ -606,9 +689,9 @@ def redistribute_scene_words(ayahs, scene_rows, *, ayah_start=1,
                             scene_index, requested_word_count):
     """Move whole words between adjacent scenes in the selected ayah only.
 
-    The input rows are validated against the source ayahs before mutation. A
-    lone ayah scene can be split by reducing its count; later scenes can only
-    take or give words to following scenes from the same ayah.
+    The input rows are validated against the source ayahs before mutation.
+    Growing a scene takes words from the preceding scene first, then the next
+    scene when needed. Shrinking gives trailing words to the next scene.
     """
     if isinstance(requested_word_count, str) and not requested_word_count.isdecimal():
         raise ValueError("Words in a scene must be a positive whole number.")
@@ -634,16 +717,22 @@ def redistribute_scene_words(ayahs, scene_rows, *, ayah_start=1,
     while ayah_after < len(scenes) and scenes[ayah_after]["ayah_number"] == selected_ayah:
         ayah_after += 1
 
-    current_words = selected["text"].split()
+    current_words = split_quran_words(selected["text"])
     if selected["locked"]:
         raise ValueError("Unlock this scene before changing its word allocation.")
+    safe_previous = []
+    for previous in reversed(scenes[ayah_first:selected_index]):
+        if previous["locked"]:
+            break
+        safe_previous.append(previous)
     safe_following = []
     for following in scenes[selected_index + 1:ayah_after]:
         if following["locked"]:
             break
         safe_following.append(following)
-    following_words = sum(len(row["text"].split()) for row in safe_following)
-    max_words = len(current_words) + following_words
+    previous_words = sum(len(split_quran_words(row["text"])) for row in safe_previous)
+    following_words = sum(len(split_quran_words(row["text"])) for row in safe_following)
+    max_words = len(current_words) + previous_words + following_words
     has_following = selected_index + 1 < ayah_after and not scenes[selected_index + 1]["locked"]
     if requested > max_words:
         raise ValueError(f"This scene can contain at most {max_words} words without crossing an ayah boundary.")
@@ -653,10 +742,10 @@ def redistribute_scene_words(ayahs, scene_rows, *, ayah_start=1,
         moved = current_words[target:]
         current_words = current_words[:target]
         if has_following:
-            next_words = scenes[selected_index + 1]["text"].split()
+            next_words = split_quran_words(scenes[selected_index + 1]["text"])
             scenes[selected_index + 1]["text"] = " ".join([*moved, *next_words])
         else:
-            next_word_offset = (sum(len(row["text"].split()) for row in scenes[ayah_first:selected_index])
+            next_word_offset = (sum(len(split_quran_words(row["text"])) for row in scenes[ayah_first:selected_index])
                                 + len(current_words))
             scenes.insert(selected_index + 1, {
                 "ayah_number": selected_ayah, "text": " ".join(moved),
@@ -666,9 +755,25 @@ def redistribute_scene_words(ayahs, scene_rows, *, ayah_start=1,
             })
     elif target > len(current_words):
         remaining = target - len(current_words)
+        while remaining > 0 and selected_index > ayah_first:
+            donor_index = selected_index - 1
+            donor = scenes[donor_index]
+            if donor["locked"] or donor["ayah_number"] != selected_ayah:
+                break
+            donor_words = split_quran_words(donor["text"])
+            take = min(remaining, len(donor_words))
+            current_words = [*donor_words[-take:], *current_words]
+            remainder = donor_words[:-take]
+            remaining -= take
+            if remainder:
+                donor["text"] = " ".join(remainder)
+                break
+            scenes.pop(donor_index)
+            selected_index -= 1
+            ayah_after -= 1
         while (remaining > 0 and selected_index + 1 < ayah_after
                and not scenes[selected_index + 1]["locked"]):
-            next_words = scenes[selected_index + 1]["text"].split()
+            next_words = split_quran_words(scenes[selected_index + 1]["text"])
             take = min(remaining, len(next_words))
             current_words.extend(next_words[:take])
             remaining -= take
@@ -688,11 +793,11 @@ def redistribute_scene_words(ayahs, scene_rows, *, ayah_start=1,
     ])
     for index, scene in enumerate(validated):
         scene["scene_index"] = index
-        scene["word_count"] = len(scene["text"].split())
+        scene["word_count"] = len(split_quran_words(scene["text"]))
     return {
         "scenes": validated,
         "selected_scene_index": selected_index,
-        "word_count": len(validated[selected_index]["text"].split()),
+        "word_count": len(split_quran_words(validated[selected_index]["text"])),
         "min_words": 1,
         "max_words": max_words,
         "locked": validated[selected_index]["locked"],
@@ -722,11 +827,11 @@ def merge_scene_with_previous(ayahs, scene_rows, *, ayah_start=1, scene_index):
     ])
     for index, scene in enumerate(validated):
         scene["scene_index"] = index
-        scene["word_count"] = len(scene["text"].split())
+        scene["word_count"] = len(split_quran_words(scene["text"]))
     return {
         "scenes": validated,
         "selected_scene_index": selected_index - 1,
-        "word_count": len(validated[selected_index - 1]["text"].split()),
+        "word_count": len(split_quran_words(validated[selected_index - 1]["text"])),
     }
 
 
@@ -750,10 +855,10 @@ def split_scene_by_word_count(ayahs, scene_rows, *, ayah_start=1, scene_index,
     selected = scenes[selected_index]
     if selected["locked"]:
         raise ValueError("Unlock this scene before splitting it.")
-    words = selected["text"].split()
+    words = split_quran_words(selected["text"])
     if len(words) <= limit:
         raise ValueError("This scene already fits within the selected words-per-scene limit.")
-    word_offset = sum(len(row["text"].split()) for row in scenes[:selected_index]
+    word_offset = sum(len(split_quran_words(row["text"])) for row in scenes[:selected_index]
                       if row["ayah_number"] == selected["ayah_number"])
     replacements = [
         {"ayah_number": selected["ayah_number"],
@@ -775,11 +880,11 @@ def split_scene_by_word_count(ayahs, scene_rows, *, ayah_start=1, scene_index,
     validated = _manual_scenes(ayahs, int(ayah_start), rows)
     for index, scene in enumerate(validated):
         scene["scene_index"] = index
-        scene["word_count"] = len(scene["text"].split())
+        scene["word_count"] = len(split_quran_words(scene["text"]))
     return {
         "scenes": validated,
         "selected_scene_index": selected_index,
-        "word_counts": [len(row["text"].split()) for row in replacements],
+        "word_counts": [len(split_quran_words(row["text"])) for row in replacements],
     }
 
 
@@ -791,7 +896,7 @@ def set_scene_lock(ayahs, scene_rows, *, ayah_start=1, scene_index, locked):
         selected_index = int(scene_index)
     except (TypeError, ValueError) as exc:
         raise ValueError("Scene index must be a whole number.") from exc
-    scenes = _manual_scenes(ayahs, int(ayah_start), scene_rows)
+    scenes = _manual_scenes(ayahs, int(ayah_start), scene_rows, allow_custom_text=True)
     if selected_index < 0 or selected_index >= len(scenes):
         raise ValueError("The selected scene no longer exists.")
     scenes[selected_index]["locked"] = locked
@@ -802,8 +907,8 @@ def set_scene_lock(ayahs, scene_rows, *, ayah_start=1, scene_index, locked):
 
 
 def edit_scene_text(ayahs, scene_rows, *, ayah_start=1, scene_index, text):
-    """Set a scene to an exact contiguous sequence of its ayah's source words."""
-    scenes = _manual_scenes(ayahs, int(ayah_start), scene_rows)
+    """Edit display text while leaving source ayah text and word spans intact."""
+    scenes = _manual_scenes(ayahs, int(ayah_start), scene_rows, allow_custom_text=True)
     try:
         selected_index = int(scene_index)
     except (TypeError, ValueError) as exc:
@@ -811,25 +916,19 @@ def edit_scene_text(ayahs, scene_rows, *, ayah_start=1, scene_index, text):
     if selected_index < 0 or selected_index >= len(scenes):
         raise ValueError("The selected scene no longer exists.")
     selected = scenes[selected_index]
-    source_index = selected["ayah_number"] - int(ayah_start)
-    group_start = selected_index
-    while group_start > 0 and scenes[group_start - 1]["ayah_number"] == selected["ayah_number"]:
-        group_start -= 1
-    word_offset = sum(len(row["text"].split()) for row in scenes[group_start:selected_index])
-    source_words = str(ayahs[source_index]).split()
-    requested_words = str(text or "").split()
-    if not requested_words:
-        raise ValueError("A scene must contain at least one whole Quran word.")
-    if source_words[word_offset:word_offset + len(requested_words)] != requested_words:
-        raise ValueError("Enter the exact next words from this ayah, in their original order and spelling.")
-    return redistribute_scene_words(
-        ayahs, scenes, ayah_start=ayah_start, scene_index=selected_index,
-        requested_word_count=len(requested_words),
-    )
+    edited_text = str(text or "")
+    if len(edited_text) > 10000:
+        raise ValueError("A scene's displayed text cannot exceed 10,000 characters.")
+    selected["text"] = edited_text
+    selected["text_edited"] = split_quran_words(edited_text) != split_quran_words(selected.get("source_text", ""))
+    selected["word_count"] = len(split_quran_words(edited_text))
+    return {"scenes": scenes, "selected_scene_index": selected_index,
+            "word_count": selected["word_count"], "text_edited": selected["text_edited"],
+            "translation_review_required": selected["text_edited"]}
 
 
 def _validated_word_times(text, timings, ayah_duration):
-    words = text.split()
+    words = split_quran_words(text)
     if not isinstance(timings, (list, tuple)) or len(timings) != len(words):
         raise ValueError("Word timings must match the ayah's exact whitespace-delimited word count.")
     parsed = []
@@ -854,8 +953,8 @@ def _estimated_scene_durations(source_text, scene_texts, ayah_duration):
     marks are a better fallback than equal scene durations, but they cannot
     replace timestamps measured from the selected recitation.
     """
-    source_words = str(source_text).split()
-    scene_counts = [len(str(text).split()) for text in scene_texts]
+    source_words = split_quran_words(source_text)
+    scene_counts = [len(split_quran_words(text)) for text in scene_texts]
     if sum(scene_counts) != len(source_words):
         raise ValueError("Approximate scene timing requires every source word exactly once.")
     weights = []
@@ -881,6 +980,42 @@ def _estimated_scene_durations(source_text, scene_texts, ayah_duration):
         durations[-1] = float(ayah_duration) - sum(durations[:-1])
     if any(not isfinite(item) or item <= 0 for item in durations):
         raise ValueError("Approximate word-weight timing produced a non-positive scene interval.")
+    return durations
+
+
+def _estimated_display_scene_durations(scene_texts, ayah_duration):
+    """Estimate edited scene spans from their displayed words, including blanks.
+
+    This remains approximate because edited captions no longer have a verified
+    word-to-recording mapping. Non-empty text uses the same letter, diacritic,
+    and Quranic pause weights as the browser preview. Blank scenes receive a
+    small neutral weight so their identity and interval survive sync/export.
+    """
+    if not scene_texts:
+        raise ValueError("At least one scene is required for approximate timing.")
+
+    def word_weight(word):
+        letters = sum(char.isalpha() and not unicodedata.category(char).startswith("M")
+                      for char in word)
+        marks = sum(unicodedata.category(char).startswith("M") for char in word)
+        pauses = sum(char in PREFERRED_BREAKS for char in word)
+        return max(1.0, letters + marks * .3 + pauses * 2.0)
+
+    weights = [sum(word_weight(word) for word in split_quran_words(text)) for text in scene_texts]
+    populated = [weight for weight in weights if weight > 0]
+    if populated:
+        blank_weight = max(.25, sum(populated) / len(populated) * .2)
+        weights = [weight if weight > 0 else blank_weight for weight in weights]
+    else:
+        weights = [1.0] * len(scene_texts)
+
+    duration = float(ayah_duration)
+    total_weight = sum(weights)
+    durations = [duration * weight / total_weight for weight in weights]
+    if durations:
+        durations[-1] = duration - sum(durations[:-1])
+    if any(not isfinite(item) or item <= 0 for item in durations):
+        raise ValueError("Approximate edited-scene timing produced a non-positive interval.")
     return durations
 
 
@@ -956,7 +1091,7 @@ def build_scene_plan(ayahs, *, ayah_start=1, durations=None, word_timings=None,
         if parsed_times is not None:
             word_cursor = 0
             for chunk in chunks:
-                word_count = len(chunk.split())
+                word_count = len(split_quran_words(chunk))
                 offsets.append((word_cursor, word_cursor + word_count))
                 word_cursor += word_count
             if word_cursor != len(parsed_times):
@@ -967,7 +1102,7 @@ def build_scene_plan(ayahs, *, ayah_start=1, durations=None, word_timings=None,
             estimated_durations = _estimated_scene_durations(source_text, chunks, verse_duration)
         word_offset = 0
         for part, chunk in enumerate(chunks, start=1):
-            scene_word_count = len(chunk.split())
+            scene_word_count = len(split_quran_words(chunk))
             scene = {
                 "scene_index": len(planned),
                 "scene_id": f"ayah-{ayah_start + index}-word-{word_offset}",
@@ -1005,16 +1140,18 @@ def build_scene_plan(ayahs, *, ayah_start=1, durations=None, word_timings=None,
                     "timing_mode": "word_timestamp",
                     "timing_approximate": False,
                 })
-            word_offset += len(chunk.split())
+            word_offset += len(split_quran_words(chunk))
             planned.append(scene)
 
     scenes = planned
     if scene_overrides is not None:
-        manual_scenes = _manual_scenes(ayahs, ayah_start, scene_overrides)
+        manual_scenes = _manual_scenes(
+            ayahs, ayah_start, scene_overrides, allow_custom_text=True,
+        )
         for scene_number, scene in enumerate(manual_scenes, start=1):
-            if len(wrap_arabic_lines(scene["text"], font, max_width)) > line_limit:
+            if scene["text"].strip() and len(wrap_arabic_lines(scene["text"], font, max_width)) > line_limit:
                 raise ValueError(
-                    f"Manual scene {scene_number} exceeds the selected line limit; split at a word boundary."
+                    f"Manual scene {scene_number} exceeds the selected line limit; adjust its text or layout."
                 )
         scenes = manual_scenes
         grouped = {}
@@ -1023,16 +1160,27 @@ def build_scene_plan(ayahs, *, ayah_start=1, durations=None, word_timings=None,
         for ayah_number, group in grouped.items():
             source_index = ayah_number - ayah_start
             verse_duration = float(durations[source_index]) if durations is not None else float(default_duration)
+            edited_text = any(scene.get("text_edited") for scene in group)
             parsed_times = (_validated_word_times(ayahs[source_index], word_timings[source_index], verse_duration)
-                            if word_timings is not None else None)
-            estimated_durations = (_estimated_scene_durations(
-                ayahs[source_index], [scene["text"] for scene in group], verse_duration,
-            ) if parsed_times is None and durations is not None and len(group) > 1 else None)
+                            if word_timings is not None and not edited_text else None)
+            estimated_durations = None
+            if parsed_times is None and durations is not None and len(group) > 1:
+                estimated_durations = (
+                    _estimated_display_scene_durations([scene["text"] for scene in group], verse_duration)
+                    if edited_text else _estimated_scene_durations(
+                        ayahs[source_index], [scene["text"] for scene in group], verse_duration,
+                    )
+                )
             word_cursor = 0
             for scene_index, scene in enumerate(group):
                 scene["ayah_total_duration"] = verse_duration
-                count = len(scene["text"].split())
-                if parsed_times is not None and len(group) > 1:
+                count = len(split_quran_words(scene["text"]))
+                if edited_text:
+                    scene["duration"] = (estimated_durations[scene_index]
+                                          if estimated_durations is not None else verse_duration)
+                    scene["timing_mode"] = "edited_text_approximate"
+                    scene["timing_approximate"] = True
+                elif parsed_times is not None and len(group) > 1:
                     start = 0.0 if word_cursor == 0 else parsed_times[word_cursor]["start"]
                     word_cursor += count
                     end = (parsed_times[word_cursor]["start"] if word_cursor < len(parsed_times)
@@ -1070,12 +1218,13 @@ def build_scene_plan(ayahs, *, ayah_start=1, durations=None, word_timings=None,
         ayah_number = ayah_start + ayah_index
         group = scenes_by_ayah.get(ayah_number, [])
         verse_duration = float(durations[ayah_index]) if durations is not None else float(default_duration)
+        edited_text = any(scene.get("text_edited") for scene in group)
         parsed_times = (_validated_word_times(ayah, word_timings[ayah_index], verse_duration)
-                        if word_timings is not None else None)
+                        if word_timings is not None and not edited_text else None)
         if parsed_times is not None:
             word_cursor = 0
             for scene in group:
-                count = len(scene["text"].split())
+                count = len(split_quran_words(scene["text"]))
                 first_word = word_cursor
                 last_word = first_word + count - 1
                 if count < 1 or last_word >= len(parsed_times):
@@ -1099,23 +1248,31 @@ def build_scene_plan(ayahs, *, ayah_start=1, durations=None, word_timings=None,
         elif durations is None and len(group) > 1:
             for scene in group:
                 scene.update({"start_time": None, "end_time": None, "duration": None,
-                              "timing_mode": "word_timing_pending", "timing_approximate": False})
+                              "timing_mode": "edited_text_approximate" if edited_text else "word_timing_pending",
+                              "timing_approximate": edited_text})
         elif len(group) > 1 and durations is not None:
-            estimated = _estimated_scene_durations(ayah, [scene["text"] for scene in group], verse_duration)
+            estimated = (_estimated_display_scene_durations(
+                [scene["text"] for scene in group], verse_duration,
+            ) if edited_text else _estimated_scene_durations(
+                ayah, [scene["text"] for scene in group], verse_duration,
+            ))
             scene_cursor = cursor
             for scene, duration in zip(group, estimated):
                 scene.update({"start_time": round(scene_cursor, 3),
                               "end_time": round(scene_cursor + duration, 3),
                               "duration": duration, "timing_mode": "weighted_estimate",
                               "timing_approximate": True})
+                if edited_text:
+                    scene["timing_mode"] = "edited_text_approximate"
                 scene_cursor += duration
         else:
             for scene in group:
                 scene.update({"start_time": round(cursor, 3),
                               "end_time": round(cursor + verse_duration, 3),
                               "duration": verse_duration,
-                              "timing_mode": "ayah_timestamp" if durations is not None else "default_duration_estimate",
-                              "timing_approximate": False})
+                              "timing_mode": ("edited_text_approximate" if edited_text else
+                                              "ayah_timestamp" if durations is not None else "default_duration_estimate"),
+                              "timing_approximate": edited_text})
         cursor += verse_duration
 
     # Keep the automatic voice-derived timing intact as the reset baseline.

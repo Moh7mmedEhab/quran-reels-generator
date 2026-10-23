@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 import json
 import math
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -14,6 +15,7 @@ from uuid import uuid4
 
 from .job_errors import JobCancelled
 from .quran_data import SURAHS_BY_NUMBER
+from .quran_words import split_quran_words
 from .qud_timings import (QudTimingError, get_chapter_audio_url,
                           get_recitation_timings as get_qud_recitation_timings)
 
@@ -63,7 +65,7 @@ def select_audio_word_range(track: AudioTrack, ayahs: list[str], *, ayah_start: 
     except (TypeError, ValueError) as exc:
         raise AudioSourceError("Start and end words must be whole-number positions.") from exc
 
-    counts = [len(str(ayah).split()) for ayah in ayahs]
+    counts = [len(split_quran_words(ayah)) for ayah in ayahs]
     if any(count < 1 for count in counts):
         raise AudioSourceError("Word-level boundaries require non-empty Quran text in every selected ayah.")
     if not 1 <= start_word <= counts[0]:
@@ -100,11 +102,19 @@ def select_audio_word_range(track: AudioTrack, ayahs: list[str], *, ayah_start: 
     automatic_source = track.timing_source == "quran_foundation_word"
     if mode == "automatic":
         if not automatic_source or track.word_timings is None or len(track.word_timings) != len(ayahs):
-            raise AudioSourceError(
-                "Verified word timestamps are unavailable for this recording. Choose manual audio trim and enter both boundary times."
+            fallback_track = replace(
+                track,
+                timing_note=(track.timing_note.rstrip() + " "
+                             + "Verified word timing is unavailable for this recording, so the full selected ayahs are kept. Use the waveform to trim by seconds.").strip(),
             )
+            return fallback_track, list(ayahs), [(1, count) for count in counts]
         if any(len(row) != count for row, count in zip(track.word_timings, counts)):
-            raise AudioSourceError("Word timestamp counts do not match the selected Quran text.")
+            fallback_track = replace(
+                track,
+                timing_note=(track.timing_note.rstrip() + " "
+                             + "Word timing did not match the selected Quran text, so the full selected ayahs are kept. Use the waveform to trim by seconds.").strip(),
+            )
+            return fallback_track, list(ayahs), [(1, count) for count in counts]
         for row, duration in zip(track.word_timings, durations):
             previous_end = 0.0
             for word in row:
@@ -151,7 +161,7 @@ def select_audio_word_range(track: AudioTrack, ayahs: list[str], *, ayah_start: 
                 selected.append({"start": max(0.0, word_start - offset),
                                  "end": word_end - offset})
             trimmed_word_timings.append(selected)
-        selected_ayahs = [" ".join(str(ayah).split()[lo - 1:hi])
+        selected_ayahs = [" ".join(split_quran_words(ayah)[lo - 1:hi])
                           for ayah, (lo, hi) in zip(ayahs, word_ranges)]
         new_track = replace(
             track, start=new_start, end=new_end,
@@ -175,7 +185,7 @@ def select_audio_word_range(track: AudioTrack, ayahs: list[str], *, ayah_start: 
         raise AudioSourceError(
             f"Manual audio times must be within 0 and {selected_duration:.3f} seconds, with end after start."
         )
-    selected_ayahs = [" ".join(str(ayah).split()[lo - 1:hi])
+    selected_ayahs = [" ".join(split_quran_words(ayah)[lo - 1:hi])
                       for ayah, (lo, hi) in zip(ayahs, word_ranges)]
     note = (track.timing_note + " Partial audio uses manually entered recording offsets; "
             "scene boundaries are approximate without verified word timestamps.")
@@ -202,6 +212,150 @@ def select_audio_word_range(track: AudioTrack, ayahs: list[str], *, ayah_start: 
         )
     new_track = replace(new_track, ayah_durations=clipped_durations)
     return new_track, selected_ayahs, word_ranges
+
+
+def trim_audio_track(track: AudioTrack, trim_from_start: float = 0.0,
+                     trim_from_end: float = 0.0) -> tuple[AudioTrack, int, int]:
+    """Crop a selected recitation by seconds removed from its two ends.
+
+    The returned ayah index interval lets callers keep captions and
+    translations paired when a large crop removes one or more complete
+    ayahs. Boundaries are source-file timestamps; no time stretching occurs.
+    """
+    from dataclasses import replace
+
+    try:
+        trim_from_start = float(trim_from_start)
+        trim_from_end = float(trim_from_end)
+        start = float(track.start)
+        end = float(track.end)
+        durations = [float(value) for value in track.ayah_durations]
+    except (TypeError, ValueError, AttributeError) as exc:
+        raise AudioSourceError("Audio trim values and timing boundaries must be valid numbers.") from exc
+
+    if (not math.isfinite(trim_from_start) or not math.isfinite(trim_from_end)
+            or trim_from_start < 0 or trim_from_end < 0):
+        raise AudioSourceError("Audio trim from start and end must be zero or a positive number of seconds.")
+    if (not math.isfinite(start) or not math.isfinite(end) or start < 0 or end <= start
+            or not durations or any(not math.isfinite(value) or value <= 0 for value in durations)
+            or abs(sum(durations) - (end - start)) > .1):
+        raise AudioSourceError("This recording has no consistent ayah timeline to trim.")
+
+    source_duration = end - start
+    kept_duration = source_duration - trim_from_start - trim_from_end
+    if not math.isfinite(kept_duration) or kept_duration <= .01:
+        raise AudioSourceError(
+            f"Audio trim must leave more than 0.01 seconds of the selected range (currently {source_duration:.3f} seconds)."
+        )
+
+    clip_start = trim_from_start
+    clip_end = source_duration - trim_from_end
+    cursor = 0.0
+    first_index = None
+    last_index = None
+    cropped_durations = []
+    start_inside_ayah = end_inside_ayah = False
+    for index, duration in enumerate(durations):
+        segment_start, segment_end = cursor, cursor + duration
+        overlap_start = max(segment_start, clip_start)
+        overlap_end = min(segment_end, clip_end)
+        if overlap_end > overlap_start:
+            if first_index is None:
+                first_index = index
+                start_inside_ayah = overlap_start > segment_start + .001
+            last_index = index + 1
+            end_inside_ayah = overlap_end < segment_end - .001
+            cropped_durations.append(overlap_end - overlap_start)
+        cursor = segment_end
+    if first_index is None or last_index is None:
+        raise AudioSourceError("Audio trim does not overlap a complete selected ayah timeline.")
+
+    word_timings = None
+    timing_source = track.timing_source
+    timing_note = track.timing_note + (
+        f" Cropped {trim_from_start:.3f}s from the selected range start and "
+        f"{trim_from_end:.3f}s from its end; source pitch and speed are unchanged."
+    )
+    if not start_inside_ayah and not end_inside_ayah and track.word_timings is not None:
+        word_timings = track.word_timings[first_index:last_index]
+        if len(word_timings) != len(cropped_durations):
+            word_timings = None
+    elif track.word_timings is not None:
+        timing_source = "trimmed_ayah_audio"
+        timing_note += " A crop cuts through an ayah, so phrase timing for the crop edge is approximate."
+
+    cropped = replace(
+        track,
+        start=start + clip_start,
+        end=start + clip_end,
+        ayah_durations=cropped_durations,
+        word_timings=word_timings,
+        timing_source=timing_source,
+        timing_note=timing_note,
+    )
+    return cropped, first_index, last_index
+
+
+def materialize_audio_track(track: AudioTrack, output_path: str | Path,
+                            sample_rate: int = 48000) -> AudioTrack:
+    """Write the selected source interval to a standalone PCM WAV file.
+
+    MoviePy's audio subclip writer can restart at source time zero for some
+    decoders. Extracting the interval through FFmpeg makes preview and render
+    consume the same exact audio segment with boundaries rebased to zero.
+    """
+    try:
+        source_start = float(track.start)
+        source_end = float(track.end)
+        sample_rate = int(sample_rate)
+    except (TypeError, ValueError, AttributeError) as exc:
+        raise AudioSourceError("The selected recitation audio boundaries are invalid.") from exc
+    if (not math.isfinite(source_start) or not math.isfinite(source_end)
+            or source_start < 0 or source_end <= source_start or sample_rate < 8000):
+        raise AudioSourceError("The selected recitation audio boundaries are invalid.")
+    source_duration = probe_audio_duration(Path(track.path))
+    if source_start >= source_duration or source_end > source_duration + .05:
+        raise AudioSourceError("Selected recitation boundaries fall outside the downloaded audio.")
+    source_end = min(source_end, source_duration)
+    duration = source_end - source_start
+    if duration <= .01:
+        raise AudioSourceError("The selected recitation range is too short to prepare.")
+
+    ffmpeg = os.environ.get("QURAN_REELS_FFMPEG") or shutil.which("ffmpeg")
+    if not ffmpeg:
+        raise AudioSourceError("FFmpeg is required to prepare the selected recitation audio.")
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.unlink(missing_ok=True)
+    fade = min(.005, duration / 4)
+    command = [
+        ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
+        "-i", str(track.path), "-vn", "-af",
+        f"atrim=start={source_start:.9f}:end={source_end:.9f},"
+        f"asetpts=PTS-STARTPTS,afade=t=in:st=0:d={fade:.6f},"
+        f"afade=t=out:st={duration-fade:.9f}:d={fade:.6f}",
+        "-ac", "2", "-ar", str(sample_rate),
+        "-c:a", "pcm_s16le", str(output_path),
+    ]
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=300, check=False)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        output_path.unlink(missing_ok=True)
+        raise AudioSourceError(f"Could not crop the selected recitation audio: {exc}") from exc
+    if result.returncode or not output_path.is_file() or output_path.stat().st_size < 1024:
+        output_path.unlink(missing_ok=True)
+        detail = (result.stderr or "").strip().splitlines()
+        message = detail[-1] if detail else "FFmpeg did not produce an audio segment."
+        raise AudioSourceError(f"Could not crop the selected recitation audio: {message}")
+
+    return AudioTrack(
+        output_path, str(getattr(track, "url", "")), 0.0, duration,
+        list(getattr(track, "ayah_durations", []) or []),
+        getattr(track, "word_timings", None),
+        str(getattr(track, "timing_source", "selected_audio")),
+        str(getattr(track, "timing_note", "Selected recitation audio.")),
+        persistent=False,
+    )
 
 
 def _cached_source_path(destination_dir: Path, reciter_id: str, surah_number: int,
@@ -411,7 +565,7 @@ def estimate_ayah_durations(expected_ayahs, total_duration: float) -> list[float
     if not expected_ayahs or not math.isfinite(float(total_duration)) or total_duration <= 0:
         raise AudioSourceError("Cannot estimate ayah display timing for this chapter.")
     weights = [
-        max(1, sum(len(normalize_arabic_word(word)) for word in str(ayah).split()))
+        max(1, sum(len(normalize_arabic_word(word)) for word in split_quran_words(ayah)))
         for ayah in expected_ayahs
     ]
     total_weight = sum(weights)
@@ -508,7 +662,7 @@ def _validated_relative_word_timings(selected, expected_ayahs, durations):
                 raise ValueError("Word timestamps overlap or fall outside their effective ayah interval.")
             current.append({"start": start_ms / 1000, "end": end_ms / 1000})
             previous_end_ms = end_ms
-        if len(current) != len(str(expected_ayahs[index]).split()):
+        if len(current) != len(split_quran_words(expected_ayahs[index])):
             raise ValueError("Word timestamp count differs from the selected ayah text.")
         result.append(current)
     return result

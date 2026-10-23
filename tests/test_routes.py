@@ -63,6 +63,51 @@ def test_studio_renders_light_template_with_all_surahs():
     assert b"id=\"translation-text\"" in response.data
     assert b"id=\"viewer-progress-track\"" in response.data
     assert b"id=\"export-encoder\"" in response.data
+    assert b'id="scene-workspace"' in response.data
+    assert b'id="preview-scene-workspace"' in response.data
+    assert b'id="regenerate-scenes-from-text"' in response.data
+    assert b'id="sync-scenes-to-audio"' not in response.data
+    assert b'id="generate-random-design"' in response.data
+    assert b'id="editor-quick-actions"' in response.data
+    assert b'id="quick-preview-btn"' in response.data
+    assert b'id="quick-render-btn"' in response.data
+    assert b'id="audio-trim-precision-note"' in response.data
+    assert b'id="post-render-prompt-title"' in response.data
+    assert b"Would you like to publish this video?" in response.data
+    assert b'id="arabic-text-scale"' in response.data
+    import re
+    detail_tags = re.findall(rb"<details\b[^>]*>", response.data)
+    assert detail_tags and all(re.search(rb"\bopen(?:\s|=|>)", tag) is None for tag in detail_tags)
+
+
+def test_preview_workspace_separates_canvas_and_controls_and_omits_scene_sync_ui():
+    import re
+
+    client = create_app(TestConfig).test_client()
+    response = client.get("/")
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+
+    workspace = html.index('id="right-workspace"')
+    canvas = html.index('class="live-canvas-section"', workspace)
+    playback = html.index('id="playback-controls"', canvas)
+    audio_tools = html.index('id="audio-timeline-tools"', playback)
+    scenes = html.index('id="preview-scene-workspace"', audio_tools)
+    assert workspace < canvas < playback < audio_tools < scenes
+    assert 'id="sync-scenes-to-audio"' not in html
+    assert 'id="apply-scene-sync"' not in html
+    assert 'id="scene-sync-status"' not in html
+    assert "Auto Sync Audio with Video" not in html
+    assert 'id="rendered-video" controls' not in html
+    for section_id in ("audio-timeline-tools", "preview-scene-workspace"):
+        section = re.search(rf"<details\b(?=[^>]*\bid=\"{section_id}\")[^>]*>", html)
+        assert section and not re.search(r"\bopen(?:\s|=|>)", section.group())
+
+    css = client.get("/static/css/app.css?v=studio-2026-10-23-v1-7-timeline-and-backgrounds")
+    assert css.status_code == 200
+    styles = css.get_data(as_text=True)
+    assert ".right-workspace {" in styles and "flex-direction:column" in styles
+    assert ".workspace-tool-section" in styles and "width:100%" in styles and "min-width:0" in styles
 
 
 def test_ayah_range_fields_are_styled_text_inputs_with_numeric_mobile_keypad():
@@ -80,8 +125,8 @@ def test_ayah_range_fields_are_styled_text_inputs_with_numeric_mobile_keypad():
     assert html.count('id="end-ayah"') == 1
     assert 'id="words-per-scene" type="text"' in html
     assert 'id="reset-scenes"' in html
-    assert "scene-timing-1" in html
-    css = client.get("/static/css/app.css?v=studio-2026-10-22-scene-timing-1")
+    assert "studio-2026-10-23-v1-7" in html
+    css = client.get("/static/css/app.css?v=studio-2026-10-23-v1-7-timeline-and-backgrounds")
     assert css.status_code == 200
     assert b".ayah-range-control:focus-within" in css.data
     assert b".ayah-range-value:focus-visible" in css.data
@@ -91,6 +136,8 @@ def test_ayah_range_fields_are_styled_text_inputs_with_numeric_mobile_keypad():
     assert b".scene-word-apply:focus-visible" in css.data
     assert b".scene-duration-input" in css.data
     assert b".scene-duration-adjustments" in css.data
+    assert b".editor-quick-actions" in css.data
+    assert b".editor-quick-action-buttons #quick-render-btn" in css.data
     assert b".scene-text-input[aria-invalid=\"true\"]" in css.data
     assert "$('scene-text-input')?.setAttribute('aria-invalid', 'true')" in html
     assert b".scene-row.active-scene" in css.data
@@ -202,7 +249,13 @@ def test_reel_viewer_presets_define_ten_complete_compositions():
     response = create_app(TestConfig).test_client().get("/api/video-templates")
     assert response.status_code == 200
     presets = response.json["viewer_templates"]
-    assert len(presets) == 10
+    assert len(presets) == 11
+    assert response.json["default"] == "centered_ayah_clean_translation"
+    clean = presets[response.json["default"]]
+    assert clean["show_translation"] is True
+    assert clean["show_viewer_title"] is False
+    assert clean["show_progress"] is False
+    assert clean["theme"] == "misty_valley"
     required = {"show_viewer_title", "show_quran_text", "show_translation", "show_waveform",
                 "show_reciter_badge", "show_progress", "title_template", "waveform_style",
                 "progress_color", "caption_style", "theme"}
@@ -418,10 +471,10 @@ def test_islam_sobhi_missing_recording_is_reported_without_building_a_fake_url()
     assert "no verified audio" in timings.json["error"]
 
 
-def test_background_endpoint_lists_twenty_three_presets_including_bundled_photos():
+def test_background_endpoint_lists_twenty_four_presets_including_bundled_photos():
     response = create_app(TestConfig).test_client().get("/api/backgrounds")
     assert response.status_code == 200
-    assert len(response.json["backgrounds"]) == 23
+    assert len(response.json["backgrounds"]) == 24
     assert {item["category"] for item in response.json["backgrounds"]} >= {
         "Nature & Landscapes", "Islamic Architecture", "Night & Celestial"
     }
@@ -813,11 +866,11 @@ def test_scene_redistribution_endpoint_splits_selected_scene_by_requested_word_c
     assert "".join(ayah.split()) == "".join("".join(row["text"].split()) for row in response.json["scenes"])
 
 
-def test_scene_redistribution_endpoint_supports_locks_and_exact_text_edits():
+def test_scene_redistribution_endpoint_supports_locks_and_custom_display_text():
     ayah = "أَوَّلٌ ثَانٍ ثَالِثٌ رَابِعٌ"
     scenes = [
-        {"scene_id":"opening","ayah_number":1,"text":"أَوَّلٌ ثَانٍ"},
-        {"scene_id":"closing","ayah_number":1,"text":"ثَالِثٌ رَابِعٌ"},
+        {"scene_id":"opening","ayah_number":1,"text":"أَوَّلٌ ثَانٍ","manual_duration":2.25},
+        {"scene_id":"closing","ayah_number":1,"text":"ثَالِثٌ رَابِعٌ","manual_duration":1.75},
     ]
     client = create_app(TestConfig).test_client()
     locked = client.post("/api/scenes/redistribute", json={
@@ -829,16 +882,55 @@ def test_scene_redistribution_endpoint_supports_locks_and_exact_text_edits():
     assert locked.json["scenes"][1]["scene_id"] == "closing"
     edited = client.post("/api/scenes/redistribute", json={
         "action":"edit_text", "ayah_start":1, "ayahs":[ayah], "scenes":scenes,
+        "translation_lines":["The original translation."],
         "scene_index":0, "text":"أَوَّلٌ ثَانٍ ثَالِثٌ",
     })
     assert edited.status_code == 200, edited.json
-    assert [scene["text"] for scene in edited.json["scenes"]] == ["أَوَّلٌ ثَانٍ ثَالِثٌ", "رَابِعٌ"]
-    invalid = client.post("/api/scenes/redistribute", json={
-        "action":"edit_text", "ayah_start":1, "ayahs":[ayah], "scenes":scenes,
-        "scene_index":0, "text":"ثَانٍ أَوَّلٌ",
+    assert [scene["text"] for scene in edited.json["scenes"]] == ["أَوَّلٌ ثَانٍ ثَالِثٌ", "ثَالِثٌ رَابِعٌ"]
+    assert edited.json["scenes"][0]["text_edited"] is True
+    assert edited.json["scenes"][0]["source_text"] == "أَوَّلٌ ثَانٍ"
+    assert edited.json["scenes"][0]["manual_duration"] == pytest.approx(2.25)
+    assert edited.json["scenes"][0]["translation_alignment_warning"] is True
+    locked_custom = client.post("/api/scenes/redistribute", json={
+        "action":"set_lock", "ayah_start":1, "ayahs":[ayah],
+        "scenes":edited.json["scenes"], "scene_index":0, "locked":True,
     })
-    assert invalid.status_code == 400
-    assert "exact next words" in invalid.json["error"]
+    assert locked_custom.status_code == 200, locked_custom.json
+    assert locked_custom.json["scenes"][0]["locked"] is True
+    blank = client.post("/api/scenes/redistribute", json={
+        "action":"edit_text", "ayah_start":1, "ayahs":[ayah], "scenes":scenes,
+        "translation_lines":["The original translation."],
+        "scene_index":0, "text":"",
+    })
+    assert blank.status_code == 200, blank.json
+    assert blank.json["scenes"][0]["text"] == ""
+    assert blank.json["scenes"][0]["source_text"] == "أَوَّلٌ ثَانٍ"
+    assert blank.json["scenes"][0]["text_edited"] is True
+    assert blank.json["scenes"][0]["translation_alignment_warning"] is True
+
+
+def test_scene_plan_preserves_custom_text_and_marks_its_timing_approximate():
+    client = create_app(TestConfig).test_client()
+    ayah = "أَوَّلٌ ثَانٍ ثَالِثٌ رَابِعٌ"
+    response = client.post("/api/scenes/plan", json={
+        "ayahs":[ayah], "canonical_ayahs":[ayah], "ayah_start":1,
+        "words_per_scene":30, "translation_lines":["The original translation."],
+        "scene_edits":[{"ayah_number":1, "source_text":ayah, "scenes":[
+            {"scene_id":"opening", "ayah_number":1, "scene_index":0,
+             "text":"أَوَّلٌ", "source_text":"أَوَّلٌ ثَانٍ", "word_start_index":0,
+             "word_end_index":1, "text_edited":True, "locked":False},
+            {"scene_id":"pause", "ayah_number":1, "scene_index":1,
+             "text":"", "source_text":"ثَالِثٌ رَابِعٌ", "word_start_index":2,
+             "word_end_index":3, "text_edited":True, "locked":False},
+        ]}],
+    })
+    assert response.status_code == 200, response.json
+    scenes = response.json["scenes"]
+    assert [scene["text"] for scene in scenes] == ["أَوَّلٌ", ""]
+    assert all(scene["text_edited"] for scene in scenes)
+    assert all(scene["timing_mode"] == "edited_text_approximate" for scene in scenes)
+    assert all(scene["translation_alignment_warning"] for scene in scenes)
+    assert all(scene["translation_text"] == "" for scene in scenes)
 
 
 def test_caption_preview_returns_pillow_caption_for_selected_video_template():
@@ -868,9 +960,11 @@ def test_caption_preview_passes_translation_without_attribution_to_shared_render
         captured.update(kwargs) or Image.new("RGBA", (320, 180), (0, 0, 0, 0))))
     base = {"text": "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ", "aspect_ratio": "9:16",
             "translation": "A source-verified English ayah.", "translation_edition": "en.sahih",
-            "show_translation": True, "translation_font": "serif", "translation_align": "left"}
+            "show_translation": True, "translation_font": "serif", "translation_align": "left",
+            "caption_scale": .92}
     response = create_app(TestConfig).test_client().post("/api/caption-preview", json=base)
     assert response.status_code == 200
+    assert captured["caption_scale"] == .92
     assert captured["translation_text"] == base["translation"]
     assert captured["translation_options"]["translation_font"] == "serif"
     assert captured["translation_options"]["translation_align"] == "left"
@@ -880,6 +974,12 @@ def test_caption_preview_passes_translation_without_attribution_to_shared_render
     response = create_app(TestConfig).test_client().post("/api/caption-preview", json={**base, "show_translation": False})
     assert response.status_code == 200
     assert captured["translation_text"] == ""
+
+    invalid_scale = create_app(TestConfig).test_client().post("/api/caption-preview", json={
+        **base, "caption_scale":1.5,
+    })
+    assert invalid_scale.status_code == 400
+    assert "0.80 and 1.10" in invalid_scale.json["error"]
 
 
 def test_caption_preview_uses_arabic_only_surah_header_and_number(monkeypatch):
@@ -904,8 +1004,8 @@ def test_caption_preview_uses_arabic_only_surah_header_and_number(monkeypatch):
     assert "SURAH" not in captured["surah_title"]
     assert captured["ayah_number"] == 13
     assert captured["aspect_ratio"] == "9:16"
-    assert captured["caption_style"] == "golden_illuminated"
-    assert captured["caption_color"] == "gold"
+    assert captured["caption_style"] == "soft_white"
+    assert captured["caption_color"] == "white"
     assert captured["output_size"] == (1080, 1920)
     assert captured["surah_font_path"].name == "NotoKufiArabic-Regular.ttf"
     assert captured["ayah_number_font_path"].name == "NotoSansArabic-Bold.ttf"
@@ -1074,6 +1174,47 @@ def test_recitation_preview_endpoint_trims_verified_word_boundaries(tmp_path, mo
     assert np.corrcoef(third_reference, third_word)[0, 1] > .98
 
 
+def test_recitation_preview_endpoint_crops_seconds_from_both_selected_range_ends(tmp_path, monkeypatch):
+    import math
+    import wave
+    import numpy as np
+    from io import BytesIO
+    import app.routes as routes
+    from app.audio_sources import AudioTrack
+
+    sample_rate = 48000
+    time_axis = np.arange(8 * sample_rate, dtype=np.float64) / sample_rate
+    frequencies = np.where(time_axis < 1.5, 220.0, np.where(time_axis < 5.5, 440.0, 880.0))
+    samples = (.25 * np.sin(2 * math.pi * frequencies * time_axis) * 32767).astype("int16")
+    source_path = tmp_path / "seconds-trim-source.wav"
+    with wave.open(str(source_path), "wb") as audio_file:
+        audio_file.setnchannels(1)
+        audio_file.setsampwidth(2)
+        audio_file.setframerate(sample_rate)
+        audio_file.writeframes(samples.tobytes())
+    track = AudioTrack(source_path, "https://audio.example/selected.mp3", 0, 8, [8], None,
+                       "test_audio", "Synthetic test recording.")
+    monkeypatch.setattr(routes, "get_audio_url", lambda *_args: track.url)
+    monkeypatch.setattr(routes, "download_recitation", lambda *_args, **_kwargs: track)
+
+    class PreviewConfig(TestConfig):
+        AUDIO_PREVIEW_FOLDER = tmp_path / "seconds-trim-preview-cache"
+
+    response = create_app(PreviewConfig).test_client().get(
+        "/api/reciters/mishary_alafasy/audio-preview?surah=1&start=1&end=1"
+        "&audio_trim_enabled=true&audio_trim_start_seconds=1.27&audio_trim_end_seconds=2.53"
+    )
+
+    assert response.status_code == 200, response.json
+    with wave.open(BytesIO(response.data), "rb") as audio_file:
+        assert audio_file.getframerate() == sample_rate
+        assert audio_file.getnframes() / sample_rate == pytest.approx(4.2, abs=.03)
+        rendered = np.frombuffer(audio_file.readframes(audio_file.getnframes()), dtype="<i2")
+        rendered = rendered.reshape(-1, audio_file.getnchannels()).mean(axis=1) / 32768
+    expected = samples[int(1.27 * sample_rate):int(5.47 * sample_rate)] / 32768
+    assert np.corrcoef(rendered[:sample_rate], expected[:sample_rate])[0, 1] > .98
+
+
 def test_generate_applies_manual_partial_word_range_to_audio_text_and_scenes(monkeypatch, tmp_path):
     import app.routes as routes
     from app.audio_sources import AudioTrack
@@ -1094,6 +1235,11 @@ def test_generate_applies_manual_partial_word_range_to_audio_text_and_scenes(mon
                 "width":1080, "height":1920, "has_audio":True}
 
     monkeypatch.setattr(routes, "download_recitation", lambda *_args, **_kwargs: track)
+    monkeypatch.setattr(routes, "materialize_audio_track", lambda selected, path, sample_rate=48000: (
+        selected.__class__(Path(path), selected.url, 0, selected.end - selected.start,
+                           selected.ayah_durations, selected.word_timings,
+                           selected.timing_source, selected.timing_note)
+    ))
     monkeypatch.setattr(routes, "render_reel", fake_render)
     monkeypatch.setattr(routes, "validate_rendered_output", lambda *_args, **_kwargs: {"playable":True})
 
@@ -1118,8 +1264,8 @@ def test_generate_applies_manual_partial_word_range_to_audio_text_and_scenes(mon
     assert response.status_code == 202, response.json
     job = client.get(response.json["status_url"])
     assert job.json["status"] == "complete", job.json
-    assert captured["audio_start"] == pytest.approx(2.5)
-    assert captured["audio_end"] == pytest.approx(8.0)
+    assert captured["audio_start"] == pytest.approx(0)
+    assert captured["audio_end"] == pytest.approx(5.5)
     assert captured["ayah_durations"] == pytest.approx([3.5, 2.0])
     assert captured["ayahs"] == [" ".join(ayahs[0].split()[1:]), " ".join(ayahs[1].split()[:3])]
     assert [(row["scene_id"], row["text"]) for row in captured["scene_overrides"]] == [
@@ -1130,6 +1276,118 @@ def test_generate_applies_manual_partial_word_range_to_audio_text_and_scenes(mon
     assert result["timing_source"] == "manual_audio_trim"
     assert result["start_word"] == 2 and result["end_word"] == 3
     assert "approximate" in result["timing_note"]
+
+
+def test_generate_sends_seconds_cropped_boundaries_to_mp4_renderer(monkeypatch, tmp_path):
+    import app.routes as routes
+    from app.audio_sources import AudioTrack
+
+    source_path = tmp_path / "seconds-trim-render-source.mp3"
+    source_path.write_bytes(b"synthetic source audio")
+    track = AudioTrack(source_path, "https://audio.example/chapter.mp3", 100, 140,
+                       [15, 10, 15], None, "mp3quran_ayah", "Ayah boundaries only.")
+    captured = {}
+
+    def fake_render(**kwargs):
+        captured.update(kwargs)
+        Path(kwargs["output_path"]).write_bytes(b"complete-mp4" * 200)
+        return {"path":str(kwargs["output_path"]), "duration":35,
+                "width":1080, "height":1920, "has_audio":True}
+
+    monkeypatch.setattr(routes, "download_recitation", lambda *_args, **_kwargs: track)
+    monkeypatch.setattr(routes, "materialize_audio_track", lambda selected, path, sample_rate=48000: (
+        selected.__class__(Path(path), selected.url, 0, selected.end - selected.start,
+                           selected.ayah_durations, selected.word_timings,
+                           selected.timing_source, selected.timing_note)
+    ))
+    monkeypatch.setattr(routes, "render_reel", fake_render)
+    monkeypatch.setattr(routes, "validate_rendered_output", lambda *_args, **_kwargs: {"playable":True})
+
+    class Config(TestConfig):
+        OUTPUT_FOLDER = tmp_path / "outputs"
+
+    client = create_app(Config).test_client()
+    response = client.post("/api/generate", json={
+        "surah":1, "ayah_start":1, "ayah_end":3, "reciter_id":"mishary_alafasy",
+        "audio_trim_enabled":True, "audio_trim_start_seconds":2.37, "audio_trim_end_seconds":3.16,
+    })
+
+    assert response.status_code == 202, response.json
+    job = client.get(response.json["status_url"])
+    assert job.json["status"] == "complete", job.json
+    assert captured["audio_start"] == pytest.approx(0)
+    assert captured["audio_end"] == pytest.approx(34.47)
+    assert captured["ayah_durations"] == pytest.approx([12.63, 10, 11.84])
+    assert len(captured["ayahs"]) == 3
+    assert job.json["result"]["selected_recitation_duration"] == pytest.approx(34.47)
+    assert job.json["result"]["audio_trim_enabled"] is True
+    assert job.json["result"]["audio_trim_start_seconds"] == pytest.approx(2.37)
+    assert job.json["result"]["audio_trim_end_seconds"] == pytest.approx(3.16)
+
+
+def test_generate_rejects_explicitly_blank_main_text_with_a_clear_scene_guidance(monkeypatch):
+    import app.routes as routes
+
+    monkeypatch.setattr(routes, "download_recitation", lambda *_args, **_kwargs: pytest.fail(
+        "Blank main ayah text should be rejected before fetching audio."))
+    response = create_app(TestConfig).test_client().post("/api/generate", json={
+        "surah":55, "ayah_start":13, "ayah_end":13, "ayah_text":"",
+    })
+    assert response.status_code == 400
+    assert "selected Arabic text is empty" in response.json["error"]
+    assert "specific scene's displayed text" in response.json["error"]
+
+
+def test_generate_keeps_edited_scene_text_when_audio_uses_partial_word_range(monkeypatch, tmp_path):
+    import app.routes as routes
+    from app.audio_sources import AudioTrack
+    from app.quran_data import get_ayahs
+
+    source_path = tmp_path / "edited-partial-source.mp3"
+    source_path.write_bytes(b"synthetic source audio")
+    track = AudioTrack(source_path, "https://audio.example/chapter.mp3", 1, 10, [5, 4], None,
+                       "mp3quran_ayah", "Ayah boundaries only.")
+    captured = {}
+
+    def fake_render(**kwargs):
+        captured.update(kwargs)
+        Path(kwargs["output_path"]).write_bytes(b"complete-mp4" * 200)
+        return {"path":str(kwargs["output_path"]), "duration":5.5,
+                "width":1080, "height":1920, "has_audio":True}
+
+    monkeypatch.setattr(routes, "download_recitation", lambda *_args, **_kwargs: track)
+    monkeypatch.setattr(routes, "materialize_audio_track", lambda selected, path, sample_rate=48000: (
+        selected.__class__(Path(path), selected.url, 0, selected.end - selected.start,
+                           selected.ayah_durations, selected.word_timings,
+                           selected.timing_source, selected.timing_note)
+    ))
+    monkeypatch.setattr(routes, "render_reel", fake_render)
+    monkeypatch.setattr(routes, "validate_rendered_output", lambda *_args, **_kwargs: {"playable":True})
+
+    class Config(TestConfig):
+        OUTPUT_FOLDER = tmp_path / "outputs"
+
+    official = get_ayahs(1, 1, 2)
+    edited = [" ".join(official[0].split()[1:]), " ".join(official[1].split()[1:])]
+    requested_scenes = [
+        {"scene_id":"custom-edited", "ayah_number":1, "text":"نص عرض محرر", "manual_duration":2.4},
+        {"scene_id":"custom-rest", "ayah_number":2, "text":"نص آخر محرر", "manual_duration":3.1},
+    ]
+    client = create_app(Config).test_client()
+    response = client.post("/api/generate", json={
+        "surah":1, "ayah_start":1, "ayah_end":2, "reciter_id":"mishary_alafasy",
+        "ayah_text":"\n".join(edited), "start_word":2, "end_word":3, "word_mode":"manual",
+        "manual_start":1.5, "manual_end":7.0, "scene_overrides":requested_scenes,
+    })
+    assert response.status_code == 202, response.json
+    job = client.get(response.json["status_url"])
+    assert job.json["status"] == "complete", job.json
+    assert captured["ayahs"] == edited
+    assert captured["word_timings"] is None
+    assert [(scene["scene_id"], scene["text"]) for scene in captured["scene_overrides"]] == [
+        (scene["scene_id"], scene["text"]) for scene in requested_scenes
+    ]
+    assert [scene["manual_duration"] for scene in captured["scene_overrides"]] == [2.4, 3.1]
 
 
 def test_generate_rejects_invalid_range_before_audio_fetch():
@@ -1222,6 +1480,13 @@ def test_generate_success_uses_local_ayah_text_and_selected_qari(monkeypatch, tm
 
     monkeypatch.setattr(routes, "download_recitation", lambda *args, **kwargs: SimpleNamespace(
         path=track_path, start=1.0, end=5.16, ayah_durations=[4.16]))
+    monkeypatch.setattr(routes, "materialize_audio_track", lambda selected, path, sample_rate=48000: (
+        SimpleNamespace(path=Path(path), start=0, end=selected.end-selected.start,
+                        ayah_durations=selected.ayah_durations,
+                        word_timings=getattr(selected, "word_timings", None),
+                        timing_source=getattr(selected, "timing_source", "mp3quran_ayah"),
+                        timing_note=getattr(selected, "timing_note", "Ayah timing."))
+    ))
     monkeypatch.setattr(routes, "render_reel", fake_render)
     monkeypatch.setattr(routes, "validate_rendered_output", lambda *args, **kwargs: {"playable":True})
 
@@ -1275,7 +1540,9 @@ def test_generate_success_uses_local_ayah_text_and_selected_qari(monkeypatch, tm
     assert "approximate" in result["timing_note"]
     assert captured["scene_overrides"] == scene_overrides
     assert "تُكَذِّبَانِ" in captured["ayahs"][0]
-    assert captured["audio_start"] == 1.0
+    assert captured["audio_start"] == 0
+    assert result["recitation_audio_start"] == pytest.approx(1.0)
+    assert result["recitation_audio_end"] == pytest.approx(5.16)
     assert captured["theme"] == "desert_dawn"
     assert captured["caption_color"] == "gold"
     assert captured["wrap_width"] == 75
@@ -1375,6 +1642,12 @@ def test_result_preview_uses_reduced_render_and_persists_unlisted_share_link(mon
     monkeypatch.setattr(routes, "download_recitation", lambda *args, **kwargs: SimpleNamespace(
         path=track_path, start=1.25, end=5.25, ayah_durations=[4.0],
         timing_source="mp3quran_ayah", timing_note="Ayah timing."))
+    monkeypatch.setattr(routes, "materialize_audio_track", lambda selected, path, sample_rate=48000: (
+        SimpleNamespace(path=Path(path), start=0, end=selected.end-selected.start,
+                        ayah_durations=selected.ayah_durations,
+                        word_timings=getattr(selected, "word_timings", None),
+                        timing_source=selected.timing_source, timing_note=selected.timing_note)
+    ))
     monkeypatch.setattr(routes, "render_reel", fake_render)
     monkeypatch.setattr(routes, "validate_rendered_output", lambda *args, **kwargs: {"playable": True})
 

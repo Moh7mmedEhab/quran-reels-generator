@@ -24,6 +24,16 @@ BACKGROUND_VIDEO_TEMPLATES = {
         "filename": "moonlit_horizon.mp4",
         "duration": 6,
     },
+    "midnight_coast_drift": {
+        "name": "Midnight Coast Drift",
+        "description": "A dark ocean horizon with a quiet, slow floating camera movement.",
+        "theme": "midnight_coast",
+        "filename": "midnight_coast_drift.mp4",
+        "duration": 6,
+        "width": 1440,
+        "height": 2560,
+        "fps": 24,
+    },
 }
 
 

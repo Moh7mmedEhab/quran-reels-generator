@@ -139,15 +139,136 @@ def test_manual_word_selection_uses_explicit_offsets_and_marks_approximate(tmp_p
     assert "manually entered" in selected.timing_note
 
 
-def test_partial_automatic_selection_rejects_unmatched_word_timing(tmp_path):
+def test_uthmani_word_range_keeps_hair_space_inside_the_selected_source_word(tmp_path):
+    from app.quran_data import get_ayahs
+    from app.quran_words import split_quran_words
+
+    ayah = get_ayahs(5, 12, 12)[0]
+    words = split_quran_words(ayah)
+    track = audio_sources.AudioTrack(
+        tmp_path / "chapter.mp3", "https://audio.example/chapter.mp3", 0, 76.36,
+        [76.36], None, "mp3quran_ayah", "Ayah boundaries only.",
+    )
+    selected, text, ranges = audio_sources.select_audio_word_range(
+        track, [ayah], ayah_start=12, start_word=7, end_word=8, mode="manual",
+        manual_start=0, manual_end=1,
+    )
+    assert ranges == [(7, 8)]
+    assert text == [" ".join(words[6:8])]
+    assert split_quran_words(text[0]) == words[6:8]
+
+
+def test_seconds_trim_crops_track_boundaries_and_preserves_intermediate_ayahs(tmp_path):
+    track = audio_sources.AudioTrack(
+        tmp_path / "chapter.mp3", "https://audio.example/chapter.mp3", 100, 140,
+        [15, 10, 15], None, "mp3quran_ayah", "Matched ayah timing.",
+    )
+
+    cropped, first, end = audio_sources.trim_audio_track(track, 2, 3)
+
+    assert (cropped.start, cropped.end) == pytest.approx((102, 137))
+    assert cropped.ayah_durations == pytest.approx([13, 10, 12])
+    assert cropped.end - cropped.start == pytest.approx(35)
+    assert (first, end) == (0, 3)
+
+
+def test_seconds_trim_can_remove_complete_edge_ayahs_and_marks_partial_phrase_timing(tmp_path):
+    track = audio_sources.AudioTrack(
+        tmp_path / "chapter.mp3", "https://audio.example/chapter.mp3", 100, 140,
+        [5, 20, 15], [[{"start": .1, "end": .4}], [{"start": .2, "end": .6}], [{"start": .1, "end": .3}]],
+        "quran_foundation_word", "Verified word timing.",
+    )
+
+    cropped, first, end = audio_sources.trim_audio_track(track, 6, 3)
+
+    assert (cropped.start, cropped.end) == pytest.approx((106, 137))
+    assert cropped.ayah_durations == pytest.approx([19, 12])
+    assert (first, end) == (1, 3)
+    assert cropped.word_timings is None
+    assert cropped.timing_source == "trimmed_ayah_audio"
+    assert "approximate" in cropped.timing_note
+
+
+def test_materialize_audio_track_writes_the_selected_source_offsets(tmp_path):
+    import numpy as np
+
+    sample_rate = 48000
+    time_axis = np.arange(8 * sample_rate, dtype=np.float64) / sample_rate
+    frequencies = np.where(time_axis < 1.5, 220.0, np.where(time_axis < 5.5, 440.0, 880.0))
+    samples = (.25 * np.sin(2 * math.pi * frequencies * time_axis) * 32767).astype("int16")
+    source_path = tmp_path / "materialize-source.wav"
+    with wave.open(str(source_path), "wb") as audio_file:
+        audio_file.setnchannels(1)
+        audio_file.setsampwidth(2)
+        audio_file.setframerate(sample_rate)
+        audio_file.writeframes(samples.tobytes())
+
+    track = audio_sources.AudioTrack(
+        source_path, "https://audio.example/selected.mp3", 1.5, 5.5, [4],
+        None, "test_audio", "Synthetic test recording.",
+    )
+    materialized = audio_sources.materialize_audio_track(track, tmp_path / "selected.wav")
+
+    assert (materialized.start, materialized.end) == pytest.approx((0, 4))
+    with wave.open(str(materialized.path), "rb") as rendered_file:
+        assert rendered_file.getframerate() == sample_rate
+        assert rendered_file.getnframes() == 4 * sample_rate
+        rendered = np.frombuffer(
+            rendered_file.readframes(rendered_file.getnframes()), dtype="<i2",
+        ).reshape(-1, rendered_file.getnchannels()).mean(axis=1) / 32768
+    expected = samples[int(1.5 * sample_rate):int(5.5 * sample_rate)] / 32768
+    assert np.corrcoef(rendered, expected)[0, 1] > .99
+
+
+@pytest.mark.parametrize("trim_start,trim_end", [(-1, 0), (0, -1), (20, 20), (40, 0)])
+def test_seconds_trim_rejects_negative_or_empty_ranges(tmp_path, trim_start, trim_end):
+    track = audio_sources.AudioTrack(
+        tmp_path / "chapter.mp3", "https://audio.example/chapter.mp3", 0, 40,
+        [40], None, "mp3quran_ayah", "Ayah timing.",
+    )
+    with pytest.raises(audio_sources.AudioSourceError, match="trim|leave"):
+        audio_sources.trim_audio_track(track, trim_start, trim_end)
+
+
+def test_partial_automatic_selection_without_word_timing_keeps_full_ayah_for_waveform_trim(tmp_path):
     track = audio_sources.AudioTrack(
         tmp_path / "chapter.mp3", "https://audio.example/chapter.mp3", 0, 5,
         [5], None, "mp3quran_ayah", "Ayah boundaries only.",
     )
-    with pytest.raises(audio_sources.AudioSourceError, match="Verified word timestamps are unavailable"):
-        audio_sources.select_audio_word_range(
-            track, ["a b c"], ayah_start=1, start_word=2, end_word=3,
-        )
+    selected, text, word_ranges = audio_sources.select_audio_word_range(
+        track, ["a b c"], ayah_start=1, start_word=2, end_word=3,
+    )
+
+    assert selected.start == track.start and selected.end == track.end
+    assert text == ["a b c"]
+    assert word_ranges == [(1, 3)]
+    assert "full selected ayahs are kept" in selected.timing_note
+
+
+def test_hundredth_second_trim_materializes_at_decoded_sample_positions(tmp_path):
+    import numpy as np
+
+    sample_rate = 48000
+    sample_count = 40 * sample_rate
+    samples = (.2 * np.sin(2 * math.pi * 220 * np.arange(sample_count) / sample_rate) * 32767).astype("int16")
+    source_path = tmp_path / "precision-source.wav"
+    with wave.open(str(source_path), "wb") as audio_file:
+        audio_file.setnchannels(1)
+        audio_file.setsampwidth(2)
+        audio_file.setframerate(sample_rate)
+        audio_file.writeframes(samples.tobytes())
+    track = audio_sources.AudioTrack(
+        source_path, "https://audio.example/selected.mp3", 0, 40, [40],
+        None, "test_audio", "Selected recording.",
+    )
+
+    cropped, first, end = audio_sources.trim_audio_track(track, 1.27, .83)
+    materialized = audio_sources.materialize_audio_track(cropped, tmp_path / "precision-selected.wav")
+
+    assert (first, end) == (0, 1)
+    assert cropped.end - cropped.start == pytest.approx(37.90)
+    with wave.open(str(materialized.path), "rb") as rendered_file:
+        assert rendered_file.getnframes() == round(37.90 * sample_rate)
 
 
 def test_chapter_only_recording_keeps_full_surah_and_marks_estimated_captions(monkeypatch, tmp_path):

@@ -15,6 +15,7 @@ import unicodedata
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+from .quran_words import split_quran_words
 
 TOKEN_URL = "https://oauth2.quran.foundation/oauth2/token"
 API_BASE = "https://apis.quran.foundation/content/api/v4"
@@ -237,10 +238,10 @@ def get_chapter_word_timing(reciter_id: str, surah: int, ayah_start: int, ayah_e
             continue
         segments = _parse_segments(row.get("segments"))
         if ayah_start <= number <= ayah_end:
-            expected_count = len(str(expected_ayahs[number - ayah_start]).split())
+            expected_count = len(split_quran_words(expected_ayahs[number - ayah_start]))
             if len(segments) != expected_count:
                 raise RuntimeError(f"Word count does not match local Quran text for ayah {number}.")
-            local_tokens = str(expected_ayahs[number - ayah_start]).split()
+            local_tokens = split_quran_words(expected_ayahs[number - ayah_start])
             if [normalize_arabic_word(word) for word in local_tokens] != [
                     normalize_arabic_word(word) for word in canonical_words[number]]:
                 raise RuntimeError(

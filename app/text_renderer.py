@@ -1,6 +1,7 @@
 """Arabic text shaping and rasterization, independent of MoviePy."""
 from pathlib import Path
 from PIL import Image, ImageColor, ImageDraw, ImageFont, ImageFilter, features
+from .quran_words import split_quran_words
 
 DEFAULT_FONT = Path(__file__).resolve().parents[1] / "static" / "assets" / "NotoNaskhArabic-Regular.ttf"
 PIL_HAS_RAQM = features.check("raqm")
@@ -65,7 +66,7 @@ def wrap_arabic_lines(text: str, font, max_width: int, stroke_width: int = 0) ->
     """Wrap logical Arabic words using the same bidi-aware metrics as raster output."""
     probe = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
     lines, current = [], []
-    for word in text.split():
+    for word in split_quran_words(text):
         candidate = " ".join((*current, word))
         if current and measure_arabic_line_width(candidate, font, stroke_width, draw=probe) > max_width:
             lines.append(" ".join(current))

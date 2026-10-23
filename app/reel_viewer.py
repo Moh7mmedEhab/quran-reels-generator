@@ -6,6 +6,7 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageColor, ImageDraw, ImageFont
+from .quran_words import split_quran_words
 
 
 _ASSETS = Path(__file__).resolve().parents[1] / "static" / "assets"
@@ -20,6 +21,7 @@ WAVEFORM_Y_OFFSET_RANGE = (-65, 27)
 WAVEFORM_DEFAULT_CENTER = (.5, .695)
 
 REEL_VIEWER_TEMPLATES = {
+    "centered_ayah_clean_translation": {"name": "Centered Ayah — Clean Translation", "description": "A still misty valley, centered Naskh ayah, and a smaller English translation.", "theme": "misty_valley", "caption_style": "soft_white", "caption_color": "white", "font_id": "naskh", "max_lines": 1, "caption_position": "center", "show_viewer_title": False, "title_template": "dark_pill", "title_color": "#ffffff", "title_accent": "#edc85f", "title_opacity": .0, "show_surah_arabic": False, "show_ayah_number": False, "show_quran_text": True, "show_translation": True, "translation_color": "#ffffff", "translation_size": .021, "translation_font": "sans", "translation_align": "center", "translation_line_spacing": 1.3, "translation_gap": .014, "translation_wrap_width": .88, "translation_bg_enabled": False, "show_waveform": False, "waveform_style": "minimal", "waveform_color": "#ffffff", "waveform_count": 9, "waveform_speed": 1, "show_reciter_badge": False, "reciter_color": "#ffffff", "reciter_background": "#10161d", "reciter_opacity": .0, "show_progress": False, "progress_color": "#ffffff", "progress_track_color": "#505050", "progress_height": 4, "show_header_surah": False, "show_ayah_range": False, "show_qari_in_header": False, "show_title_icon": False, "glow_type": "none", "text_bg_enabled": False, "text_bg_opacity": 0, "background_animation_enabled": False, "background_motion_direction": "static", "background_atmosphere_enabled": False, "background_overlay_color": "#06111c", "background_overlay_opacity": .16},
     "cinematic_nature": {"name": "Cinematic Nature", "theme": "misty_forest", "caption_style": "soft_white", "caption_color": "white", "font_id": "naskh", "caption_position": "center", "show_viewer_title": True, "title_template": "dark_pill", "title_color": "#ffffff", "title_accent": "#edc85f", "title_opacity": .88, "show_surah_arabic": True, "show_ayah_number": True, "show_quran_text": True, "show_translation": False, "translation_color": "#ffffff", "translation_size": .026, "show_waveform": True, "waveform_style": "gold", "waveform_color": "#f0c64b", "waveform_count": 13, "waveform_speed": 1, "show_reciter_badge": True, "reciter_color": "#ffffff", "reciter_background": "#10161d", "reciter_opacity": .88, "show_progress": True, "progress_color": "#edbd36", "progress_track_color": "#d1d5db", "progress_height": 6},
     "golden_quran": {"name": "Golden Quran", "theme": "copper_dusk", "caption_style": "golden_illuminated", "caption_color": "gold", "font_id": "naskh", "caption_position": "center", "show_viewer_title": True, "title_template": "gold_ornament", "title_color": "#fff7e7", "title_accent": "#f2c14e", "title_opacity": .94, "show_surah_arabic": True, "show_ayah_number": True, "show_quran_text": True, "show_translation": False, "translation_color": "#fff2cf", "translation_size": .024, "show_waveform": True, "waveform_style": "glow", "waveform_color": "#ffc84a", "waveform_count": 13, "waveform_speed": .85, "show_reciter_badge": True, "reciter_color": "#ffe5a7", "reciter_background": "#21190b", "reciter_opacity": .92, "show_progress": True, "progress_color": "#ffc84a", "progress_track_color": "#6b6250", "progress_height": 7},
     "minimalist_white": {"name": "Minimalist White", "theme": "pearl_dawn", "caption_style": "subtle_outline", "caption_color": "ink", "font_id": "naskh", "caption_position": "center", "show_viewer_title": True, "title_template": "minimal_white", "title_color": "#18212b", "title_accent": "#006aff", "title_opacity": .94, "show_surah_arabic": False, "show_ayah_number": True, "show_quran_text": True, "show_translation": False, "translation_color": "#ffffff", "translation_size": .023, "show_waveform": True, "waveform_style": "minimal", "waveform_color": "#ffffff", "waveform_count": 9, "waveform_speed": .8, "show_reciter_badge": False, "reciter_color": "#ffffff", "reciter_background": "#10161d", "reciter_opacity": .6, "show_progress": True, "progress_color": "#006aff", "progress_track_color": "#ffffff", "progress_height": 4},
@@ -36,6 +38,7 @@ REEL_VIEWER_TEMPLATES = {
 # Supply its required defaults here so the ten viewer templates are complete
 # presets for the existing render pipeline as well as for the new viewer layer.
 _TEMPLATE_DESCRIPTIONS = {
+    "centered_ayah_clean_translation": "A still scenic background with centered Quran text and its English translation.",
     "cinematic_nature": "Soft white Naskh, a quiet surah pill, and gold playback details.",
     "golden_quran": "Gold calligraphy and warm ornamental accents over copper dusk.",
     "minimalist_white": "Clean outlined verse, blue timeline, and a light title treatment.",
@@ -129,7 +132,7 @@ def format_ayah_range(start: int, end: int, *, language: str = "english",
 def _wrap(text: str, font, draw: ImageDraw.ImageDraw, max_width: int) -> list[str]:
     lines: list[str] = []
     current = ""
-    for word in text.split():
+    for word in split_quran_words(text):
         candidate = f"{current} {word}".strip()
         if current and draw.textbbox((0, 0), candidate, font=font)[2] > max_width:
             lines.append(current)

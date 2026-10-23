@@ -129,4 +129,4 @@ VIDEO_TEMPLATES = {
     },
 }
 
-DEFAULT_VIDEO_TEMPLATE = "golden_calligraphy"
+DEFAULT_VIDEO_TEMPLATE = "centered_ayah_clean_translation"

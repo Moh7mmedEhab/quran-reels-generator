@@ -1,0 +1,49 @@
+<section id="publish-section" class="rounded-xl border border-gray-200 bg-white p-3" aria-labelledby="publish-heading">
+  <div class="flex flex-wrap items-start justify-between gap-2">
+    <div><h2 id="publish-heading" class="text-sm font-bold text-gray-900">YouTube and TikTok</h2>
+      <p id="publish-video-summary" class="mt-1 text-[10px] text-gray-500">Choose a completed render, review its generated metadata, and confirm an upload.</p></div>
+    <button id="publish-refresh-btn" type="button" class="rounded-lg border border-gray-200 px-2.5 py-1.5 text-[10px] font-semibold text-gray-600">Refresh accounts</button>
+  </div>
+  <label class="mt-3 flex flex-col gap-1 text-[10px] text-gray-600">Generated hashtags<textarea id="publish-hashtags" rows="2" class="rounded-lg border border-gray-200 px-2 py-1.5 text-xs" dir="auto" placeholder="#Quran, #QuranRecitation"></textarea></label>
+  <p id="publish-metadata-error" class="hidden mt-2 text-[10px] text-red-700" role="alert"></p>
+  <div class="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
+    <section class="rounded-lg border border-gray-200 p-3" aria-label="YouTube connected account">
+      <div class="flex items-center justify-between gap-2"><h4 class="text-xs font-bold text-gray-800">YouTube</h4><span id="youtube-account-status" class="text-[10px] text-gray-500">Checking connection…</span></div>
+      <p id="youtube-account-detail" class="mt-1 min-h-4 text-[10px] text-gray-500"></p>
+      <p id="youtube-account-setup" class="mt-1 text-[10px] text-amber-700"></p>
+      <div class="mt-2 flex gap-2"><button id="youtube-connect-btn" type="button" class="rounded-lg bg-red-600 px-3 py-1.5 text-[10px] font-semibold text-white disabled:opacity-50">Connect Account</button><button id="youtube-disconnect-btn" type="button" class="hidden rounded-lg border border-gray-300 px-3 py-1.5 text-[10px] font-semibold text-gray-700">Disconnect</button></div>
+      <div class="mt-3 border-t border-gray-100 pt-3">
+        <label class="flex flex-col gap-1 text-[10px] text-gray-600">Video title<textarea id="publish-yt-title" rows="2" maxlength="100" class="rounded-lg border border-gray-200 px-2 py-1.5 text-xs" dir="auto" placeholder="Arabic Surah . Surah Name"></textarea></label>
+        <label class="mt-2 flex flex-col gap-1 text-[10px] text-gray-600">Generated description<textarea id="publish-yt-description" rows="4" maxlength="5000" class="rounded-lg border border-gray-200 px-2 py-1.5 text-xs" dir="auto"></textarea></label>
+        <label class="mt-2 flex flex-col gap-1 text-[10px] text-gray-600">Generated tags, separated by commas<textarea id="publish-yt-tags" rows="2" class="rounded-lg border border-gray-200 px-2 py-1.5 text-xs" dir="auto"></textarea></label>
+        <div class="mt-2 grid grid-cols-2 gap-2">
+          <label class="flex flex-col gap-1 text-[10px] text-gray-600">Visibility<select id="publish-yt-privacy" class="rounded-lg border border-gray-200 px-2 py-1.5 text-xs"><option value="private" selected>Private</option><option value="unlisted">Unlisted</option><option value="public">Public</option></select></label>
+          <label class="flex flex-col gap-1 text-[10px] text-gray-600">Category<select id="publish-yt-category" class="rounded-lg border border-gray-200 px-2 py-1.5 text-xs"><option value="10" selected>Music</option><option value="22">People &amp; Blogs</option><option value="27">Education</option></select></label>
+        </div>
+        <div class="mt-3 flex flex-wrap gap-2"><button id="youtube-upload-btn" type="button" class="rounded-lg bg-red-600 px-3 py-2 text-[10px] font-semibold text-white disabled:opacity-50" disabled>Upload to YouTube</button><button id="upload-both-btn" type="button" class="rounded-lg border border-brand-300 px-3 py-2 text-[10px] font-semibold text-brand-700 disabled:opacity-50" disabled>Upload to both</button></div>
+        <div class="mt-2"><progress id="youtube-upload-progress" class="render-progress w-full" max="100" value="0"></progress><p id="youtube-upload-message" class="mt-1 text-[10px] text-gray-600" role="status" aria-live="polite">Connect YouTube and render a video to upload.</p><div id="youtube-upload-link" class="text-[10px]"></div></div>
+      </div>
+    </section>
+    <section class="rounded-lg border border-gray-200 p-3" aria-label="TikTok connected account">
+      <div class="flex items-center justify-between gap-2"><h4 class="text-xs font-bold text-gray-800">TikTok</h4><span id="tiktok-account-status" class="text-[10px] text-gray-500">Checking connection…</span></div>
+      <p id="tiktok-account-detail" class="mt-1 min-h-4 text-[10px] text-gray-500"></p>
+      <p id="tiktok-account-setup" class="mt-1 text-[10px] text-amber-700"></p>
+      <div class="mt-2 flex gap-2"><button id="tiktok-connect-btn" type="button" class="rounded-lg bg-black px-3 py-1.5 text-[10px] font-semibold text-white disabled:opacity-50">Connect Account</button><button id="tiktok-disconnect-btn" type="button" class="hidden rounded-lg border border-gray-300 px-3 py-1.5 text-[10px] font-semibold text-gray-700">Disconnect</button></div>
+      <div class="mt-3 border-t border-gray-100 pt-3">
+        <label class="flex flex-col gap-1 text-[10px] text-gray-600">Upload mode<select id="publish-tt-mode" class="rounded-lg border border-gray-200 px-2 py-1.5 text-xs"><option value="draft">Upload to inbox as a draft</option><option value="direct" id="publish-tt-direct-option" hidden>Direct post (approved app only)</option></select></label>
+        <p id="tiktok-mode-note" class="mt-1 text-[10px] text-gray-500">Draft mode uploads the video only. TikTok sends an inbox notification; add or edit the caption and finish publishing in TikTok.</p>
+        <label class="mt-2 flex flex-col gap-1 text-[10px] text-gray-600">TikTok caption preview<textarea id="publish-tt-caption" rows="7" class="rounded-lg border border-gray-200 px-2 py-1.5 text-xs" dir="auto"></textarea></label>
+        <p id="tiktok-caption-count" class="mt-1 text-[10px] text-gray-500">0 / 2,200 UTF-16 characters</p>
+        <p id="tiktok-final-caption-preview" class="mt-1 whitespace-pre-wrap break-words text-[10px] text-gray-600" aria-live="polite"></p>
+        <label id="tiktok-privacy-wrap" class="mt-2 hidden flex-col gap-1 text-[10px] text-gray-600">Who can view<select id="publish-tt-privacy" class="rounded-lg border border-gray-200 px-2 py-1.5 text-xs"></select></label>
+        <fieldset id="tiktok-interaction-settings" class="mt-2 hidden rounded-lg border border-gray-100 p-2 text-[10px] text-gray-600">
+          <legend class="px-1 font-semibold">Direct-post interactions</legend>
+          <div class="flex flex-wrap gap-x-4 gap-y-1"><label><input id="publish-tt-comments" type="checkbox" checked> Allow comments</label><label><input id="publish-tt-duet" type="checkbox" checked> Allow Duet</label><label><input id="publish-tt-stitch" type="checkbox" checked> Allow Stitch</label></div>
+        </fieldset>
+        <button id="tiktok-upload-btn" type="button" class="mt-3 rounded-lg bg-black px-3 py-2 text-[10px] font-semibold text-white disabled:opacity-50" disabled>Upload to TikTok</button>
+        <div class="mt-2"><progress id="tiktok-upload-progress" class="render-progress w-full" max="100" value="0"></progress><p id="tiktok-upload-message" class="mt-1 text-[10px] text-gray-600" role="status" aria-live="polite">Connect TikTok and render a video to upload.</p><div id="tiktok-upload-link" class="text-[10px]"></div></div>
+      </div>
+    </section>
+  </div>
+  <div id="publish-history" class="mt-3 space-y-2" aria-live="polite"></div>
+</section>

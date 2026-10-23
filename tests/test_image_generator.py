@@ -354,6 +354,7 @@ def test_saved_ai_background_is_visible_in_a_real_rendered_mp4(monkeypatch, tmp_
     import numpy as np
     from moviepy import VideoFileClip
     import app.routes as routes
+    from app.audio_sources import AudioTrack
     ImageConfig.OUTPUT_FOLDER=tmp_path / "outputs"
     folder=ImageConfig.OUTPUT_FOLDER / "generated-images";folder.mkdir(parents=True)
     image_id="c" * 32
@@ -363,17 +364,20 @@ def test_saved_ai_background_is_visible_in_a_real_rendered_mp4(monkeypatch, tmp_
         "id":image_id,"prompt":"blue night sky","ratio":"9:16","width":180,"height":320,
         "mime_type":"image/png","filename":f"{image_id}.png","model":"test","created_at":"2026-10-22T00:00:00+03:00",
     }))
-    audio_path=tmp_path/"tone.wav";rate=44100;duration=2
+    audio_path=tmp_path/"tone.wav";rate=44100;duration=4
     times=np.arange(rate*duration,dtype=np.float64)/rate
-    samples=(.12*np.sin(2*math.pi*330*times)*32767).astype("int16")
+    frequencies=np.where(times<1,220.,np.where(times<3,440.,880.))
+    samples=(.12*np.sin(2*math.pi*frequencies*times)*32767).astype("int16")
     with wave.open(str(audio_path),"wb") as output:
         output.setnchannels(1);output.setsampwidth(2);output.setframerate(rate);output.writeframes(samples.tobytes())
-    monkeypatch.setattr(routes,"download_recitation",lambda *args,**kwargs:SimpleNamespace(path=audio_path,start=0,end=duration,ayah_durations=[duration],word_timings=None,timing_note="test audio"))
+    monkeypatch.setattr(routes,"download_recitation",lambda *args,**kwargs:AudioTrack(
+        audio_path,"https://audio.example/tone.wav",1,3,[2],None,"test_audio","test audio"))
     client=create_app(ImageConfig).test_client()
     stored=client.get(f"/api/images/{image_id}/file")
     result=client.post("/api/generate",data={
         "surah":"55","ayah_start":"13","ayah_end":"13","aspect_ratio":"9:16",
         "resolution":"480p","fps":"24","quality":"fast","encoder":"cpu",
+        "audio_trim_enabled":"true","audio_trim_start_seconds":"0.25","audio_trim_end_seconds":"0.25",
         "reciter_id":"mishary_alafasy","show_quran_text":"false","show_surah_title":"false",
         "show_ayah_number":"false","viewer_title_enabled":"false","viewer_header_surah_enabled":"false",
         "viewer_header_range_enabled":"false","show_waveform":"false","show_reciter_badge":"false",
@@ -392,5 +396,10 @@ def test_saved_ai_background_is_visible_in_a_real_rendered_mp4(monkeypatch, tmp_
         frame=clip.get_frame(.5)
         pixel=frame[426,240].astype(int)
         assert pixel[2] > pixel[0]*2 and pixel[2] > pixel[1]*1.5
+        audio=clip.audio.to_soundarray(fps=rate).mean(axis=1)
+        assert len(audio)/rate == pytest.approx(1.5, abs=.08)
+        sample=audio[int(.3*rate):int(.8*rate)]
+        peak=np.fft.rfftfreq(len(sample),1/rate)[np.argmax(np.abs(np.fft.rfft(sample)))]
+        assert peak == pytest.approx(440, abs=2)
     finally:
         clip.close()

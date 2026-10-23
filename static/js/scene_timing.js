@@ -1,4 +1,95 @@
 (function attachSceneTiming(scope) {
+  function isExplicitSeekTime(value) {
+    return value !== null && value !== undefined && value !== ''
+      && Number.isFinite(Number(value));
+  }
+
+  function splitQuranWords(value) {
+    // U+200A HAIR SPACE joins orthographic fragments in some Uthmani words;
+    // keep it inside the token so scene boundaries never split those words.
+    return String(value ?? '').match(/\S+(?:\u200a+\S+)*/gu) || [];
+  }
+
+  function scenePageBounds(totalScenes, requestedPage = 0, pageSize = 6) {
+    const count = Math.max(0, Math.floor(Number(totalScenes) || 0));
+    const size = Math.max(1, Math.floor(Number(pageSize) || 6));
+    const pageCount = Math.max(1, Math.ceil(count / size));
+    const page = Math.max(0, Math.min(pageCount - 1, Math.floor(Number(requestedPage) || 0)));
+    return {page, pageCount, start:page * size, end:Math.min(count, (page + 1) * size)};
+  }
+
+  function sceneResizeBounds(scenes, sceneIndex, timelineDuration) {
+    if (!Array.isArray(scenes) || !Number.isInteger(Number(sceneIndex))) return {known:false};
+    const index = Number(sceneIndex);
+    if (index < 0 || index >= scenes.length) return {known:false};
+    const durations = scenes.map(scene => {
+      if (scene?.duration == null || scene.duration === '') return null;
+      const duration = Number(scene.duration);
+      return Number.isFinite(duration) && duration > 0 ? duration : null;
+    });
+    if (durations.slice(0, index).some(duration => duration == null)
+        || durations.slice(index + 1).some(duration => duration == null)) {
+      return {known:false, sceneIndex:index};
+    }
+    const sceneStart = durations.slice(0, index).reduce((sum, duration) => sum + duration, 0);
+    const currentDuration = durations[index];
+    const followingDuration = durations.slice(index + 1).reduce((sum, duration) => sum + duration, 0);
+    const total = Number(timelineDuration);
+    const maxDuration = Number.isFinite(total) && total > 0
+      ? total - sceneStart - followingDuration : 3600;
+    const timelineEnd = durations.reduce((sum, duration) => sum + (duration || 0), 0);
+    return {
+      known:true,
+      sceneIndex:index,
+      sceneStart:Number(sceneStart.toFixed(3)),
+      currentDuration,
+      followingDuration,
+      maxDuration:Number(maxDuration.toFixed(3)),
+      timelineEnd:Number(timelineEnd.toFixed(3)),
+      overflow:Number.isFinite(total) && total > 0 ? Math.max(0, timelineEnd - total) : 0,
+    };
+  }
+
+  function effectiveAudioDuration({trimEnabled = false, trimStart = 0, trimEnd = 0,
+                                  untrimmedDuration, effectiveDuration, baseDuration} = {}) {
+    const start = Math.max(0, Number(trimStart) || 0);
+    const end = Math.max(0, Number(trimEnd) || 0);
+    const untrimmed = Number(untrimmedDuration);
+    const effective = Number(effectiveDuration);
+    const base = Number(baseDuration);
+    if (trimEnabled && Number.isFinite(untrimmed) && untrimmed > 0) {
+      return Math.max(0, untrimmed - start - end);
+    }
+    if (Number.isFinite(effective) && effective > 0) return effective;
+    if (Number.isFinite(base) && base > 0) return Math.max(0, base - (trimEnabled ? start + end : 0));
+    if (Number.isFinite(untrimmed) && untrimmed > 0) return untrimmed;
+    return NaN;
+  }
+
+  function resizedSceneDuration(startingDuration, deltaSeconds, timelineDuration, sceneStart,
+                                followingDurations = [], locked = true) {
+    const start = Math.max(0, Number(sceneStart) || 0);
+    const total = Number(timelineDuration);
+    const requested = Number(startingDuration) + Number(deltaSeconds);
+    if (!Number.isFinite(requested)) return null;
+    if (!locked) return Number(Math.max(.01, Math.min(3600, requested)).toFixed(2));
+    const later = Array.isArray(followingDurations)
+      ? followingDurations.map(Number) : [Number(followingDurations) || 0];
+    if (later.some(duration => !Number.isFinite(duration) || duration <= 0)) {
+      return Number(Math.max(.01, Math.min(Number(startingDuration), requested)).toFixed(2));
+    }
+    const trailing = later.reduce((sum, duration) => sum + duration, 0);
+    const maximum = Number.isFinite(total) && total > 0
+      ? Math.min(3600, total - start - trailing) : 3600;
+    const current = Number(startingDuration);
+    // An already-overfull timeline can be repaired by shortening this scene,
+    // but a drag must not silently move it to a different boundary on pointerdown.
+    if (maximum < .01 || current > maximum) {
+      return Number(Math.max(.01, Math.min(current, requested)).toFixed(2));
+    }
+    return Number(Math.max(.01, Math.min(maximum, requested)).toFixed(2));
+  }
+
   function resumePlaybackTime(player, sourceChanged) {
     if (sourceChanged) return 0;
     const currentTime = Number(player?.currentTime);
@@ -71,6 +162,12 @@
   }
 
   scope.QuranSceneTiming = Object.freeze({
+    isExplicitSeekTime,
+    splitQuranWords,
+    scenePageBounds,
+    sceneResizeBounds,
+    effectiveAudioDuration,
+    resizedSceneDuration,
     calculateDurationFromPlayhead, reflowManualTimeline, readTimelineTime, resumePlaybackTime,
     canResumePlayback,
   });

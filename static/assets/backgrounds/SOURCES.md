@@ -18,6 +18,7 @@ links are recorded here so the assets remain attributable if they are reused.
 | `olive_garden.jpg` | Illuminated mosque at night with palm trees | Mohsin Khan | https://unsplash.com/photos/illuminated-mosque-at-night-with-palm-trees-mwltBINcUjY |
 | `plum_evening.jpg` | Lighted mosque at night | Murad Adahanov | https://unsplash.com/photos/lighted-mosque-at-night-oAjnNm2HJek |
 | `sapphire_horizon.jpg` | Calm ocean water under a clear gradient sky | Uran Wang | https://unsplash.com/photos/calm-ocean-water-under-a-clear-gradient-sky-dXNMcKozHyg |
+| `midnight_coast.jpg` | Night-graded derivative of calm ocean water under a clear gradient sky | Uran Wang | https://unsplash.com/photos/calm-ocean-water-under-a-clear-gradient-sky-dXNMcKozHyg |
 
 License: https://unsplash.com/license
 
@@ -35,3 +36,10 @@ derivatives of these credited project assets: `misty_forest.jpg`,
 `marble_arch.jpg`, and `sahara_moon.jpg`. They use the same Unsplash License
 terms and retain the corresponding photo credits above. They were created from
 local files; no additional stock media was downloaded.
+
+`midnight_coast.jpg` is a locally color-graded derivative of
+`sapphire_horizon.jpg`; both are 2000 × 3009 pixels. The locally generated
+`midnight_coast_drift.mp4` uses that derivative as its only visual source and
+is a silent 1440 × 2560, 24 fps H.264/yuv420p loop. It inherits the same
+Unsplash License and Uran Wang credit. The loop is built from the bundled still
+by `scripts/build_background_video_templates.py`; it contains no source audio.

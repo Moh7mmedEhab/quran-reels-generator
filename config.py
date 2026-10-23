@@ -13,6 +13,11 @@ except ImportError:
 
 
 BASE_DIR = Path(__file__).resolve().parent
+_publisher_database_path = Path(os.environ.get(
+    "QURAN_REELS_PUBLISHER_DB", str(BASE_DIR / "instance" / "publisher.sqlite3")
+)).expanduser()
+if not _publisher_database_path.is_absolute():
+    _publisher_database_path = BASE_DIR / _publisher_database_path
 
 
 def _enabled(value: str | None) -> bool:
@@ -41,3 +46,19 @@ class Config:
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = "Lax"
     PREFERRED_URL_SCHEME = "http"
+    SESSION_COOKIE_SECURE = _enabled(os.environ.get("QURAN_REELS_COOKIE_SECURE"))
+
+    # Social credentials are scoped to a signed browser session because this
+    # application does not have user accounts. Token encryption is required
+    # before account connections can be enabled.
+    PUBLISHER_DATABASE_PATH = _publisher_database_path
+    PUBLISHER_TOKEN_ENCRYPTION_KEY = os.environ.get("QURAN_REELS_TOKEN_ENCRYPTION_KEY", "")
+    YOUTUBE_CLIENT_ID = os.environ.get("YOUTUBE_CLIENT_ID", "")
+    YOUTUBE_CLIENT_SECRET = os.environ.get("YOUTUBE_CLIENT_SECRET", "")
+    YOUTUBE_REDIRECT_URI = os.environ.get("YOUTUBE_REDIRECT_URI", "")
+    YOUTUBE_DEFAULT_CATEGORY_ID = os.environ.get("YOUTUBE_DEFAULT_CATEGORY_ID", "10")
+    TIKTOK_CLIENT_KEY = os.environ.get("TIKTOK_CLIENT_KEY", "")
+    TIKTOK_CLIENT_SECRET = os.environ.get("TIKTOK_CLIENT_SECRET", "")
+    TIKTOK_REDIRECT_URI = os.environ.get("TIKTOK_REDIRECT_URI", "")
+    TIKTOK_DIRECT_POST_ENABLED = _enabled(os.environ.get("TIKTOK_DIRECT_POST_ENABLED"))
+    PUBLISHING_WORKERS = max(1, int(os.environ.get("QURAN_REELS_PUBLISHING_WORKERS", "2")))

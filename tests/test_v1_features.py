@@ -277,7 +277,7 @@ def test_version_and_metadata_endpoints_use_selected_surah_range_and_reciter():
     client = create_app().test_client()
     version = client.get("/api/version")
     assert version.status_code == 200
-    assert version.json["version"] == "1.4.0"
+    assert version.json["version"] == "1.7.0"
     metadata = client.get(
         "/api/youtube-metadata?surah=55&start=13&end=14&reciter_id=mishary_alafasy"
     )
@@ -311,7 +311,8 @@ def test_download_response_uses_edited_arabic_title_and_unique_name(tmp_path):
 def test_template_exposes_image_video_tabs_and_release_version():
     from app import create_app
 
-    page = create_app().test_client().get("/")
+    client = create_app().test_client()
+    page = client.get("/")
     assert page.status_code == 200
     assert b'id="background-image-tab"' in page.data
     assert b'id="background-video-tab"' in page.data
@@ -320,10 +321,23 @@ def test_template_exposes_image_video_tabs_and_release_version():
     assert b'id="api-curl-command"' in page.data
     assert b"function currentRenderCurl()" in page.data
     assert b"window.location.origin + '/api/generate'" in page.data
-    assert b"Studio v1.4" in page.data
+    assert b"Studio v1.7" in page.data
+    assert b'min="0" max="100" step="1" value="50"' in page.data
+    assert b"return 50;" in page.data
     assert b'id="show-translation" type="checkbox">' in page.data
     assert b"if (updateEditor && $('show-translation').checked)" in page.data
     assert b"Misty Forest Drift" in page.data
+    assert b"let selectedTemplateId = videoTemplates.centered_ayah_clean_translation" in page.data
+    templates = client.get("/api/video-templates").json
+    assert templates["default"] == "centered_ayah_clean_translation"
+    clean = templates["templates"][templates["default"]]
+    assert clean["name"] == "Centered Ayah — Clean Translation"
+    assert clean["show_translation"] is True
+    assert clean["show_progress"] is False
+    assert clean["background_animation_enabled"] is False
+    assert clean["background_motion_direction"] == "static"
+    assert clean["show_header_surah"] is False
+    assert clean["show_qari_in_header"] is False
 
 
 def test_scene_editor_preview_is_submitted_as_render_source_of_truth():
@@ -336,6 +350,8 @@ def test_scene_editor_preview_is_submitted_as_render_source_of_truth():
     assert "duration:scene.duration == null ? null : Number(scene.duration)" in script
     assert "start_time:scene.start_time == null ? null : Number(scene.start_time)" in script
     assert "end_time:scene.end_time == null ? null : Number(scene.end_time)" in script
+    assert "updateScenePlaybackLabel(current)" in script
+    assert "local ${elapsed} / ${total}" in script
     assert "if (scenePlanManual) {\n        form.set('scene_overrides'" not in script
     assert 'id="words-per-scene"' in script
     assert 'type="text" inputmode="numeric"' in script
@@ -374,20 +390,46 @@ def test_recitation_preview_uses_audio_boundary_separate_from_caption_end():
     assert "timing.start = timingOrigin + Number(applied.start_time)" not in script
 
 
-def test_video_background_catalog_serves_three_local_silent_mp4_templates():
+def test_video_background_catalog_serves_four_local_silent_mp4_templates():
     from app import create_app
 
     client = create_app().test_client()
     response = client.get("/api/background-video-templates")
     assert response.status_code == 200
     templates = response.json["templates"]
-    assert set(templates) == {"misty_forest_drift", "marble_arch_glow", "moonlit_horizon"}
+    assert set(templates) == {
+        "misty_forest_drift", "marble_arch_glow", "moonlit_horizon", "midnight_coast_drift",
+    }
     for template in templates.values():
         assert template["audio"] is False
         video = client.get(template["video_url"])
         assert video.status_code == 200
         assert video.mimetype == "video/mp4"
         assert len(video.data) > 10_000
+
+
+def test_midnight_coast_assets_are_high_resolution_and_silent():
+    import json
+    import subprocess
+
+    from PIL import Image
+
+    root = Path(__file__).resolve().parents[1]
+    still = root / "static/assets/backgrounds/midnight_coast.jpg"
+    motion = root / "static/assets/background-videos/midnight_coast_drift.mp4"
+    assert Image.open(still).size == (2000, 3009)
+    probe = subprocess.run([
+        "ffprobe", "-v", "error", "-show_entries",
+        "stream=codec_name,width,height,pix_fmt,r_frame_rate,nb_frames,codec_type",
+        "-show_entries", "format=duration", "-of", "json", str(motion),
+    ], check=True, capture_output=True, text=True)
+    data = json.loads(probe.stdout)
+    stream = data["streams"][0]
+    assert (stream["codec_name"], stream["width"], stream["height"]) == ("h264", 1440, 2560)
+    assert stream["pix_fmt"] == "yuv420p"
+    assert stream["r_frame_rate"] == "24/1"
+    assert stream["nb_frames"] == "144"
+    assert len(data["streams"]) == 1
 
 
 def test_builtin_video_background_is_passed_to_the_export_renderer(monkeypatch, tmp_path):

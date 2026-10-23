@@ -300,6 +300,66 @@ def test_single_video_background_renders_without_empty_composite(tmp_path):
         rendered.close()
 
 
+def test_custom_and_blank_scene_text_render_into_a_playable_mp4(tmp_path):
+    from moviepy import AudioClip, VideoFileClip
+    from app.media_validation import validate_rendered_output
+    from app.video_engine import render_caption_image
+
+    ayah = "أَوَّلٌ ثَانٍ"
+    audio_path = tmp_path / "scene-audio.wav"
+    audio = AudioClip(lambda t: .06 * np.sin(2 * np.pi * 330 * np.asarray(t)),
+                      duration=.6, fps=44100)
+    audio.write_audiofile(str(audio_path), fps=44100, codec="pcm_s16le", logger=None)
+    audio.close()
+    output_path = tmp_path / "edited-and-blank-scenes.mp4"
+    metadata = render_reel(
+        ayahs=[ayah], output_path=output_path, aspect_ratio="9:16",
+        output_size=(240, 426), fps=24, quality="fast", encoder="cpu",
+        audio_path=audio_path, audio_start=0, audio_end=.6, ayah_durations=[.6],
+        word_timings=[[{"start":.04,"end":.2},{"start":.34,"end":.53}]],
+        scene_overrides=[
+            {"scene_id":"edited", "ayah_number":1, "scene_index":0,
+             "text":"مَشْهَدٌ مُعَدَّلٌ", "source_text":"أَوَّلٌ",
+             "word_start_index":0, "word_end_index":0, "text_edited":True},
+            {"scene_id":"blank", "ayah_number":1, "scene_index":1,
+             "text":"", "source_text":"ثَانٍ",
+             "word_start_index":1, "word_end_index":1, "text_edited":True},
+        ],
+        show_surah_title=False, show_ayah_number=False,
+        viewer_options={"show_waveform":False, "show_progress":False,
+                       "show_translation":False, "show_viewer_title":False,
+                       "show_header_surah":False, "show_ayah_range":False,
+                       "show_qari_in_header":False},
+        transition="cut",
+    )
+    blank_caption = render_caption_image("", aspect_ratio="9:16", output_size=(240, 426))
+    assert blank_caption.size == (1, 1)
+    assert blank_caption.getpixel((0, 0))[3] == 0
+    assert metadata["duration"] == pytest.approx(.6, abs=.08)
+    assert output_path.is_file() and output_path.stat().st_size > 1000
+    video = VideoFileClip(str(output_path))
+    try:
+        assert video.size == [240, 426]
+        assert video.duration == pytest.approx(.6, abs=.08)
+        assert video.audio is not None
+        video.get_frame(.45)
+    finally:
+        video.close()
+    assert validate_rendered_output(output_path, expected_size=(240, 426), require_audio=True)["playable"] is True
+
+
+def test_arabic_caption_scale_changes_the_shared_preview_and_export_raster_size():
+    from app.video_engine import render_caption_image
+
+    text = "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ"
+    compact = render_caption_image(text, aspect_ratio="9:16", output_size=(1080, 1920), caption_scale=.88)
+    default = render_caption_image(text, aspect_ratio="9:16", output_size=(1080, 1920), caption_scale=1.0)
+    assert compact.size[0] < default.size[0]
+    assert compact.size[1] < default.size[1]
+    with pytest.raises(ValueError, match="between 0.80 and 1.10"):
+        render_caption_image(text, aspect_ratio="9:16", caption_scale=1.5)
+
+
 def test_independent_label_templates_render_separately_from_the_verse_panel():
     from app.video_engine import render_caption_image
     from app.font_catalog import resolve_font
@@ -806,6 +866,34 @@ def test_manual_durations_reflow_word_timed_scenes_without_changing_automatic_bo
     assert changed[1]["timing_warning"] == "Manual scene timing shifts 0.100s after its voice timing."
 
 
+def test_edited_scene_timing_uses_display_text_weights_and_preserves_blank_scene():
+    from app.scenes import build_scene_plan
+
+    ayah = "أَوَّلٌ ثَانٍ ثَالِثٌ رَابِعٌ"
+    rows = [
+        {"scene_id":"edited", "ayah_number":1, "text":"أَوَّلٌ مُعَدَّلٌ مُفَصَّلٌ",
+         "source_text":"أَوَّلٌ ثَانٍ", "word_start_index":0, "word_end_index":1,
+         "text_edited":True},
+        {"scene_id":"blank", "ayah_number":1, "text":"", "source_text":"ثَالِثٌ رَابِعٌ",
+         "word_start_index":2, "word_end_index":3, "text_edited":True},
+    ]
+    word_times = [[{"start":index, "end":index + .7} for index in range(4)]]
+    plan = build_scene_plan([ayah], durations=[4], word_timings=word_times,
+                            scene_overrides=rows)
+
+    assert [scene["scene_id"] for scene in plan] == ["edited", "blank"]
+    assert [scene["text"] for scene in plan] == ["أَوَّلٌ مُعَدَّلٌ مُفَصَّلٌ", ""]
+    assert plan[0]["duration"] > plan[1]["duration"] > 0
+    assert sum(scene["duration"] for scene in plan) == pytest.approx(4)
+    assert [scene["timing_mode"] for scene in plan] == [
+        "edited_text_approximate", "edited_text_approximate",
+    ]
+    assert [scene["start_time"] for scene in plan] == pytest.approx([0, plan[0]["duration"]], abs=.001)
+    assert [scene["end_time"] for scene in plan] == pytest.approx(
+        [plan[0]["duration"], 4], abs=.001
+    )
+
+
 def test_manual_duration_on_earlier_ayah_moves_following_scene_global_start():
     from app.scenes import build_scene_plan
     plan = build_scene_plan(
@@ -844,7 +932,7 @@ def test_invalid_word_timing_count_fails_closed():
         ]])
 
 
-def test_manual_scene_plan_only_accepts_order_preserving_splits():
+def test_manual_scene_plan_separates_custom_display_text_from_source_spans():
     from app.scenes import build_scene_plan
     ayah = get_ayahs(55, 13, 13)[0]
     words = ayah.split()
@@ -855,16 +943,17 @@ def test_manual_scene_plan_only_accepts_order_preserving_splits():
     ])
     assert len(scenes) == 2
     assert "".join(ayah.split()) == "".join("".join(scene["text"].split()) for scene in scenes)
-    with pytest.raises(ValueError, match="preserve every character and its order"):
-        build_scene_plan([ayah], ayah_start=13, scene_overrides=[
-            {"ayah_number": 13, "text": " ".join(words[split:])},
-            {"ayah_number": 13, "text": " ".join(words[:split])},
-        ])
-    with pytest.raises(ValueError, match="word boundaries"):
-        build_scene_plan([ayah], ayah_start=13, scene_overrides=[
-            {"ayah_number": 13, "text": words[0][:-1]},
-            {"ayah_number": 13, "text": words[0][-1:] + " " + " ".join(words[1:])},
-        ])
+    custom = build_scene_plan([ayah], ayah_start=13, scene_overrides=[
+        {"ayah_number":13, "scene_id":"custom", "text":"مَشْهَدٌ مُخْتَصَرٌ",
+         "source_text":" ".join(words[:split]), "word_start_index":0,
+         "word_end_index":split - 1, "text_edited":True},
+        {"ayah_number":13, "scene_id":"blank", "text":"",
+         "source_text":" ".join(words[split:]), "word_start_index":split,
+         "word_end_index":len(words) - 1, "text_edited":True},
+    ])
+    assert [scene["text"] for scene in custom] == ["مَشْهَدٌ مُخْتَصَرٌ", ""]
+    assert all(scene["text_edited"] for scene in custom)
+    assert all(scene["timing_mode"] == "edited_text_approximate" for scene in custom)
 
 
 def test_manual_percentage_timing_is_rejected_and_ayah_timing_uses_labeled_weighted_split_estimates():
@@ -945,14 +1034,33 @@ def test_scene_word_redistribution_recomputes_limits_for_the_selected_scene():
         {"ayah_number":1,"text":"خَامِسٌ سَادِسٌ"},
     ]
     middle = redistribute_scene_words([ayah], scenes, scene_index=1, requested_word_count=4)
-    assert middle["selected_scene_index"] == 1
-    assert middle["word_count"] == 4 and middle["max_words"] == 4
-    with pytest.raises(ValueError, match="at most 4 words"):
+    assert middle["selected_scene_index"] == 0
+    assert middle["word_count"] == 4 and middle["max_words"] == 6
+    assert [row["text"] for row in middle["scenes"]] == [
+        "أَوَّلٌ ثَانٍ ثَالِثٌ رَابِعٌ", "خَامِسٌ سَادِسٌ",
+    ]
+    with pytest.raises(ValueError, match="at most 6 words"):
         redistribute_scene_words([ayah], scenes, scene_index=1, requested_word_count=99)
     first = redistribute_scene_words([ayah], middle["scenes"], scene_index=0, requested_word_count=1)
     assert first["selected_scene_index"] == 0
     assert first["word_count"] == 1
     assert first["max_words"] == 6
+
+
+def test_growing_a_middle_scene_takes_the_trailing_word_from_the_scene_before():
+    from app.scenes import redistribute_scene_words
+
+    ayah = "أَوَّلٌ ثَانٍ ثَالِثٌ رَابِعٌ خَامِسٌ سَادِسٌ"
+    scenes = [
+        {"ayah_number":1,"scene_id":"before","text":"أَوَّلٌ ثَانٍ ثَالِثٌ"},
+        {"ayah_number":1,"scene_id":"selected","text":"رَابِعٌ خَامِسٌ"},
+        {"ayah_number":1,"scene_id":"after","text":"سَادِسٌ"},
+    ]
+    grown = redistribute_scene_words([ayah], scenes, scene_index=1, requested_word_count=3)
+    assert [row["text"] for row in grown["scenes"]] == [
+        "أَوَّلٌ ثَانٍ", "ثَالِثٌ رَابِعٌ خَامِسٌ", "سَادِسٌ",
+    ]
+    assert grown["selected_scene_index"] == 1
 
 
 def test_scene_word_redistribution_can_shrink_final_segment_and_obeys_explicit_locks():
@@ -996,7 +1104,7 @@ def test_locked_scene_is_unchanged_when_previous_scene_grows_or_shrinks():
         redistribute_scene_words([ayah], locked, scene_index=0, requested_word_count=3)
 
 
-def test_scene_text_edit_accepts_only_exact_next_source_words():
+def test_scene_text_edit_accepts_custom_or_blank_display_text():
     from app.scenes import edit_scene_text
     ayah = "أَوَّلٌ ثَانٍ ثَالِثٌ رَابِعٌ خَامِسٌ"
     rows = [
@@ -1004,10 +1112,13 @@ def test_scene_text_edit_accepts_only_exact_next_source_words():
         {"ayah_number":1,"scene_id":"second","text":"ثَالِثٌ رَابِعٌ خَامِسٌ"},
     ]
     edited = edit_scene_text([ayah], rows, scene_index=0, text="أَوَّلٌ ثَانٍ ثَالِثٌ")
-    assert [scene["text"] for scene in edited["scenes"]] == ["أَوَّلٌ ثَانٍ ثَالِثٌ", "رَابِعٌ خَامِسٌ"]
+    assert [scene["text"] for scene in edited["scenes"]] == ["أَوَّلٌ ثَانٍ ثَالِثٌ", "ثَالِثٌ رَابِعٌ خَامِسٌ"]
     assert [scene["scene_id"] for scene in edited["scenes"]][0] == "first"
-    with pytest.raises(ValueError, match="exact next words"):
-        edit_scene_text([ayah], rows, scene_index=0, text="ثَانٍ أَوَّلٌ")
+    assert edited["scenes"][0]["source_text"] == "أَوَّلٌ ثَانٍ"
+    blank = edit_scene_text([ayah], rows, scene_index=0, text="")
+    assert blank["scenes"][0]["text"] == ""
+    assert blank["scenes"][0]["source_text"] == "أَوَّلٌ ثَانٍ"
+    assert blank["scenes"][0]["text_edited"] is True
 
 
 def test_word_redistribution_recalculates_scene_audio_boundaries_from_word_timestamps():

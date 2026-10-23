@@ -33,6 +33,7 @@ THEMES = {
     "desert_dawn": {"name": "White Sands at Golden Hour", "top": (50, 40, 70), "bottom": (180, 110, 85), "accent": (255, 220, 170)},
     "marble_arch": {"name": "Dark Gold-Veined Marble", "top": (20, 24, 30), "bottom": (15, 18, 24), "accent": (230, 190, 100)},
     "sapphire_horizon": {"name": "Calm Ocean Horizon at Dusk", "top": (10, 20, 45), "bottom": (30, 85, 160), "accent": (210, 235, 255)},
+    "midnight_coast": {"name": "Midnight Coast", "top": (7, 17, 40), "bottom": (2, 9, 21), "accent": (170, 205, 235)},
     "pearl_dawn": {"name": "Ivory Arabesque Filigree", "top": (240, 235, 225), "bottom": (220, 210, 195), "accent": (180, 145, 80)},
     "ocean_calm": {"name": "Deep Ocean Light Shafts", "top": (15, 60, 100), "bottom": (8, 25, 50), "accent": (160, 235, 255)},
     "misty_forest": {"name": "Sunbeams Through Morning Mist", "top": (20, 32, 38), "bottom": (45, 68, 65), "accent": (200, 220, 210)},
@@ -53,6 +54,7 @@ THEME_CATEGORIES = {
     "marble_arch": "Islamic Architecture", "sapphire_horizon": "Water & Atmosphere",
     "pearl_dawn": "Luxury & Minimal", "ocean_calm": "Water & Atmosphere",
     "misty_forest": "Nature & Landscapes", "lavender_twilight": "Abstract & Light",
+    "midnight_coast": "Water & Atmosphere",
     "jade_courtyard": "Islamic Architecture", "crescent_garden": "Night & Celestial",
     "lake_dawn": "Water & Atmosphere", "haram_night": "Islamic Architecture",
     "misty_valley": "Nature & Landscapes",
@@ -229,7 +231,7 @@ def caption_render_options(caption_style, caption_color="white", **custom):
 
 
 def render_caption_image(text, *, aspect_ratio, font_path=None, caption_style="classic",
-                         caption_color="white", wrap_width=85, show_surah_title=False,
+                         caption_color="white", wrap_width=85, caption_scale=1.0, show_surah_title=False,
                          surah_title=None, ayah_number=None, surah_color=None,
                          show_ayah_number=None, surah_template="ornamental_gold",
                          ayah_number_template="gold_medallion", ayah_color=None,
@@ -246,10 +248,23 @@ def render_caption_image(text, *, aspect_ratio, font_path=None, caption_style="c
                          **custom_options):
     """Render one caption identically for the live preview and exported video."""
     from .text_renderer import render_arabic_text
+    if not str(text or "").strip():
+        # An empty scene is an intentional blank display interval. Keep its
+        # timeline and audio intact without asking Arabic shaping to rasterize
+        # a string that contains no glyphs.
+        return Image.new("RGBA", (1, 1), (0, 0, 0, 0))
 
     if aspect_ratio not in SIZES:
         raise ValueError(f"Unsupported aspect ratio: {aspect_ratio}")
     width, height = output_size or SIZES[aspect_ratio]
+    if isinstance(caption_scale, bool):
+        raise ValueError("Arabic caption size scale must be between 0.80 and 1.10.")
+    try:
+        caption_scale = float(caption_scale)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Arabic caption size scale must be between 0.80 and 1.10.") from exc
+    if not np.isfinite(caption_scale) or not .80 <= caption_scale <= 1.10:
+        raise ValueError("Arabic caption size scale must be between 0.80 and 1.10.")
     translation_options = translation_options or {}
     text_color, options = caption_render_options(caption_style, caption_color, **custom_options)
     surah_rgba = _parse_color(surah_color, (235, 205, 110)) + (255,)
@@ -281,7 +296,7 @@ def render_caption_image(text, *, aspect_ratio, font_path=None, caption_style="c
     if ayah_number_placement in {"above", "below"}:
         number_config["placement"] = ayah_number_placement
     return render_arabic_text(
-        text, font_path=font_path, font_size=max(26, int(width * .07)),
+        text, font_path=font_path, font_size=max(26, int(width * .07 * caption_scale)),
         max_width=int(width * int(wrap_width) / 100),
         max_height=int(height * max(.2, min(.5, float(max_height_ratio)))),
         color=text_color, show_surah_title=show_surah_title,
@@ -362,7 +377,7 @@ def _gradient_background(size, theme):
     image = Image.alpha_composite(image.convert("RGBA"), lights).convert("RGB")
     draw = ImageDraw.Draw(image, "RGBA")
 
-    night = theme in {"masjid_night", "aurora_drift", "lavender_twilight", "crescent_garden", "sahara_moon", "plum_evening", "midnight_blue", "turquoise_mosaic"}
+    night = theme in {"masjid_night", "aurora_drift", "lavender_twilight", "crescent_garden", "sahara_moon", "plum_evening", "midnight_blue", "midnight_coast", "turquoise_mosaic"}
     if night:
         for _ in range(95):
             x, y = rng.randrange(width), rng.randrange(max(1, int(height*.49)))
@@ -384,7 +399,7 @@ def _gradient_background(size, theme):
     land = ImageDraw.Draw(silhouette)
     land_color = tuple(int(c*.42) for c in palette["bottom"])
     xs = range(0, width + 1)
-    kind = "dunes" if theme in {"desert_dawn", "golden_dunes", "rose_sand", "copper_dusk", "sahara_moon"} else "waves" if theme in {"ocean_calm", "sapphire_horizon"} else "hills"
+    kind = "dunes" if theme in {"desert_dawn", "golden_dunes", "rose_sand", "copper_dusk", "sahara_moon"} else "waves" if theme in {"ocean_calm", "sapphire_horizon", "midnight_coast"} else "hills"
     def contour(base, amp, phase):
         return [(x, int(base + amp*(.62*np.sin(x/width*2*np.pi + phase) + .25*np.sin(x/width*4.5*np.pi + phase*1.7)))) for x in xs]
     distant = contour(height*.72, height*.075, (seed % 360)/57)
@@ -792,6 +807,7 @@ def render_reel(*, ayahs, output_path, aspect_ratio="9:16", audio_path=None,
                 background_clips=None,
                 duration_per_ayah=3.0, fps=30, font_path=None, caption_style="classic", speed=1.0,
                 caption_color="white", wrap_width=85, ayah_start=1,
+                caption_scale=1.0,
                 show_surah_title=False, surah_title=None, surah_color=None,
                 show_ayah_number=None, surah_template="ornamental_gold",
                 ayah_number_template="gold_medallion", ayah_color=None,
@@ -824,6 +840,14 @@ def render_reel(*, ayahs, output_path, aspect_ratio="9:16", audio_path=None,
         raise ValueError("Quality must be fast, balanced, high, or maximum.")
     if encoder not in {"auto", "cpu", "nvidia", "intel"}:
         raise ValueError("Encoder must be auto, cpu, nvidia, or intel.")
+    if isinstance(caption_scale, bool):
+        raise ValueError("Arabic caption size scale must be between 0.80 and 1.10.")
+    try:
+        caption_scale = float(caption_scale)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Arabic caption size scale must be between 0.80 and 1.10.") from exc
+    if not np.isfinite(caption_scale) or not .80 <= caption_scale <= 1.10:
+        raise ValueError("Arabic caption size scale must be between 0.80 and 1.10.")
     requested_encoder = encoder
     selected_encoder = encoder
     hardware_encoder = None
@@ -1216,7 +1240,8 @@ def render_reel(*, ayahs, output_path, aspect_ratio="9:16", audio_path=None,
                 caption_image = render_caption_image(
                     scene["text"], aspect_ratio=aspect_ratio, font_path=font_path,
                     caption_style=caption_style, caption_color=caption_color,
-                    wrap_width=wrap_width, show_surah_title=show_surah_title,
+                    wrap_width=wrap_width, caption_scale=caption_scale,
+                    show_surah_title=show_surah_title,
                     surah_title=surah_title, ayah_number=current_ayah_num,
                     surah_color=surah_color, show_ayah_number=show_ayah_number,
                     surah_template=surah_template, ayah_number_template=ayah_number_template,
@@ -1234,7 +1259,7 @@ def render_reel(*, ayahs, output_path, aspect_ratio="9:16", audio_path=None,
                 if transition == "crossfade" and index:
                     fade_in = getattr(vfx, "CrossFadeIn", None) or vfx.FadeIn
                     caption_clip = caption_clip.with_effects([fade_in(min(0.2, verse_duration * 0.15))])
-                anchor = {"upper": 0.34, "center": 0.43 if scene_translation else 0.54,
+                anchor = {"upper": 0.34, "center": 0.50,
                           "lower": 0.72}[caption_position]
                 horizontal_center = int(width * caption_x / 100)
                 vertical_center = int(height * (caption_y / 100 if caption_y is not None else anchor))
